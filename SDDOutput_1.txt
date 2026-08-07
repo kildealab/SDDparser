@@ -1,11 +1,11 @@
 SDD Version, SDDv1.0;
 Software, TOPAS-nBio;
 Author, NICE Team;
-Simulation Details, Neutron Irradiation of a cubic cell nucleus model;
+Simulation details, Neutron Irradiation of a cubic cell nucleus model;
 Source, Secondary particles of photoneutrons from a LINAC;
 Source type, 2;
 Incident particles, 11;
-Mean particle energy, Non specified;
+Mean particle energy, ;
 Energy distribution, URL: https://github.com/McGillMedPhys/topas_clustered_dna_damage/tree/master/spectra;
 Particle fraction, 1.0;
 Dose or fluence,  3;

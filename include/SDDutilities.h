@@ -39,7 +39,10 @@ inline std::vector<double> parseDoubleList(const std::vector<std::string>& value
 
     for(auto& v : values)
     {
-        output.push_back(std::stod(v));
+        if (v.empty())
+	    continue;
+
+	output.push_back(std::stod(v));
     }
 
 
@@ -53,6 +56,9 @@ inline std::vector<int> parseIntList(const std::vector<std::string>& values)
 
     for(auto& v : values)
     {
+	if (v.empty())
+	    continue;
+
         output.push_back(std::stoi(v));
     }
 

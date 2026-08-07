@@ -297,7 +297,15 @@ const Header& SDDparser::getHeader() const
     return header;
 }
 
+
 const std::vector<Exposure>& SDDparser::getExposures() const 
 {
     return exposures;
 }
+
+
+void SDDparser::printHeaderSummary(std::ostream& out) const {
+// MODIFY TO PRINT HEADER FIELDS
+	out << "This is a test that SDDparser reads the SDD header ";
+}
+

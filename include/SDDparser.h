@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <ostream>
+#include <iostream>
 
 #include "SDDtypes.h"
 
@@ -18,6 +20,10 @@ public:
     const Header& getHeader() const;
 
     const std::vector<Exposure>& getExposures() const;
+
+    void printHeaderSummary(std::ostream& out = std::cout) const;
+
+    void printDataEntrySummary(std::ostream& out = std::cout) const;
 
 private:
 
