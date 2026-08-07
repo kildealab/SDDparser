@@ -22,9 +22,12 @@ int main()
     std::cout << "Header\n";
     std::cout << "====================\n";
 
+// Instead of printing out redundant info, print out meaning of different
+// numerical fields and summarize the SDD header. Later repeat for the 
+// SDD exposure data entries.
 
-    std::cout << "Version: "
-              << header.version
+    std::cout << "SDD Version: "
+              << header.sdd_version
               << "\n";
 
 
@@ -33,9 +36,11 @@ int main()
               << "\n";
 
 
-    std::cout << "Dose: "
-              << header.dose
-              << "\n";
+    std::cout << "Dose or fluence: ";
+    for (double val : header.dose_or_fluence) {
+        std::cout << val << " ";
+    }
+    std::cout << "\n";
 
 
     std::cout << "\nNumber of exposures: "
@@ -43,6 +48,8 @@ int main()
               << "\n";
 
 
+// Print out summary of exposure entry data, figure out what is important to
+// A potential user of the SDDparser
     for(const auto& exposure : parser.getExposures())
     {
         std::cout

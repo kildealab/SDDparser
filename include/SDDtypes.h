@@ -7,20 +7,33 @@
 
 struct Header
 {
-    std::string version;
+    std::string sdd_version;
     std::string software;
     std::string author;
+    std::string simulation_details; 
+    std::string source;	
+    int source_type; 
+    std::vector<int> incident_particles; 
+    std::vector<double> mean_particle_energy; 
+    std::string energy_distribution; 
+    std::vector<double> particle_fraction; 
+    std::vector<double> dose_or_fluence; 
+    double dose_rate = 0.0;
+    std::string irradiation_target;
+    std::vector<double> volumes; 
+    std::vector<double> chromosome_sizes;
+    double DNA_density; 
+    std::vector<double> cell_cycle_phase; 
+    std::vector<int> DNA_structure; 
+    int in_vitro_or_in_vivo; 
+    int proliferation_status;
+    std::vector<double> microenvironment;
+    std::vector<double> damage_definition;
+    double time;
+    std::vector<int> damage_and_primary_count;
+    std::vector<int> data_entries;
+    std::string additional_information;
 
-    std::vector<double> chromosomeSizes;
-    std::vector<int> dataEntries;
-
-    double dose = 0.0;
-    double doseRate = 0.0;
-
-    std::string sourceType;
-    std::string irradiationTarget;
-
-    // ...add the remaining SDD header fields here...
 };
 
 //--------------------------------------------------
