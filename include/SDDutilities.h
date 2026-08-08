@@ -4,7 +4,10 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <algorithm>
+#include <cctype>
 
+// Trimming all white spaces in a line of an SDD file
 inline std::string trim(const std::string& s)
 {
     size_t first = s.find_first_not_of(" \t\r\n");
@@ -17,6 +20,7 @@ inline std::string trim(const std::string& s)
     return s.substr(first,last-first+1);
 }
 
+// Splitting all SDD file lines by a delimiter of choice
 inline std::vector<std::string> split(const std::string& line,char delimiter)
 {
     std::vector<std::string> tokens;
@@ -31,7 +35,31 @@ inline std::vector<std::string> split(const std::string& line,char delimiter)
     return tokens;
 }
 
+// Useful for header field comparison converting field names to lower case
+inline std::string toLower(const std::string& input)
+{
+    std::string result = input;
 
+    std::transform(
+        result.begin(),
+        result.end(),
+        result.begin(),
+        [](unsigned char c)
+        {
+            return static_cast<char>(std::tolower(c));
+        }
+    );
+
+    return result;
+}
+
+// Removes all whitespaces in header field names and changes them to lower case for comparison.
+inline std::string normalizeHeaderKey(const std::string& input)
+{
+    return toLower(trim(input));
+}
+
+// Helper function to parse vectors consisting of doubles
 inline std::vector<double> parseDoubleList(const std::vector<std::string>& values)
 {
     std::vector<double> output;
@@ -49,6 +77,7 @@ inline std::vector<double> parseDoubleList(const std::vector<std::string>& value
     return output;
 }
 
+// Helped function to parse vectors consiting of ints
 inline std::vector<int> parseIntList(const std::vector<std::string>& values)
 {
     std::vector<int> output;

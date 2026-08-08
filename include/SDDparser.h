@@ -21,8 +21,9 @@ public:
 
     const std::vector<Exposure>& getExposures() const;
 
-    void printHeaderSummary(std::ostream& out = std::cout) const;
+    void printHeaderSummary(std::ostream& out) const;
 
+// std::cout to print summary to screen, remove to output to a file.
     void printDataEntrySummary(std::ostream& out = std::cout) const;
 
 private:

@@ -1,7 +1,7 @@
 SDD Version, SDDv1.0;
 Software, TOPAS-nBio;
 Author, NICE Team;
-Simulation details, Neutron Irradiation of a cubic cell nucleus model;
+Simulation Details, Neutron Irradiation of a cubic cell nucleus model;
 Source, Secondary particles of photoneutrons from a LINAC;
 Source type, 2;
 Incident particles, 11;
@@ -19,7 +19,7 @@ In vitro / in vivo, 0;
 Proliferation status, 1;
 Microenvironment, ;
 Damage definition, 1,0,10,10,17.5;
-Time 0;
+Time, 0;
 Damage and primary count,  3477, 5583;
 Data entries, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0;
 Additional information, ;

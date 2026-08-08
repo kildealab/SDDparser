@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 
 #include "SDDparser.h"
 
@@ -31,13 +32,23 @@ int main(int argc, char* argv[]) // Remove inside main if hardcoding filepath
 
     if(!parser.load(filename))	//If command line arguments unwanted, remove above if statement and hardcode INPUT SDD FILE PATH HERE
     {
-        std::cout << "Failed to load SDD file\n";
+        std::cout << "Failed to load SDD file " << filename << "\n";
         return 1;
     }
 
-    parser.printHeaderSummary(); //Returns Summary of SDD header fields
+    std::ofstream summaryFile(filename + "_header_summary.txt");
 
+    if(!summaryFile)
+    {
+        std::cerr
+            << "Failed to create summary file\n";
 
+        return 1;
+    }
+
+    parser.printHeaderSummary(summaryFile); //Returns Summary of SDD header fields in a summary file
+
+    summaryFile.close();
 //    const Header& header = parser.getHeader();
 
 
@@ -48,32 +59,32 @@ int main(int argc, char* argv[]) // Remove inside main if hardcoding filepath
 // Instead of printing out redundant info, print out meaning of different
 // numerical fields and summarize the SDD header. Later repeat for the 
 // SDD exposure data entries.
-
-//    std::cout << "SDD Version: "
-//              << header.sdd_version
-//              << "\n";
-
-
-//    std::cout << "Software: "
-//              << header.software
-//              << "\n";
+/*
+    std::cout << "SDD Version: "
+              << header.sdd_version
+              << "\n";
 
 
-//    std::cout << "Dose or fluence: ";
-//    for (double val : header.dose_or_fluence) {
-//        std::cout << val << " ";
-//    }
-//    std::cout << "\n";
+    std::cout << "Software: "
+              << header.software
+              << "\n";
+
+
+    std::cout << "Dose or fluence: ";
+    for (double val : header.dose_or_fluence) {
+        std::cout << val << " ";
+    }
+    std::cout << "\n";
 
 
     std::cout << "\nNumber of exposures: "
               << parser.getExposures().size()
               << "\n";
-
+*/
 
 // Print out summary of exposure entry data, figure out what is important to
 // A potential user of the SDDparser
-    for(const auto& exposure : parser.getExposures())
+/*    for(const auto& exposure : parser.getExposures())
     {
         std::cout
             << "\nExposure "
@@ -99,6 +110,7 @@ int main(int argc, char* argv[]) // Remove inside main if hardcoding filepath
         }
     }
 
-
+*/
     return 0;
 }
+

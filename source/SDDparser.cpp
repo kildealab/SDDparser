@@ -12,7 +12,7 @@ bool SDDparser::load(const std::string& filename)
 
     if(!file)
         { 
-	 std::cerr << "ERROR: Cannot open file: "
+	 std::cerr << "ERROR: SDD header parsing failed: "
 		   << filename << std::endl ;
 
 	 return false;
@@ -32,34 +32,35 @@ bool SDDparser::load(const std::string& filename)
     return true;
 }
 
-// Add more header fields
+// List all valid SDD header field names.
 const std::unordered_set<std::string> validSDDHeaderFields =
 {
-    "SDD Version",
-    "Software",
-    "Author",
-    "Simulation details",
-    "Source",
-    "Source type",
-    "Incident particles",
-    "Mean particle energy",
-    "Energy distrbution",
-    "Dose or fluence",
-    "Irradiation target",
-    "Volumes",
-    "Dose rate",
-    "Chromosome sizes",
-    "DNA density",
-    "Cell cycle phase",
-    "DNA structure",
-    "In vitro / in vivo",
-    "Proliferation status",
-    "Microenvironment",
-    "Damage definition",
-    "Time",
-    "Damage and primary count",
-    "Data entries",
-    "Additional information"
+    "sdd version", 			// Required
+    "software",  			// Not required
+    "author",				// Required
+    "simulation details",   		// Not Required
+    "source",  				// Required
+    "source type", 			// Required
+    "incident particles",  		// Not Required
+    "mean particle energy",		// Not required
+    "energy distribution",		// Not required
+    "particle fraction",		// Not required
+    "dose or fluence",			// Not required
+    "dose rate",			// Not required
+    "irradiation target",		// Not Required
+    "volumes",				// Required
+    "chromosome sizes",			// Required
+    "dna density",			// Required
+    "cell cycle phase",			// Required
+    "dna structure",			// Required
+    "in vitro / in vivo",		// Not required
+    "proliferation status",		// Not required
+    "microenvironment",			// Not required
+    "damage definition",		// Required
+    "time",				// Not required
+    "damage and primary count",		// Required
+    "data entries",			// Required
+    "additional information"		// Not required
 };
 
 bool SDDparser::parseHeader(std::ifstream& file)
@@ -74,15 +75,19 @@ bool SDDparser::parseHeader(std::ifstream& file)
 
 
         if(line.empty())
-            continue;
-
-
-        if(line == "***EndOfHeader***")
-            break;
-
-        // Remove final semicolon
+        {
+	    continue;
+	}
+        
+	// Remove final semicolon
         if(line.back()==';')
             line.pop_back();
+
+        if(normalizeHeaderKey(line) == "***endofheader***")
+        {    std::cout << "SDD header parsed successfully.\n";
+		
+	     return true;
+	}
 
         // Split header entry by commas
         std::vector<std::string> tokens = split(line,',');
@@ -90,17 +95,17 @@ bool SDDparser::parseHeader(std::ifstream& file)
         if(tokens.empty())
             continue;
 
-        std::string key = tokens[0];
+        std::string original_key = tokens[0]; //Before removing whitespaces and capitalizations
+	std::string key = normalizeHeaderKey(original_key); // Headers are now lower case and have no leading or trailing whitespaces
 
-
-	// Printing out current SDD header field being read
-	std::cout << "Reading header field: [" << key << "]\n";
+	// Printing out current SDD header field being read for DEBUGGING
+	std::cout << "Reading header field: [" << original_key << "]\n";
 
 	// Check if SDD header field is supported
 	if(validSDDHeaderFields.find(key) == validSDDHeaderFields.end())
 	{
     	    std::cerr
-            << "ERROR: Unknown SDD header field: " << key << std::endl;
+            << "ERROR: Unknown SDD header field: " << original_key << std::endl;
     	    return false;
 	}
 
@@ -117,132 +122,132 @@ bool SDDparser::parseHeader(std::ifstream& file)
 	// Fields with different numbering data types are converted to floats.
 	// Fields with strings and ints/floats are kept as strings.
 
-        if(key=="SDD Version")
+        if(key=="sdd version")
         {
             header.sdd_version = values[0];
         }
 
-        else if(key=="Software")
+        else if(key=="software")
         {
             header.software = values[0];
         }
 
-        else if(key=="Author")
+        else if(key=="author")
         {
             header.author = values[0];
         }
 
-	else if(key=="Simulation details")
+	else if(key=="simulation details")
 	{
 	    header.simulation_details = values[0]; 
 	}
 
-	else if(key=="Source")
+	else if(key=="source")
 	{
 	    header.source = values[0];
 	}
 
-	else if(key=="Source type")
+	else if(key=="source type")
 	{
 	    header.source_type = std::stoi(values[0]);
 	}
 
-	else if(key=="Incident particles")
+	else if(key=="incident particles")
 	{
  	    header.incident_particles = parseIntList(values); 
 	}
 
-	else if(key=="Mean particle energy")
+	else if(key=="mean particle energy")
 	{
 	    header.mean_particle_energy = parseDoubleList(values);
 	}
 
-	else if(key=="Energy distribution")
+	else if(key=="energy distribution")
 	{
 	    header.energy_distribution = values[0];
 	}
 
-	else if(key=="Particle fraction")
+	else if(key=="particle fraction")
 	{
 	    header.particle_fraction = parseDoubleList(values);
 	}
 
-        else if(key=="Dose or fluence")
+        else if(key=="dose or fluence")
         {
             header.dose_or_fluence = parseDoubleList(values);
 	}
 
-        else if(key=="Dose rate")
+        else if(key=="dose rate")
         {
             header.dose_rate = std::stod(values[0]);
         }
 
-	else if(key=="Irradiation target")
+	else if(key=="irradiation target")
 	{
 	    header.irradiation_target = values[0];
 	}
 
-	else if(key=="Volumes")
+	else if(key=="volumes")
 	{
 	    header.volumes = parseDoubleList(values);
 	}
 
-        else if(key=="Chromosome sizes")
+        else if(key=="chromosome sizes")
         {
             header.chromosome_sizes = parseDoubleList(values);
         }
 
-	else if(key=="DNA density")
+	else if(key=="dna density")
 	{
             header.DNA_density = std::stod(values[0]);
 	}
 
-	else if(key=="Cell cycle phase")
+	else if(key=="cell cycle phase")
 	{
 	    header.cell_cycle_phase = parseDoubleList(values);
 	}	
 
-	else if(key=="DNA structure")
+	else if(key=="dna structure")
 	{
 	    header.DNA_structure = parseIntList(values);
 	}
 
-	else if(key=="In vitro / in vivo")
+	else if(key=="in vitro / in vivo")
 	{
 	    header.in_vitro_or_in_vivo = std::stoi(values[0]);
 	}
 
-	else if(key=="Proliferation status")
+	else if(key=="proliferation status")
 	{
 	    header.proliferation_status = std::stoi(values[0]);
 	}
 	
-	else if(key=="Microenvironment")
+	else if(key=="microenvironment")
 	{
 	    header.microenvironment = parseDoubleList(values);
 	}
 	
-	else if(key=="Damage definition")
+	else if(key=="damage definition")
 	{
 	    header.damage_definition = parseDoubleList(values);
 	}
 
-	else if(key=="Time")
+	else if(key=="time")
 	{
 	    header.time = std::stod(values[0]);
 	}
 
-	else if(key=="Damage and primary count")
+	else if(key=="damage and primary count")
 	{
 	    header.damage_and_primary_count = parseIntList(values);
 	}
 
-	else if(key=="Data entries")
+	else if(key=="data entries")
 	{
 	    header.data_entries = parseIntList(values);
 	}
 
-	else if(key=="Additional information")
+	else if(key=="additional information")
 	{
 	    header.additional_information = values[0];
 	}
@@ -255,8 +260,10 @@ bool SDDparser::parseHeader(std::ifstream& file)
         }
 
     }
-
-	return true;
+	// If ***EndOfHeader*** not found, exit with error
+	std::cerr << "ERROR: End of SDD header not found.\n";
+	
+	return false;
 }
 
 
