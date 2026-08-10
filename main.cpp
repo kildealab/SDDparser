@@ -1,19 +1,20 @@
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 
 #include "SDDparser.h"
 
 
 int main(int argc, char* argv[]) // Remove inside main if hardcoding filepath
 {
-//This if statement allows command line arguments for the SDD file path 
-    if(argc != 2)//
-    {//
-	std::cerr << "Usage: " << argv[0] << " <SDD file>\n";//
-	return 1;//
-    }//
-
-    std::string argument = argv[1];    
+////This if statement allows command line arguments for the SDD file path 
+    if(argc != 2)
+    {
+	std::cerr << "Usage: " << argv[0] << " <SDD file>\n";
+	return 1;
+    }
+////
+    std::string argument = argv[1];    // check if -h or --help argument was passed instead of SDDfileName
     if(argument == "-h" || argument == "--help")
     {
         std::cout
@@ -28,15 +29,23 @@ int main(int argc, char* argv[]) // Remove inside main if hardcoding filepath
 
     std::string filename = argv[1]; // SDDfile is the second argument of the command
 
-    SDDparser parser;
+    SDDparser parser; 		// Instantiate SDDparser object called parser
 
-    if(!parser.load(filename))	//If command line arguments unwanted, remove above if statement and hardcode INPUT SDD FILE PATH HERE
+// Check if SDD input file loads correctly
+    if(!parser.load(filename))	//If command line arguments unwanted, remove above if statement and hardcode INPUT SDD FILE PATH in the place of "filename"
     {
         std::cout << "Failed to load SDD file " << filename << "\n";
         return 1;
     }
 
-    std::ofstream summaryFile(filename + "_header_summary.txt");
+// Create Summary Output file to the same path as the input SDD file
+    std::filesystem::path inputPath(argv[1]);
+
+    std::filesystem::path summaryPath =
+    inputPath.parent_path() /
+    (inputPath.stem().string() + "_summary.txt");
+
+    std::ofstream summaryFile(summaryPath);
 
     if(!summaryFile)
     {
@@ -46,71 +55,12 @@ int main(int argc, char* argv[]) // Remove inside main if hardcoding filepath
         return 1;
     }
 
-    parser.printHeaderSummary(summaryFile); //Returns Summary of SDD header fields in a summary file
+    parser.printSummary(summaryFile); //Returns Summary of SDD header fields in a summary file
 
     summaryFile.close();
-//    const Header& header = parser.getHeader();
 
+    std::cout << "Summary written to: " << summaryPath << "\n";
 
-//    std::cout << "====================\n";
-//    std::cout << "Header\n";
-//    std::cout << "====================\n";
-
-// Instead of printing out redundant info, print out meaning of different
-// numerical fields and summarize the SDD header. Later repeat for the 
-// SDD exposure data entries.
-/*
-    std::cout << "SDD Version: "
-              << header.sdd_version
-              << "\n";
-
-
-    std::cout << "Software: "
-              << header.software
-              << "\n";
-
-
-    std::cout << "Dose or fluence: ";
-    for (double val : header.dose_or_fluence) {
-        std::cout << val << " ";
-    }
-    std::cout << "\n";
-
-
-    std::cout << "\nNumber of exposures: "
-              << parser.getExposures().size()
-              << "\n";
-*/
-
-// Print out summary of exposure entry data, figure out what is important to
-// A potential user of the SDDparser
-/*    for(const auto& exposure : parser.getExposures())
-    {
-        std::cout
-            << "\nExposure "
-            << exposure.exposureID
-            << " contains "
-            << exposure.damages.size()
-            << " entries\n";
-
-
-        for(const auto& damage : exposure.damages)
-        {
-            std::cout
-                << "  Event "
-                << damage.classification.eventID
-                << "\n";
-
-            std::cout
-                << "  Position: "
-                << damage.position.x << ", "
-                << damage.position.y << ", "
-                << damage.position.z
-                << "\n";
-        }
-    }
-
-*/
     return 0;
 }
 

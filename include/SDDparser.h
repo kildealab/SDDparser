@@ -7,6 +7,7 @@
 #include <map>
 #include <ostream>
 #include <iostream>
+#include <fstream>
 
 #include "SDDtypes.h"
 
@@ -21,10 +22,8 @@ public:
 
     const std::vector<Exposure>& getExposures() const;
 
-    void printHeaderSummary(std::ostream& out) const;
-
-// std::cout to print summary to screen, remove to output to a file.
-    void printDataEntrySummary(std::ostream& out = std::cout) const;
+// Function that will run printHeaderSummary and printDataEntrySummary
+    void printSummary(std::ostream& out) const;
 
 private:
 
@@ -36,6 +35,13 @@ private:
 
     std::vector<Exposure> exposures;
 
+// Function to print the SDD header summary to an output file 
+    void printHeaderSummary(std::ostream& out) const;
+
+// std::cout to print summary to screen, remove to output to a file.
+    void printExposureSummary(std::ostream& out = std::cout) const;
+
+    std::map<int, std::size_t> exposureMap;
 
 };
 

@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+
 bool SDDparser::load(const std::string& filename)
 {
     std::ifstream file(filename);
@@ -266,7 +267,7 @@ bool SDDparser::parseHeader(std::ifstream& file)
 	return false;
 }
 
-
+// FIX THIS
 void SDDparser::parseDamage(std::ifstream& file)
 {
     std::string line;
@@ -311,8 +312,73 @@ const std::vector<Exposure>& SDDparser::getExposures() const
 }
 
 
-void SDDparser::printHeaderSummary(std::ostream& out) const {
-// MODIFY TO PRINT HEADER FIELDS
-	out << "This is a test that SDDparser reads the SDD header ";
+void SDDparser::printHeaderSummary(std::ostream& output) const {
+
+// First section is the radiation information
+	output << "--------------------------- Incident Radiation Information "
+	       << "---------------------------\n\n";
+
+// Source summary - prints the string entry
+	output << "Radiation source: " << header.source << "\n";
+	
+// Source Type summary
+	output << "Source type: " << header.source_type << " ("
+	<< sourceTypeMeaning(header.source_type) << ")\n";
+
+// Incident Particles summary
+	output << incidentParticlesMeaning(header.incident_particles) << "\n" <<
+	"Each specified incident particle had the following fluence fractions in that order: ";
+	for (size_t i = 0; i < header.particle_fraction.size(); i++)
+	{
+	    output << header.particle_fraction[i];
+	}
+	output << "\n";
+
+// Dose or fluence summary
+	output << doseOrFluenceMeaning(header.dose_or_fluence) << "\n"; 
+
+
+// Second section is the target information
+	output << "-------------------------- Radiation Target Information" <<
+		  "--------------------------\n";
+// Irradiation target
+	output << "Radiation incident on: " << header.irradiation_target << "\n";
+
+// Summary of target shapes and volumes
+	output << volumesMeaning(header.volumes) << "\n" ;
+
+// Summary of chromosome number and sizes, DNA density, cell cycle phase, proliferation status.
+	output << "The number of chromosomes specified were: " << header.chromosome_sizes[0] << ". Subsequent field entries are the chromosome sizes in units of Mega base pairs (Mbp),\nwith an average DNA density of " << header.DNA_density << " Mbp per cubic micrometer.\n";
+	output << cellCyclePhaseMeaning(header.cell_cycle_phase) << "\n" ;
+	output << "The DNA is structured as: " << header.DNA_structure[0] << " (" << dnaStructureMeaning(header.DNA_structure) << ")\n";
+	output << "The cell Proliferation status is: " << header.proliferation_status << " (" << proliferationStatusMeaning(header.proliferation_status) << ") \n\n";
+
+//Third section is the DNA damage and exposure information
+	output << "------------------------- DNA Damage Information" <<
+		  "-------------------------\n";
+
+// Summary of the Damage definition and damage and primary count header fields
+	output << damageDefinitionMeaning(header.damage_definition) << "\n";
+	output << "The number of distinct damage lesions scored is " << header.damage_and_primary_count[0] << ", as a result of " << header.damage_and_primary_count[1] << " primary particles simulated.\n";
+
+}
+void SDDparser::printExposureSummary(std::ostream& output) const {
+	
+	output << "Test for printExposureSummary\n";
 }
 
+void SDDparser::printSummary(std::ostream& output) const
+{
+    output << "========================================\n";
+    output << "             SDD FILE SUMMARY\n";
+    output << "========================================\n\n";
+
+    printHeaderSummary(output);
+
+    output << "\n";
+
+    printExposureSummary(output);
+
+    output << "\n";
+    output << "========================================\n";
+}
