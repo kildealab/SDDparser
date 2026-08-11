@@ -5,6 +5,7 @@
 #include <vector>
 #include <unordered_map>
 
+// The SDD header may contain any of the following header fields.
 struct Header
 {
     std::string sdd_version;
@@ -42,7 +43,7 @@ struct Header
 //--------------------------------------------------
 struct Classification
 {
-    int exposureID = 0;
+    int exposureMarker = 0;
     int eventID = 0;
 };
 
@@ -53,73 +54,93 @@ struct Classification
 struct Position
 {
     double x = 0.0;
+    double x_min = 0.0;
+    double x_max = 0.0;
     double y = 0.0;
+    double y_min = 0.0;
+    double y_max = 0.0;
     double z = 0.0;
+    double z_min = 0.0;
+    double z_max = 0.0;
 };
 
 //--------------------------------------------------
 // Data Entry 3
-// Chromosome Information
+// Chromosome IDs
 //--------------------------------------------------
-struct Chromosome
+struct ChromosomeID
 {
-    int chromosomeID = 0;
-    int chromatidID = 0;
+    int dnaStructure = 0;
     int chromosomeNumber = 0;
     int chromatidNumber = 0;
+    int chromosomeArm = 0;
 };
 
 //--------------------------------------------------
 // Data Entry 4
-// Damage Cause
+// Chromosome Position
 //--------------------------------------------------
-struct DamageCause
+struct ChromosomePosition
 {
-    uint64_t cause = 0;
+    double position = 0.0; 
+    bool isFractional = false; 
 };
 
 //--------------------------------------------------
 // Data Entry 5
-// DNA Segment
+// Cause
 //--------------------------------------------------
-struct DNASegment
+struct DamageCause
 {
-    int chromosome = 0;
-    int copy = 0;
-    int arm = 0;
+    int cause = 0;
+    int numDirectDamages = 0;
+    int numIndirectDamages = 0;
 };
 
 //--------------------------------------------------
 // Data Entry 6
-// Chromatid Segment
+// Damage Types
 //--------------------------------------------------
-struct ChromatidSegment
+struct DamageType
 {
-    int chromatid = 0;
-    int copy = 0;
-    int arm = 0;
+    int numBaseDamages = 0;
+    int numSingleBackboneBreaks = 0;
+    int presenceOfDSB = 0;
 };
 
 //--------------------------------------------------
 // Data Entry 7
-// Damage Description
+// Full break spec
 //--------------------------------------------------
-struct DamageType
+struct FullBreakSpec
 {
-    int baseDamage = 0;
-    int singleStrandBreak = 0;
-    int doubleStrandBreak = 0;
+    // 1 = 5' to 3' backbone
+    // 2 = 5' to 3' bases
+    // 3 = 3' to 5' bases
+    // 4 = 3' to 5' backbone
+    std::vector<int> strand;
+
+    // Identifies the DNA base where damage occurs
+    std::vector<int> base;
+
+    // 0 = no damage
+    // 1 = direct damage
+    // 2 = indirect damage
+    // 3 = direct + indirect damage
+    std::vector<int> baseDamageType;
 };
 
+
+// Exposure entry structure, need to include optional fields later.
 struct DamageEntry
 {
     Classification classification;
     Position position;
-    Chromosome chromosome;
-    DamageCause cause;
-    DNASegment dnaSegment;
-    ChromatidSegment chromatidSegment;
-    DamageType damage;
+    ChromosomeID chromosomeID;
+    ChromosomePosition chromosomePosition;
+    DamageCause damageCause;
+    DamageType damageType;
+    FullBreakSpec fullBreakSpec;
 
     std::string rawLine;
 
@@ -129,4 +150,18 @@ struct Exposure
 {
     int exposureID = 0;
     std::vector<DamageEntry> damages;
+};
+
+
+//--------------------------------------------------
+// Chromosome damage summary
+//--------------------------------------------------
+struct ChromosomeDamageSummary
+{
+    int dnaStructure = 0;
+    int chromosomeNumber = 0;
+
+    int numBaseDamages = 0;
+    int numSingleStrandBreaks = 0;
+    int numDSBs = 0;
 };

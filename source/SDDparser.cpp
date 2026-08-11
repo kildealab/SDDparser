@@ -5,7 +5,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <unordered_set>
-
+#include <algorithm>
 
 bool SDDparser::load(const std::string& filename)
 {
@@ -28,7 +28,11 @@ bool SDDparser::load(const std::string& filename)
         return false;
     }
 
-    parseDamage(file);
+    if(!parseDamageEntries(file))
+    {
+    	std::cerr << "ERROR: SDD data entry parsing failed.\n";
+    	return false;
+    }
 
     return true;
 }
@@ -267,36 +271,359 @@ bool SDDparser::parseHeader(std::ifstream& file)
 	return false;
 }
 
-// FIX THIS
-void SDDparser::parseDamage(std::ifstream& file)
+bool SDDparser::parseDamageEntries(std::ifstream& file)
 {
+
     std::string line;
+
+    std::size_t expectedFields = 0;
+
+    int currentExposureID = 0;
+
+    for(int enabled : header.data_entries)
+    {
+	if(enabled == 1)
+        expectedFields++;
+    }
 
     while(std::getline(file,line))
     {
+	line = trim(line);
+
         if(line.empty())
             continue;
-
 
         DamageEntry damage;
 
         damage.rawLine = line;
 
+	//--------------------------------------------------
+        // Split the data entry into Fields 1-7
+        //--------------------------------------------------
 
-        // TODO:
-        // Parse SDD Data entries here
-        // according to header.dataEntries
+        std::vector<std::string> fields = split(line, ';');
+
+        if(fields.size() != expectedFields)
+        {
+            std::cerr << "ERROR: SDD data entry contains "
+            << fields.size()
+            << " fields, but the header specifies "
+            << expectedFields
+            << " fields.\n";
+
+    	    return false;
+	}
+
+	
+	std::size_t fieldIndex = 0;
+ 	//--------------------------------------------------
+        // Field 1: Classification
+        //--------------------------------------------------
+
+        if(header.data_entries.size() > 0 && header.data_entries[0] == 1)
+        {
+
+ 	    if(fieldIndex >= fields.size())
+    	    {
+        	std::cerr << "ERROR: Missing SDD data entry Field 1.\n";
+        	return false;
+    	    }
+
+	    std::vector<std::string> values = split(fields[fieldIndex], ',');
+
+            if(values.size() >= 1 && !trim(values[0]).empty())
+            {
+
+	        int exposureMarker = std::stoi(trim(values[0]));
+		damage.classification.exposureMarker = exposureMarker;
+
+// A value of 2 indicates the beginning of a new exposure. If SDD data field 1
+// does not start with a 2, force it to be considered a new exposure anyway.      	
+        	if(exposureMarker == 2 || currentExposureID == 0)
+        	{
+            	    currentExposureID++;
+
+            	    Exposure newExposure;
+            	    newExposure.exposureID = currentExposureID;
+
+            	    exposures.push_back(newExposure);
+        	}
+	    }
+
+            if(values.size() >= 2 && !trim(values[1]).empty())
+            {
+	        damage.classification.eventID = std::stoi(trim(values[1]));
+	    }
+
+	    fieldIndex++;
+        }
 
 
-        Exposure exposure;
+	//--------------------------------------------------
+        // Field 2: Spatial Position
+        //--------------------------------------------------
 
-        exposure.exposureID =
-            damage.classification.exposureID;
+        if(header.data_entries.size() > 1 && header.data_entries[1] == 1)
+        {
 
-        exposure.damages.push_back(damage);
+ 	    if(fieldIndex >= fields.size())
+    	    {
+        	std::cerr << "ERROR: Missing SDD data entry Field 2.\n";
+        	return false;
+    	    }
+	    std::vector<std::string> fieldEntries;
 
-        exposures.push_back(exposure);
+	    std::vector<std::string> subfields = split(fields[fieldIndex], '/');
+	    if (subfields.size() == 3)
+	    {
+		for (const std::string& subfield: subfields)
+		{
+       	            std::vector<std::string> values = split(subfield, ',');
+		    fieldEntries.insert(fieldEntries.end(), values.begin(), values.end());
+	        }
+
+		if (fieldEntries.size() != 9)
+		{
+		    std::cerr << "ERROR: Incorrect number of entries for Data field 2.\n";
+    		    return false;
+		}
+
+		else
+		{
+		damage.position.x = std::stod(trim(fieldEntries[0]));
+		damage.position.y = std::stod(trim(fieldEntries[1]));
+		damage.position.z = std::stod(trim(fieldEntries[2]));
+         	damage.position.x_max = std::stod(trim(fieldEntries[3]));
+		damage.position.y_max = std::stod(trim(fieldEntries[4]));
+		damage.position.z_max = std::stod(trim(fieldEntries[5]));
+         	damage.position.x_min = std::stod(trim(fieldEntries[6]));
+		damage.position.y_min = std::stod(trim(fieldEntries[7]));
+		damage.position.z_min = std::stod(trim(fieldEntries[8]));
+         	}
+
+	    }
+
+	    else if (subfields.size() == 1)
+	    {
+		std::vector<std::string> values = split(fields[fieldIndex], ',');
+		damage.position.x = std::stod(trim(values[0]));
+		damage.position.y = std::stod(trim(values[1]));
+		damage.position.z = std::stod(trim(values[2]));
+            }
+	    else
+	    {
+		std::cerr << "ERROR: Incorrect number of entries for Data field 2.\n";
+		return false;
+	    }
+	    
+    	    fieldIndex++;
+        }
+
+	//--------------------------------------------------
+        // Field 3: Chromosome IDs
+        //--------------------------------------------------
+
+        if(header.data_entries.size() > 2 && header.data_entries[2] == 1)
+        {
+
+ 	    if(fieldIndex >= fields.size())
+    	    {
+        	std::cerr << "ERROR: Missing SDD data entry Field 3.\n";
+        	return false;
+    	    }
+
+            std::vector<std::string> values = split(fields[fieldIndex], ',');
+
+            if(values.size() >= 1 && !trim(values[0]).empty())
+            {    
+		damage.chromosomeID.dnaStructure = std::stoi(trim(values[0]));
+	    }
+            if(values.size() >= 2 && !trim(values[1]).empty())
+            {
+		damage.chromosomeID.chromosomeNumber = std::stoi(trim(values[1]));
+	    }
+            if(values.size() >= 3 && !trim(values[2]).empty())
+            {
+		damage.chromosomeID.chromatidNumber = std::stoi(trim(values[2]));
+	    }
+            if(values.size() >= 4 && !trim(values[3]).empty())
+            {
+	        damage.chromosomeID.chromosomeArm = std::stoi(trim(values[3]));
+            }	
+
+	    fieldIndex++;
+	}
+
+	//--------------------------------------------------
+        // Field 4: Chromosome Position
+        //--------------------------------------------------
+
+        if(header.data_entries.size() > 3 && header.data_entries[3] == 1)
+        {
+
+ 	    if(fieldIndex >= fields.size())
+    	    {
+        	std::cerr << "ERROR: Missing SDD data entry Field 4.\n";
+        	return false;
+    	    }
+
+            double value = std::stod(trim(fields[fieldIndex]));
+
+            damage.chromosomePosition.position = value;
+
+            if(value < 1.0)
+                damage.chromosomePosition.isFractional = true;
+            else
+                damage.chromosomePosition.isFractional = false;
+
+	    fieldIndex++;
+        }
+
+
+
+ 	//--------------------------------------------------
+        // Field 5: Cause
+        //--------------------------------------------------
+
+        if(header.data_entries.size() > 4 && header.data_entries[4] == 1)
+        {
+
+ 	    if(fieldIndex >= fields.size())
+    	    {
+        	std::cerr << "ERROR: Missing SDD data entry Field 5.\n";
+        	return false;
+    	    }
+
+            std::vector<std::string> values = split(fields[fieldIndex], ',');
+
+            if(values.size() >= 1 && !values[0].empty())
+                damage.damageCause.cause =
+                    std::stoi(trim(values[0]));
+
+            if(values.size() >= 2 && !values[1].empty())
+                damage.damageCause.numDirectDamages =
+                    std::stoi(trim(values[1]));
+
+            if(values.size() >= 3 && !values[2].empty())
+                damage.damageCause.numIndirectDamages =
+                    std::stoi(trim(values[2]));
+        
+	    fieldIndex++;
+	}
+
+
+        //--------------------------------------------------
+        // Field 6: Damage Types
+        //--------------------------------------------------
+
+        if(header.data_entries.size() > 5 && header.data_entries[5] == 1)
+        {
+
+ 	    if(fieldIndex >= fields.size())
+    	    {
+        	std::cerr << "ERROR: Missing SDD data entry Field 6.\n";
+        	return false;
+    	    }
+
+            std::vector<std::string> values = split(fields[fieldIndex], ',');
+
+            if(values.size() >= 1 && !values[0].empty())
+                damage.damageType.numBaseDamages =
+                    std::stoi(trim(values[0]));
+
+            if(values.size() >= 2 && !values[1].empty())
+                damage.damageType.numSingleBackboneBreaks =
+                    std::stoi(trim(values[1]));
+
+            if(values.size() >= 3 && !values[2].empty())
+                damage.damageType.presenceOfDSB =
+                    std::stoi(trim(values[2]));
+        
+	    fieldIndex++;
+	}
+
+
+        //--------------------------------------------------
+        // Field 7: Full Break Specification
+        //--------------------------------------------------
+
+        if(header.data_entries.size() > 6 && header.data_entries[6] == 1)
+        {
+
+ 	    if(fieldIndex >= fields.size())
+    	    {
+        	std::cerr << "ERROR: Missing SDD data entry Field 7.\n";
+        	return false;
+    	    }
+
+            std::vector<std::string> groups = split(fields[fieldIndex], '/');
+
+            for(const auto& group : groups)
+            {
+                if(trim(group).empty())
+                {
+                    continue;
+                }
+		
+		// Each group consists of: STRAND, BASE, baseDamageType
+        	std::vector<std::string> values = split(group, ',');
+    		
+		if(values.size() != 3)
+        	{
+            	    std::cerr << "ERROR: Invalid Field 7 group: [" << group << "]\n";
+            	    return false;
+        	}
+         
+
+	        int strand = std::stoi(trim(values[0]));
+
+        	int base = std::stoi(trim(values[1]));
+
+        	int baseDamageType = std::stoi(trim(values[2]));
+
+		// Validate STRAND
+        	if(strand < 1 || strand > 4)
+        	{
+            	    std::cerr << "ERROR: Invalid Field 7 strand value: " << strand << "\n";
+
+            	    return false;
+        	}
+
+        	// Validate base damage type
+        	if(baseDamageType < 0 || baseDamageType > 3)
+        	{
+            	    std::cerr << "ERROR: Invalid Field 7 damage type: " << baseDamageType << "\n";
+
+            	    return false;
+        	}
+
+
+		damage.fullBreakSpec.strand.push_back(strand);
+        	damage.fullBreakSpec.base.push_back(base);
+        	damage.fullBreakSpec.baseDamageType.push_back(baseDamageType);
+
+	   }
+        
+	    fieldIndex++;
+	}
+
+
+        //--------------------------------------------------
+        // Add damage to the appropriate exposure
+        //--------------------------------------------------
+
+        
+	if(currentExposureID <= 0 || currentExposureID > static_cast<int>(exposures.size()))
+	{
+    	    std::cerr << "ERROR: Invalid current exposure ID.\n";
+   	    return false;
+	}
+
+	exposures[currentExposureID - 1].damages.push_back(damage);
+
     }
+
+    return true;
 }
 
 
@@ -310,6 +637,42 @@ const std::vector<Exposure>& SDDparser::getExposures() const
 {
     return exposures;
 }
+
+
+std::map<int, ChromosomeDamageSummary> SDDparser::summarizeChromosomeDamage(const Exposure& exposure) const
+{
+    std::map<int, ChromosomeDamageSummary> summary;
+
+    for(const auto& damage : exposure.damages)
+    {
+        const auto& chromosome = damage.chromosomeID;
+        const auto& damageType = damage.damageType;
+
+        // Only strands that have an associated chromosome number 
+	// (non-zero integer) will be valid.
+        if(chromosome.chromosomeNumber <= 0)
+        {
+            continue;
+        }
+
+        int chromosomeNumber = chromosome.chromosomeNumber;
+
+        ChromosomeDamageSummary& chromosomeSummary = summary[chromosomeNumber];
+
+        chromosomeSummary.dnaStructure = chromosome.dnaStructure;
+
+        chromosomeSummary.chromosomeNumber = chromosomeNumber;
+
+        chromosomeSummary.numBaseDamages += damageType.numBaseDamages;
+
+        chromosomeSummary.numSingleStrandBreaks += damageType.numSingleBackboneBreaks;
+
+        chromosomeSummary.numDSBs += damageType.presenceOfDSB;
+    }
+
+    return summary;
+}
+
 
 
 void SDDparser::printHeaderSummary(std::ostream& output) const {
@@ -361,10 +724,76 @@ void SDDparser::printHeaderSummary(std::ostream& output) const {
 	output << damageDefinitionMeaning(header.damage_definition) << "\n";
 	output << "The number of distinct damage lesions scored is " << header.damage_and_primary_count[0] << ", as a result of " << header.damage_and_primary_count[1] << " primary particles simulated.\n";
 
+// Summary of microenvironment and time for which the chemistry simulation ends.
+	output << microenvironmentMeaning(header.microenvironment) << "\n";
+	output << timeMeaning(header.time) << "\n";
+
+// Summary of Data field entries
+	output << dataEntriesMeaning(header.data_entries) << "\n";
+
 }
+
+
 void SDDparser::printExposureSummary(std::ostream& output) const {
-	
-	output << "Test for printExposureSummary\n";
+	output << "-----------------------------------------------/n";	
+	output << "------------------------ Chromosome Damages" <<
+		  "------------------------\n";
+	output << "-----------------------------------------------/n";
+
+	output << "\nNumber of exposures: " << exposures.size() << "\n";
+
+
+    for(const auto& exposure : exposures)
+    {
+        output << "\n----------------------------------------\n";
+        output << "Exposure " << exposure.exposureID << "\n";
+        output << "----------------------------------------\n";
+
+        output << "Number of damage entries: "
+            << exposure.damages.size()
+            << "\n";
+
+        auto chromosomeSummary =
+            summarizeChromosomeDamage(exposure);
+
+        if(chromosomeSummary.empty())
+        {
+            output << "\nNo chromosome-associated damage entries found.\n";
+            continue;
+        }
+
+        output << "\nDamage by chromosome:\n\n";
+
+	int totalBaseDamages = 0;
+	int totalSingleStrandBreaks = 0;
+	int totalDSBs = 0;
+
+        for(const auto& [chromosomeNumber, summary] :
+            chromosomeSummary)
+        {
+	    totalBaseDamages += summary.numBaseDamages;
+	    totalSingleStrandBreaks += summary.numSingleStrandBreaks;
+	    totalDSBs += summary.numDSBs;
+
+            output << "Chromosome " << chromosomeNumber << "\n";
+
+            output << "  Base damages: " << summary.numBaseDamages << "\n";
+
+            output << "  Single-strand breaks: " << summary.numSingleStrandBreaks << "\n";
+
+            output << "  Double-strand breaks: " << summary.numDSBs << "\n";
+
+	}
+
+	output << "\nExposure totals:\n";
+
+	output << "  Base damages: " << totalBaseDamages << "\n";
+
+	output << "  Single-strand breaks: " << totalSingleStrandBreaks << "\n";
+
+	output << "  Double-strand breaks: " << totalDSBs << "\n";
+
+    }
 }
 
 void SDDparser::printSummary(std::ostream& output) const

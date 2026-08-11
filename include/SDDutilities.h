@@ -77,6 +77,7 @@ inline std::vector<double> parseDoubleList(const std::vector<std::string>& value
     return output;
 }
 
+
 // Helper function to parse vectors consiting of ints
 inline std::vector<int> parseIntList(const std::vector<std::string>& values)
 {
@@ -463,6 +464,73 @@ inline std::string damageDefinitionMeaning(const std::vector<double>& damageDefi
 }
 
 
+inline std::string microenvironmentMeaning(const std::vector<double>& microenvVec)
+{
+    if (microenvVec.empty())
+    {
+	return "No microenvironment information submitted. Assumed the temperature is 25 degrees Celsius and normoxic conditions.\n";
+    }
+
+    else if (microenvVec.size() == 2)
+    {
+	return "Microenvironment temperature is: " + std::to_string(microenvVec[0]) + " degrees Celsius. The microenvironment oxygen concentration is: " + std::to_string(microenvVec[1]) + " molarity (M).\n";
+    }
+
+    else
+    {
+	return "Incorrect number of 'Microenvironment' field entries specified - Please specify two floats.\n";
+    }
+
+}
+
+
+inline std::string timeMeaning(double t)
+{
+    if (t == 0)
+    {
+	return "Time of: " + std::to_string(t) + " seconds specified, indicating simulations only consider direct physics interactions, no chemical interactions.\n";
+    }
+
+    else if (t > 0)
+    {
+	return "Time of: " + std::to_string(t) + "seconds from the time when the source particle was simulated to the time at which the chemistry simulation ends.\n";
+    }
+
+    else
+    {
+	return "Invalid 'Time' field entry encountered, please enter a value greater than or equal to 0.\n";
+    }
+}
+
+
+inline std::string dataEntriesMeaning(const std::vector<int>& dataEntriesVec)
+{
+    if (dataEntriesVec.empty())
+    {
+	return "Data entries required to interpret exposure data. Please refer to the official SDD paper to fill these fields.";
+    }
+
+    std::string result = "The following data field entries have been specified: ";
+
+    for (size_t i = 0; i < dataEntriesVec.size(); i++)
+    {
+	if (dataEntriesVec[i] == 1)
+	{
+	    result += "Field " + std::to_string(i+1) + ", ";
+	}
+	else
+	{
+	    continue;
+	}
+    }
+    result += ".\n";
+
+    return result;
+}
+
+// ------------------------------------------------------------------- //
+//          Functions to summarize damages to each chromosome	       //
+// ------------------------------------------------------------------- //
 
 
 

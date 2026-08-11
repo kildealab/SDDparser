@@ -8,6 +8,7 @@
 #include <ostream>
 #include <iostream>
 #include <fstream>
+#include <algorithm>
 
 #include "SDDtypes.h"
 
@@ -31,7 +32,7 @@ private:
 
     bool parseHeader(std::ifstream& file);
 
-    void parseDamage(std::ifstream& file);
+    bool parseDamageEntries(std::ifstream& file);
 
     std::vector<Exposure> exposures;
 
@@ -39,9 +40,11 @@ private:
     void printHeaderSummary(std::ostream& out) const;
 
 // std::cout to print summary to screen, remove to output to a file.
-    void printExposureSummary(std::ostream& out = std::cout) const;
+    void printExposureSummary(std::ostream& out) const;
 
-    std::map<int, std::size_t> exposureMap;
+//    std::map<int, std::size_t> exposureMap;
+
+    std::map<int, ChromosomeDamageSummary> summarizeChromosomeDamage(const Exposure& exposure) const;
 
 };
 

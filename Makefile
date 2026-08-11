@@ -7,7 +7,7 @@ TARGET = SDDparser
 SRC_DIR = source
 OBJ_DIR = objects
 
-SOURCES = main.cpp \
+SOURCES = $(SRC_DIR)/main.cpp \
           $(SRC_DIR)/SDDparser.cpp
 
 OBJECTS = $(OBJ_DIR)/main.o \
@@ -18,7 +18,7 @@ $(TARGET): $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJECTS)
 
 
-$(OBJ_DIR)/main.o: main.cpp
+$(OBJ_DIR)/main.o: $(SRC_DIR)/main.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
