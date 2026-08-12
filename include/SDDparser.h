@@ -12,39 +12,36 @@
 
 #include "SDDtypes.h"
 
+
 class SDDparser
 {
 
 public:
 
-    bool load(const std::string& filename);
+    bool load(const std::string& filename); // Function to check if initial SDD input file is loaded correctly.
     
-    const Header& getHeader() const;
+    const Header& getHeader() const; // Function to get header objects
 
-    const std::vector<Exposure>& getExposures() const;
+    const std::vector<Exposure>& getExposures() const; // Function to get Exposure objects 
 
-// Function that will run printHeaderSummary and printDataEntrySummary
-    void printSummary(std::ostream& out) const;
+    void printSummary(std::ostream& out) const; // Function that will run printHeaderSummary and printDataEntrySummary
+
 
 private:
 
-    Header header;
+    Header header;	// Instatiating the object header of struct Header
 
-    bool parseHeader(std::ifstream& file);
+    bool parseHeader(std::ifstream& file); // Function to check if header entries parsed correctly
 
-    bool parseDamageEntries(std::ifstream& file);
+    bool parseDamageEntries(std::ifstream& file); // Function to check if exposure data entries parsed correctly
 
     std::vector<Exposure> exposures;
 
-// Function to print the SDD header summary to an output file 
-    void printHeaderSummary(std::ostream& out) const;
+    void printHeaderSummary(std::ostream& out) const; // Function to print the SDD header summary to an output file 
 
-// std::cout to print summary to screen, remove to output to a file.
-    void printExposureSummary(std::ostream& out) const;
+    void printExposureSummary(std::ostream& out) const; // Function to print exposure data summary to an output file.
 
-//    std::map<int, std::size_t> exposureMap;
-
-    std::map<int, ChromosomeDamageSummary> summarizeChromosomeDamage(const Exposure& exposure) const;
+    std::map<int, ChromosomeDamageSummary> summarizeChromosomeDamage(const Exposure& exposure) const; // Function that maps numBaseDamages, numSingleStrandBreaks, and numDoubleStranBreaks to each chromosome in a given exposure. 
 
 };
 

@@ -1,112 +1,110 @@
-#include "SDDparser.h"
-#include "SDDutilities.h"
-
 #include <fstream>
 #include <iostream>
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
 
+#include "SDDparser.h"
+#include "SDDutilities.h"
+
+// Function to check if SDD file successfully loads, and if header and data blocks were successfully processed.
 bool SDDparser::load(const std::string& filename)
 {
-    std::ifstream file(filename);
+    std::ifstream file(filename);		// Create input file stream object file using the input filename.
 
-    if(!file)
+    if(!file)					// Check if SDD file loads correctly.
         { 
-	 std::cerr << "ERROR: SDD header parsing failed: "
-		   << filename << std::endl ;
-
+	 std::cerr << "ERROR: SDD header parsing failed: " << filename << std::endl;
 	 return false;
 	}
 
-    header = Header();
+    header = Header();				// Clear header and exposure objects prior to loading file
     exposures.clear();
 
-    if(!parseHeader(file))
+    if(!parseHeader(file))			// Check if SDD header can be parsed
     {
     	std::cerr << "ERROR: SDD header parsing failed." << std::endl;
         return false;
     }
 
-    if(!parseDamageEntries(file))
+    if(!parseDamageEntries(file))		// Check if SDD data block can be parsed
     {
     	std::cerr << "ERROR: SDD data entry parsing failed.\n";
     	return false;
     }
 
-    return true;
+    return true;				// If all checks pass, return true
 }
 
-// List all valid SDD header field names.
+// List all valid SDD header field names. Check to see if invalid SDD header field name has been encountered.
 const std::unordered_set<std::string> validSDDHeaderFields =
 {
-    "sdd version", 			// Required
-    "software",  			// Not required
-    "author",				// Required
-    "simulation details",   		// Not Required
-    "source",  				// Required
-    "source type", 			// Required
-    "incident particles",  		// Not Required
-    "mean particle energy",		// Not required
-    "energy distribution",		// Not required
-    "particle fraction",		// Not required
-    "dose or fluence",			// Not required
-    "dose rate",			// Not required
-    "irradiation target",		// Not Required
-    "volumes",				// Required
-    "chromosome sizes",			// Required
-    "dna density",			// Required
-    "cell cycle phase",			// Required
-    "dna structure",			// Required
-    "in vitro / in vivo",		// Not required
-    "proliferation status",		// Not required
-    "microenvironment",			// Not required
-    "damage definition",		// Required
-    "time",				// Not required
-    "damage and primary count",		// Required
-    "data entries",			// Required
-    "additional information"		// Not required
+    "sdd version",
+    "software",
+    "author",
+    "simulation details",
+    "source",
+    "source type",
+    "incident particles",
+    "mean particle energy",
+    "energy distribution",
+    "particle fraction",
+    "dose or fluence",
+    "dose rate",
+    "irradiation target",
+    "volumes",
+    "chromosome sizes",
+    "dna density",
+    "cell cycle phase",
+    "dna structure",
+    "in vitro / in vivo",
+    "proliferation status",
+    "microenvironment",
+    "damage definition",
+    "time",
+    "damage and primary count",
+    "data entries",
+    "additional information"
 };
 
+// Function to store the values associated with the various SDD header fields, to be summarized later in printHeaderSummary
 bool SDDparser::parseHeader(std::ifstream& file)
 {
-    std::string line;
+    std::string line;			// Create line variable
 
-
-    while(std::getline(file,line))
+    while(std::getline(file,line))	// Loop through each line in the SDD file
     {
+        line = trim(line);		// Remove all white spaces, convert line to a vector of strings
 
-        line = trim(line);
-
-
-        if(line.empty())
+        if(line.empty())		// If line empty, check next line
         {
 	    continue;
 	}
         
-	// Remove final semicolon
-        if(line.back()==';')
-            line.pop_back();
+        if(line.back()==';')		// If line ends in ';'
+        {
+	    line.pop_back();		// Remove last element of the line vector ';'
+	}
 
-        if(normalizeHeaderKey(line) == "***endofheader***")
+        if(normalizeHeaderKey(line) == "***endofheader***")		// If end of header block reached, give success message
         {    std::cout << "SDD header parsed successfully.\n";
 		
 	     return true;
 	}
 
-        // Split header entry by commas
-        std::vector<std::string> tokens = split(line,',');
+        std::vector<std::string> tokens = split(line,',');		// Split header entries by commas, creating a vector of strings
 
-        if(tokens.empty())
-            continue;
+        if(tokens.empty())			
+        {
+	    continue;
+	}
 
-        std::string original_key = tokens[0]; //Before removing whitespaces and capitalizations
-	std::string key = normalizeHeaderKey(original_key); // Headers are now lower case and have no leading or trailing whitespaces
+        std::string original_key = tokens[0]; //Header field names before removing whitespaces and capitalizations
+	std::string key = normalizeHeaderKey(original_key); // Header field names are now lower case and have no leading or trailing whitespaces
+	
+//	std::cout << "Reading header field: [" << original_key << "]\n"; // Printing out current SDD header field being read for DEBUGGING
 
-	// Printing out current SDD header field being read for DEBUGGING
-	std::cout << "Reading header field: [" << original_key << "]\n";
-
-	// Check if SDD header field is supported
+	// Check if SDD header field is in the above list of supported fields
 	if(validSDDHeaderFields.find(key) == validSDDHeaderFields.end())
 	{
     	    std::cerr
@@ -114,22 +112,18 @@ bool SDDparser::parseHeader(std::ifstream& file)
     	    return false;
 	}
 
-        // Remaining values
-        std::vector<std::string> values(
-            tokens.begin()+1,
-            tokens.end()
-        );
+        std::vector<std::string> values(tokens.begin()+1, tokens.end()); // Check next header field 
 
         //----------------------------
-        // Map SDD fields
+        // Map SDD header fields
         //----------------------------
 
 	// Fields with different numbering data types are converted to floats.
-	// Fields with strings and ints/floats are kept as strings.
+	// Fields with strings and ints/floats are kept as strings and handled later.
 
         if(key=="sdd version")
         {
-            header.sdd_version = values[0];
+            header.sdd_version = values[0]; 
         }
 
         else if(key=="software")
@@ -224,7 +218,7 @@ bool SDDparser::parseHeader(std::ifstream& file)
 
 	else if(key=="proliferation status")
 	{
-	    header.proliferation_status = std::stoi(values[0]);
+	    header.proliferation_status.push_back(values[0]);
 	}
 	
 	else if(key=="microenvironment")
@@ -259,71 +253,121 @@ bool SDDparser::parseHeader(std::ifstream& file)
 
         else
         {
-            // Unknown SDD field
-            std::cerr << "Unknown SDD header field entry = " << key << "\n";
-
+            std::cerr << "Unknown SDD header field entry = " << key << "\n"; // If specified header name unknown
         }
 
     }
-	// If ***EndOfHeader*** not found, exit with error
-	std::cerr << "ERROR: End of SDD header not found.\n";
-	
+
+	std::cerr << "ERROR: End of SDD header not found.\n"; // If ***EndOfHeader*** not found, exit with error
 	return false;
 }
 
+
+// Function to store the different data field entries to be summarized in printExposureSummary
 bool SDDparser::parseDamageEntries(std::ifstream& file)
 {
 
     std::string line;
 
-    std::size_t expectedFields = 0;
+    int currentExposureID = 0;			// Counter to record number of exposures stored in the SDD file.
 
-    int currentExposureID = 0;
+    // Determine expected number of fields. 
+    std::size_t expectedFields = 0;		// Used to align SDD 'Data entries' field entries with the associated data fields. 
 
-    for(int enabled : header.data_entries)
-    {
+    for(int enabled : header.data_entries)	// Check if the entries in 'Data entries' header = 1, indicating that field is used in the data block.
+    {						// Increment the number of expected fields if a 1 is encountered.
 	if(enabled == 1)
+	{
         expectedFields++;
+	}
     }
 
-    while(std::getline(file,line))
+    while(std::getline(file,line))		// Loop through the lines of the SDD file
     {
-	line = trim(line);
+	line = trim(line);			// Remove trailing and leading whitespaces
 
-        if(line.empty())
-            continue;
+        if(line.empty())			// If line is empty, check next line.
+	{ 
+           continue;
+	}
 
-        DamageEntry damage;
+        DamageEntry damage;			// Instantiate DamageEntry object called damage
 
-        damage.rawLine = line;
+        damage.rawLine = line;			// Use to store the raw string of the data entry
 
-	//--------------------------------------------------
-        // Split the data entry into Fields 1-7
-        //--------------------------------------------------
+	//--------------------------------------------------------------------------------
+        // Split the data entry into Fields 1-7 -- Will do Optional fields 8-14 in future.
+        //--------------------------------------------------------------------------------
 
-        std::vector<std::string> fields = split(line, ';');
+        std::vector<std::string> fields = split(line, ';');	// Data block fields are delimited by ';'
 
-        if(fields.size() != expectedFields)
-        {
-            std::cerr << "ERROR: SDD data entry contains "
-            << fields.size()
-            << " fields, but the header specifies "
-            << expectedFields
-            << " fields.\n";
-
+        if(fields.size() != expectedFields) // If statement to check if the SDD header 'Data entries' number of true fields equals the number of fields in the
+	{			            // data section.
+            std::cerr << "ERROR: SDD data entry contains " << fields.size() << " fields, but the header specifies " << expectedFields << " fields.\n";
     	    return false;
 	}
 
-	
-	std::size_t fieldIndex = 0;
- 	//--------------------------------------------------
+	std::size_t fieldIndex = 0;	    // Variable to store the correct index and thus data field used in the data block according to the 'Data entries' header.
+
+	//---------------------------------------------------------------------//
+	// Validating which header fields are mandatory and which are optional //
+	//---------------------------------------------------------------------//
+
+	// Field 1 is mandatory
+
+	bool hasField1 = header.data_entries.size() > 0 && header.data_entries[0] == 1;
+
+	bool hasField2 = header.data_entries.size() > 1 && header.data_entries[1] == 1;
+
+	bool hasField3 = header.data_entries.size() > 2 && header.data_entries[2] == 1;
+
+	bool hasField4 = header.data_entries.size() > 3 && header.data_entries[3] == 1;
+
+	bool hasField5 = header.data_entries.size() > 4 && header.data_entries[4] == 1;
+
+	bool hasField6 = header.data_entries.size() > 5 && header.data_entries[5] == 1;
+
+	bool hasField7 = header.data_entries.size() > 6 && header.data_entries[6] == 1;
+
+	// Field 1 is mandatory
+    	if(!hasField1)
+    	{
+            std::cerr << "ERROR: Field 1 (Classification) is mandatory.\n";
+            return false;
+    	}
+
+	// Either Field 2 OR both Fields 3 and 4 must be present.
+	if(!hasField2 && !(hasField3 && hasField4))
+	{
+    	    std::cerr << "ERROR: SDD data entries must contain either Field 2 (Spatial Position) or both "
+        	      << "Field 3 (Chromosome IDs) and Field 4 (Chromosome Position).\n";
+    	    return false;
+	}
+
+	// Fields 3 and 4 must appear together.
+	if(hasField3 != hasField4)
+	{
+    	    std::cerr << "ERROR: Fields 3 and 4 must either both be present or both be absent.\n";
+    	    return false;
+	}
+
+
+	// Either Field 6 or Field 7 must be present.
+	if(!hasField6 && !hasField7)
+	{
+    	    std::cerr << "ERROR: SDD data entries must contain either Field 6 (Damage Types) or Field 7 "
+        	  << "(Full Break Specification) or both.\n";
+    	    return false;
+	}
+
+	//--------------------------------------------------
         // Field 1: Classification
         //--------------------------------------------------
 
-        if(header.data_entries.size() > 0 && header.data_entries[0] == 1)
+        if(hasField1) // Check if first 'Data entries' field is 1.
         {
 
- 	    if(fieldIndex >= fields.size())
+ 	    if(fieldIndex >= fields.size())	// Check if mandatory Data Field 1 entry is missing.
     	    {
         	std::cerr << "ERROR: Missing SDD data entry Field 1.\n";
         	return false;
@@ -363,7 +407,7 @@ bool SDDparser::parseDamageEntries(std::ifstream& file)
         // Field 2: Spatial Position
         //--------------------------------------------------
 
-        if(header.data_entries.size() > 1 && header.data_entries[1] == 1)
+        if(hasField2)
         {
 
  	    if(fieldIndex >= fields.size())
@@ -371,6 +415,7 @@ bool SDDparser::parseDamageEntries(std::ifstream& file)
         	std::cerr << "ERROR: Missing SDD data entry Field 2.\n";
         	return false;
     	    }
+
 	    std::vector<std::string> fieldEntries;
 
 	    std::vector<std::string> subfields = split(fields[fieldIndex], '/');
@@ -423,12 +468,12 @@ bool SDDparser::parseDamageEntries(std::ifstream& file)
         // Field 3: Chromosome IDs
         //--------------------------------------------------
 
-        if(header.data_entries.size() > 2 && header.data_entries[2] == 1)
+        if(hasField3)
         {
 
- 	    if(fieldIndex >= fields.size())
-    	    {
-        	std::cerr << "ERROR: Missing SDD data entry Field 3.\n";
+ 	    if(fieldIndex >= fields.size()) 
+            {
+		std::cerr << "ERROR: Missing SDD data entry Field 3.\n";
         	return false;
     	    }
 
@@ -458,12 +503,12 @@ bool SDDparser::parseDamageEntries(std::ifstream& file)
         // Field 4: Chromosome Position
         //--------------------------------------------------
 
-        if(header.data_entries.size() > 3 && header.data_entries[3] == 1)
+        if(hasField4)
         {
 
- 	    if(fieldIndex >= fields.size())
-    	    {
-        	std::cerr << "ERROR: Missing SDD data entry Field 4.\n";
+ 	    if(fieldIndex >= fields.size()) 
+            {
+		std::cerr << "ERROR: Missing SDD data entry Field 4.\n";
         	return false;
     	    }
 
@@ -485,30 +530,32 @@ bool SDDparser::parseDamageEntries(std::ifstream& file)
         // Field 5: Cause
         //--------------------------------------------------
 
-        if(header.data_entries.size() > 4 && header.data_entries[4] == 1)
+        if(hasField5)
         {
 
- 	    if(fieldIndex >= fields.size())
-    	    {
-        	std::cerr << "ERROR: Missing SDD data entry Field 5.\n";
+ 	    if(fieldIndex >= fields.size()) 
+            {
+		std::cerr << "ERROR: Missing SDD data entry Field 5.\n";
         	return false;
     	    }
+            
+	    std::vector<std::string> values = split(fields[fieldIndex], ',');
 
-            std::vector<std::string> values = split(fields[fieldIndex], ',');
 
-            if(values.size() >= 1 && !values[0].empty())
-                damage.damageCause.cause =
-                    std::stoi(trim(values[0]));
+	    if(values.size() != 3)
+    	    {
+                std::cerr << "ERROR: Field 5 must contain exactly 3 values.\n";
+                return false;
+    	    }
 
-            if(values.size() >= 2 && !values[1].empty())
-                damage.damageCause.numDirectDamages =
-                    std::stoi(trim(values[1]));
+    	    damage.damageCause.cause = std::stoi(trim(values[0]));
 
-            if(values.size() >= 3 && !values[2].empty())
-                damage.damageCause.numIndirectDamages =
-                    std::stoi(trim(values[2]));
-        
-	    fieldIndex++;
+    	    damage.damageCause.numDirectDamages = std::stoi(trim(values[1]));
+
+    	    damage.damageCause.numIndirectDamages = std::stoi(trim(values[2]));
+
+    	    fieldIndex++;
+
 	}
 
 
@@ -516,12 +563,12 @@ bool SDDparser::parseDamageEntries(std::ifstream& file)
         // Field 6: Damage Types
         //--------------------------------------------------
 
-        if(header.data_entries.size() > 5 && header.data_entries[5] == 1)
+        if(hasField6)
         {
 
- 	    if(fieldIndex >= fields.size())
-    	    {
-        	std::cerr << "ERROR: Missing SDD data entry Field 6.\n";
+ 	    if(fieldIndex >= fields.size()) 
+            {
+		std::cerr << "ERROR: Missing SDD data entry Field 6.\n";
         	return false;
     	    }
 
@@ -536,7 +583,7 @@ bool SDDparser::parseDamageEntries(std::ifstream& file)
                     std::stoi(trim(values[1]));
 
             if(values.size() >= 3 && !values[2].empty())
-                damage.damageType.presenceOfDSB =
+                damage.damageType.presenceOfDoubleStrandBreaks =
                     std::stoi(trim(values[2]));
         
 	    fieldIndex++;
@@ -547,12 +594,11 @@ bool SDDparser::parseDamageEntries(std::ifstream& file)
         // Field 7: Full Break Specification
         //--------------------------------------------------
 
-        if(header.data_entries.size() > 6 && header.data_entries[6] == 1)
+        if(hasField7)
         {
-
- 	    if(fieldIndex >= fields.size())
-    	    {
-        	std::cerr << "ERROR: Missing SDD data entry Field 7.\n";
+ 	    if(fieldIndex >= fields.size()) 
+            {
+		std::cerr << "ERROR: Missing SDD data entry Field 4.\n";
         	return false;
     	    }
 
@@ -667,7 +713,7 @@ std::map<int, ChromosomeDamageSummary> SDDparser::summarizeChromosomeDamage(cons
 
         chromosomeSummary.numSingleStrandBreaks += damageType.numSingleBackboneBreaks;
 
-        chromosomeSummary.numDSBs += damageType.presenceOfDSB;
+        chromosomeSummary.numDoubleStrandBreaks += damageType.presenceOfDoubleStrandBreaks;
     }
 
     return summary;
@@ -678,32 +724,38 @@ std::map<int, ChromosomeDamageSummary> SDDparser::summarizeChromosomeDamage(cons
 void SDDparser::printHeaderSummary(std::ostream& output) const {
 
 // First section is the radiation information
-	output << "--------------------------- Incident Radiation Information "
-	       << "---------------------------\n\n";
+	output << "-----------------------     Incident Radiation Information"
+	       << "      -----------------------\n\n";
 
 // Source summary - prints the string entry
 	output << "Radiation source: " << header.source << "\n";
 	
 // Source Type summary
 	output << "Source type: " << header.source_type << " ("
-	<< sourceTypeMeaning(header.source_type) << ")\n";
+	<< sourceTypeMeaning(header.source_type) << ")" << "\n";
 
 // Incident Particles summary
-	output << incidentParticlesMeaning(header.incident_particles) << "\n" <<
-	"Each specified incident particle had the following fluence fractions in that order: ";
-	for (size_t i = 0; i < header.particle_fraction.size(); i++)
+	if (header.incident_particles.size() == 0)
 	{
-	    output << header.particle_fraction[i];
+	    output << "ERROR: No incident particles specified!\n";
 	}
-	output << "\n";
+	else
+	{
+	    output << "Incident particle fluence fractions: \n";
+	    for (size_t i = 0; i < header.incident_particles.size(); i++)
+	    {
+	        output << incidentParticlesMeaning(header.incident_particles[i])
+		<< ": " << header.particle_fraction[i] << "\n";
+	    }
+	}
 
 // Dose or fluence summary
 	output << doseOrFluenceMeaning(header.dose_or_fluence) << "\n"; 
 
 
 // Second section is the target information
-	output << "-------------------------- Radiation Target Information" <<
-		  "--------------------------\n";
+	output << "-----------------------      Radiation Target Information" <<
+		  "      -----------------------\n\n";
 // Irradiation target
 	output << "Radiation incident on: " << header.irradiation_target << "\n";
 
@@ -713,12 +765,12 @@ void SDDparser::printHeaderSummary(std::ostream& output) const {
 // Summary of chromosome number and sizes, DNA density, cell cycle phase, proliferation status.
 	output << "The number of chromosomes specified were: " << header.chromosome_sizes[0] << ". Subsequent field entries are the chromosome sizes in units of Mega base pairs (Mbp),\nwith an average DNA density of " << header.DNA_density << " Mbp per cubic micrometer.\n";
 	output << cellCyclePhaseMeaning(header.cell_cycle_phase) << "\n" ;
-	output << "The DNA is structured as: " << header.DNA_structure[0] << " (" << dnaStructureMeaning(header.DNA_structure) << ")\n";
-	output << "The cell Proliferation status is: " << header.proliferation_status << " (" << proliferationStatusMeaning(header.proliferation_status) << ") \n\n";
+	output << "The DNA is structured as: " << header.DNA_structure[0] << " (" << dnaStructureMeaning(header.DNA_structure) << ")" << "\n";
+	output << "The cell Proliferation status is: " << header.proliferation_status[0] << " (" << proliferationStatusMeaning(header.proliferation_status) << ")" << "\n";
 
 //Third section is the DNA damage and exposure information
-	output << "------------------------- DNA Damage Information" <<
-		  "-------------------------\n";
+	output << "\n-----------------------      DNA Damage Information" <<
+		  "      -----------------------\n\n";
 
 // Summary of the Damage definition and damage and primary count header fields
 	output << damageDefinitionMeaning(header.damage_definition) << "\n";
@@ -730,24 +782,26 @@ void SDDparser::printHeaderSummary(std::ostream& output) const {
 
 // Summary of Data field entries
 	output << dataEntriesMeaning(header.data_entries) << "\n";
-
 }
 
 
 void SDDparser::printExposureSummary(std::ostream& output) const {
-	output << "-----------------------------------------------/n";	
-	output << "------------------------ Chromosome Damages" <<
-		  "------------------------\n";
-	output << "-----------------------------------------------/n";
+	output << "----------------------------------------------------------------------------\n";	
+	output << "-----------------------      Chromosome Damages      -----------------------\n";
+	output << "----------------------------------------------------------------------------\n";
 
 	output << "\nNumber of exposures: " << exposures.size() << "\n";
 
+// Total damages over all exposures
+	int overallBaseDamages = 0;
+	int overallSingleStrandBreaks = 0;
+	int overallDoubleStrandBreaks = 0;
 
     for(const auto& exposure : exposures)
     {
-        output << "\n----------------------------------------\n";
+        output << "\n-------------------------------------------\n";
         output << "Exposure " << exposure.exposureID << "\n";
-        output << "----------------------------------------\n";
+        output << "-------------------------------------------\n";
 
         output << "Number of damage entries: "
             << exposure.damages.size()
@@ -764,16 +818,17 @@ void SDDparser::printExposureSummary(std::ostream& output) const {
 
         output << "\nDamage by chromosome:\n\n";
 
+// Total damages per exposure
 	int totalBaseDamages = 0;
 	int totalSingleStrandBreaks = 0;
-	int totalDSBs = 0;
+	int totalDoubleStrandBreaks = 0;
 
         for(const auto& [chromosomeNumber, summary] :
             chromosomeSummary)
         {
 	    totalBaseDamages += summary.numBaseDamages;
 	    totalSingleStrandBreaks += summary.numSingleStrandBreaks;
-	    totalDSBs += summary.numDSBs;
+	    totalDoubleStrandBreaks += summary.numDoubleStrandBreaks;
 
             output << "Chromosome " << chromosomeNumber << "\n";
 
@@ -781,7 +836,7 @@ void SDDparser::printExposureSummary(std::ostream& output) const {
 
             output << "  Single-strand breaks: " << summary.numSingleStrandBreaks << "\n";
 
-            output << "  Double-strand breaks: " << summary.numDSBs << "\n";
+            output << "  Double-strand breaks: " << summary.numDoubleStrandBreaks << "\n";
 
 	}
 
@@ -791,16 +846,39 @@ void SDDparser::printExposureSummary(std::ostream& output) const {
 
 	output << "  Single-strand breaks: " << totalSingleStrandBreaks << "\n";
 
-	output << "  Double-strand breaks: " << totalDSBs << "\n";
+	output << "  Double-strand breaks: " << totalDoubleStrandBreaks << "\n";
+
+// Add this exposure's totals to the overall totals
+        overallBaseDamages += totalBaseDamages;
+        overallSingleStrandBreaks += totalSingleStrandBreaks;
+        overallDoubleStrandBreaks += totalDoubleStrandBreaks;
 
     }
+
+    output << "\n===============================================\n";
+    
+    output << "Overall chromosome-associated damage:\n";
+
+    output << "  Base damages: "
+           << overallBaseDamages << "\n";
+
+    output << "  Single-strand breaks: "
+           << overallSingleStrandBreaks << "\n";
+
+    output << "  Double-strand breaks: "
+           << overallDoubleStrandBreaks << "\n";
+
+    output << "=================================================\n";
+
 }
+
+
 
 void SDDparser::printSummary(std::ostream& output) const
 {
-    output << "========================================\n";
-    output << "             SDD FILE SUMMARY\n";
-    output << "========================================\n\n";
+    output << "==========================================================================\n";
+    output << "=======================      SDD FILE SUMMARY	   =======================\n";
+    output << "==========================================================================\n\n";
 
     printHeaderSummary(output);
 
@@ -808,6 +886,5 @@ void SDDparser::printSummary(std::ostream& output) const
 
     printExposureSummary(output);
 
-    output << "\n";
-    output << "========================================\n";
+
 }

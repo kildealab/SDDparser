@@ -1,33 +1,31 @@
-========================================
-             SDD FILE SUMMARY
-========================================
+==========================================================================
+=======================      SDD FILE SUMMARY	   =======================
+==========================================================================
 
---------------------------- Incident Radiation Information ---------------------------
+-----------------------     Incident Radiation Information      -----------------------
 
 Radiation source: Secondary particles of photoneutrons from a LINAC
-Source type: 2 (Specified one or multiple particles with energy distributions as incident particle source -- Ensure 'Energy distribution' is specified
-)
-Specified ELECTRONS as the incident particles
+Source type: 2 (Specified one or multiple particles with energy distributions as incident particle source -- Ensure 'Energy distribution' is specified)
+Incident particle fluence fractions: 
+ELECTRONS: 1
+Unknown value specified in 'Dose or fluence' field, the first entry should be either '0', '1', or '2'.
+-----------------------      Radiation Target Information      -----------------------
 
-Each specified incident particle had the following fluence fractions in that order: 1
-Unknown value specified in 'Dose or fluence' field, the first entry should be either '0', '1', or '2'
-
--------------------------- Radiation Target Information--------------------------
 Radiation incident on: Full human cubic shape nuclear DNA model containing ~6.3 Gbp constructed using voxels
-The cell is modeled as an ELLIPSOID with side lengths (X, Y, Z) = (15.632000, 15.632000, 15.632000) micrometers
-The corresponding Euler rotations of the cell are (phi, theta, psi) = (0.000000, 0.000000, 0.000000)
-The cell nucleus is modeled as an ELLIPSOID with side lengths (X, Y, Z) = (7.802000, 7.802000, 7.802000) micrometers
-The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (0.000000, 0.000000, 0.000000)
+The cell is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (15.632000, 15.632000, 15.632000) micrometers.
+The corresponding Euler rotations of the cell are (phi, theta, psi) = (0.000000, 0.000000, 0.000000).
+The cell nucleus is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (7.802000, 7.802000, 7.802000) micrometers.
+The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (0.000000, 0.000000, 0.000000).
 
 The number of chromosomes specified were: 46. Subsequent field entries are the chromosome sizes in units of Mega base pairs (Mbp),
 with an average DNA density of 13.3 Mbp per cubic micrometer.
 Cell cycle phase unknown, if desired, specify: 1 (G0), 2 (G1), 3 (S), 4 (G2), or 5 (M).
 
-The DNA is structured as: 0 (DNA structured in a 'Whole Nucleus' arrangement
-)
-The cell Proliferation status is: 1 (Cell(s) are in a proliferating state) 
+The DNA is structured as: 0 (DNA structured in a 'Whole Nucleus' arrangement)
+The cell Proliferation status is: 1 (Cell(s) are in a proliferating state)
 
-------------------------- DNA Damage Information-------------------------
+-----------------------      DNA Damage Information      -----------------------
+
 Damaged recorded as a result of direct and indirect (chemistry) effects.
 Backbone lesions that are considered as DSBs are within a distance of 10.000000 bp.
 Base damages a distance of 10.000000 bp beyond the outer backbone damages are stored in the same site.
@@ -38,16 +36,18 @@ No microenvironment information submitted. Assumed the temperature is 25 degrees
 
 Time of: 0.000000 seconds specified, indicating simulations only consider direct physics interactions, no chemical interactions.
 
-The following data field entries have been specified: Field 1, Field 2, Field 3, Field 4, Field 5, Field 6, Field 7, .
+The following data field entries have been specified: Field 1, Field 2, Field 3, Field 4, Field 5, Field 6, Field 7.
 
 
------------------------------------------------/n------------------------ Chromosome Damages------------------------
------------------------------------------------/n
+----------------------------------------------------------------------------
+-----------------------      Chromosome Damages      -----------------------
+----------------------------------------------------------------------------
+
 Number of exposures: 1
 
-----------------------------------------
+-------------------------------------------
 Exposure 1
-----------------------------------------
+-------------------------------------------
 Number of damage entries: 3051
 
 Damage by chromosome:
@@ -242,4 +242,9 @@ Exposure totals:
   Single-strand breaks: 2531
   Double-strand breaks: 104
 
-========================================
+===============================================
+Overall chromosome-associated damage:
+  Base damages: 965
+  Single-strand breaks: 2531
+  Double-strand breaks: 104
+=================================================

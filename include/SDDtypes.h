@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 // The SDD header may contain any of the following header fields.
+// If header field provided is not in this list, exit with error.
 struct Header
 {
     std::string sdd_version;
@@ -27,7 +28,7 @@ struct Header
     std::vector<double> cell_cycle_phase; 
     std::vector<int> DNA_structure; 
     int in_vitro_or_in_vivo; 
-    int proliferation_status;
+    std::vector<std::string> proliferation_status;
     std::vector<double> microenvironment;
     std::vector<double> damage_definition;
     double time;
@@ -37,24 +38,25 @@ struct Header
 
 };
 
+
+// The following structures follow the SDD data field structure specifications
+
 //--------------------------------------------------
-// Data Entry 1
-// Classification
+// Data Field Entry 1 - Classification
 //--------------------------------------------------
 struct Classification
 {
-    int exposureMarker = 0;
-    int eventID = 0;
+    int exposureMarker = 0; 		// 2 for new exposure, 1 for new primary particle from same exposure, 0 for same primary particle as previous row
+    int eventID = 0;	    		// The ID number of the primary particle that was simulated
 };
 
 //--------------------------------------------------
-// Data Entry 2
-// Spatial Position
+// Data Entry 2 - Spatial Position
 //--------------------------------------------------
-struct Position
+struct Position 			// Records the center and extent of each recorded damage within the bounding box specified in Header Field 14 (in micrometers)
 {
     double x = 0.0;
-    double x_min = 0.0;
+    double x_min = 0.0; 
     double x_max = 0.0;
     double y = 0.0;
     double y_min = 0.0;
@@ -65,73 +67,59 @@ struct Position
 };
 
 //--------------------------------------------------
-// Data Entry 3
-// Chromosome IDs
+// Data Entry 3 - Chromosome IDs
 //--------------------------------------------------
-struct ChromosomeID
+struct ChromosomeID 			// Stores the identity of the chromatid where the damage occurred 
 {
-    int dnaStructure = 0;
-    int chromosomeNumber = 0;
-    int chromatidNumber = 0;
-    int chromosomeArm = 0;
+    int dnaStructure = 0; 		// 0 = unspecified, 1 = heterochromatin, 2 = euchromatin, 3 = free DNA, 4 = mtDNA/bacterial DNA/viral DNA.
+    int chromosomeNumber = 0; 		// 1-46 for human chromosome
+    int chromatidNumber = 0; 		// 1 for unduplicated chromosomes, 1 or 2 for duplicated chromosomes in the S/G2/M phases
+    int chromosomeArm = 0; 		// 0 for short p-arm, 1 for long q-arm.
 };
 
 //--------------------------------------------------
-// Data Entry 4
-// Chromosome Position
+// Data Entry 4 - Chromosome Position
 //--------------------------------------------------
-struct ChromosomePosition
+struct ChromosomePosition 		// Indicates damage position along the chromosome's genetic length defined from the start of the short p arm to the end of the long q arm
 {
-    double position = 0.0; 
-    bool isFractional = false; 
+    double position = 0.0; 		// Stored as either a fraction of the total length between 0 and 1, or the length in base pairs if greater than or equal to 1. 
+    bool isFractional = false; 		// Flag to check if position entered is in base pairs or fractional.
 };
 
 //--------------------------------------------------
-// Data Entry 5
-// Cause
+// Data Entry 5 - Cause
 //--------------------------------------------------
-struct DamageCause
+struct DamageCause 
 {
-    int cause = 0;
-    int numDirectDamages = 0;
-    int numIndirectDamages = 0;
+    int cause = 0; 			// 0 = direct physical damage, 1 = indirect chemical damage, 2 = combination of direct + indirect, 3 = charge migration damage
+    int numDirectDamages = 0; 		// Counts the number of direct damages
+    int numIndirectDamages = 0; 	// Counts the number of indirect damages
 };
 
 //--------------------------------------------------
-// Data Entry 6
-// Damage Types
+// Data Entry 6 - Damage Types
 //--------------------------------------------------
-struct DamageType
+struct DamageType			// Specifies the type of damage present at a given site. Damages separated by less than the minimum distance of base pairs specified in header field 22 are scored in a single data block.
 {
-    int numBaseDamages = 0;
+    int numBaseDamages = 0;		
     int numSingleBackboneBreaks = 0;
-    int presenceOfDSB = 0;
+    int presenceOfDoubleStrandBreaks = 0; // Binary flag 0 for no, 1 for yes.
 };
 
 //--------------------------------------------------
-// Data Entry 7
-// Full break spec
+// Data Entry 7 - Full break spec
 //--------------------------------------------------
 struct FullBreakSpec
 {
-    // 1 = 5' to 3' backbone
-    // 2 = 5' to 3' bases
-    // 3 = 3' to 5' bases
-    // 4 = 3' to 5' backbone
-    std::vector<int> strand;
+    std::vector<int> strand;		// 1 = 5' to 3' backbone, 2 = 5' to 3' bases, 3 = 3' to 5' bases, 4 = 3' to 5' backbone
 
-    // Identifies the DNA base where damage occurs
-    std::vector<int> base;
+    std::vector<int> base;		// Identifies the DNA base where damage occurs
 
-    // 0 = no damage
-    // 1 = direct damage
-    // 2 = indirect damage
-    // 3 = direct + indirect damage
-    std::vector<int> baseDamageType;
+    std::vector<int> baseDamageType; 	// 0 = no damage, 1 = direct damage, 2 = indirect damage, 3 = direct + indirect damage
 };
 
 
-// Exposure entry structure, need to include optional fields later.
+// Exposure entry structure, need to include optional fields 8-14 later.
 struct DamageEntry
 {
     Classification classification;
@@ -146,6 +134,7 @@ struct DamageEntry
 
 };
 
+// Exposure structure for formatting summary file according to the damages from each exposure ID
 struct Exposure
 {
     int exposureID = 0;
@@ -156,12 +145,11 @@ struct Exposure
 //--------------------------------------------------
 // Chromosome damage summary
 //--------------------------------------------------
-struct ChromosomeDamageSummary
+struct ChromosomeDamageSummary // Important damage information to be summarized for each chromosome, used to format summary file output.
 {
     int dnaStructure = 0;
     int chromosomeNumber = 0;
-
     int numBaseDamages = 0;
     int numSingleStrandBreaks = 0;
-    int numDSBs = 0;
+    int numDoubleStrandBreaks = 0;
 };
