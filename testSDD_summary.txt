@@ -42,7 +42,7 @@ The following data field entries have been specified: Field 1, Field 2, Field 3,
 -----------------------      Chromosome Damages      -----------------------
 ----------------------------------------------------------------------------
 
-Number of exposures: 1
+Number of exposures: 2
 
 -------------------------------------------
 Exposure 1
@@ -109,9 +109,74 @@ Exposure totals:
   Single-strand breaks: 27
   Double-strand breaks: 0
 
-===============================================
-Overall chromosome-associated damage:
+-------------------------------------------
+Exposure 2
+-------------------------------------------
+Number of damage entries: 27
+
+Damage by chromosome:
+
+Chromosome 6
+  Base damages: 0
+  Single-strand breaks: 1
+  Double-strand breaks: 0
+Chromosome 8
+  Base damages: 0
+  Single-strand breaks: 1
+  Double-strand breaks: 0
+Chromosome 9
+  Base damages: 3
+  Single-strand breaks: 4
+  Double-strand breaks: 0
+Chromosome 10
+  Base damages: 0
+  Single-strand breaks: 4
+  Double-strand breaks: 0
+Chromosome 12
+  Base damages: 0
+  Single-strand breaks: 3
+  Double-strand breaks: 0
+Chromosome 16
+  Base damages: 0
+  Single-strand breaks: 2
+  Double-strand breaks: 0
+Chromosome 18
+  Base damages: 0
+  Single-strand breaks: 2
+  Double-strand breaks: 0
+Chromosome 25
+  Base damages: 0
+  Single-strand breaks: 2
+  Double-strand breaks: 0
+Chromosome 29
+  Base damages: 0
+  Single-strand breaks: 1
+  Double-strand breaks: 0
+Chromosome 32
+  Base damages: 0
+  Single-strand breaks: 1
+  Double-strand breaks: 0
+Chromosome 39
+  Base damages: 0
+  Single-strand breaks: 1
+  Double-strand breaks: 0
+Chromosome 40
+  Base damages: 0
+  Single-strand breaks: 2
+  Double-strand breaks: 0
+Chromosome 42
+  Base damages: 0
+  Single-strand breaks: 3
+  Double-strand breaks: 0
+
+Exposure totals:
   Base damages: 3
   Single-strand breaks: 27
+  Double-strand breaks: 0
+
+===============================================
+Overall chromosome-associated damage:
+  Base damages: 6
+  Single-strand breaks: 54
   Double-strand breaks: 0
 =================================================

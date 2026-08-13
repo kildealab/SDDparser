@@ -3,7 +3,7 @@
 #include <filesystem>
 
 #include "SDDparser.h"
-
+#include "Karyogram.h"
 
 int main(int argc, char* argv[]) 					// Variables in main() brackets allow for the second command line argument to be the SDD file path
 {
@@ -56,6 +56,23 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
     summaryFile.close();
 
     std::cout << "Summary written to: " << summaryPath << "\n";		// Let user know summary file was created successfully
+
+//// Karyogram drawing
+    const Header& header = parser.getHeader();
+
+    Karyogram karyogram;
+
+    if (!karyogram.generateKaryogram(
+            header.chromosome_sizes,
+            "karyogram.png"))
+    {
+        std::cerr << "Failed to generate karyogram.\n";
+        return 1;
+    }
+
+    std::cout << "Karyogram generated successfully.\n";
+
+////
 
     return 0;
 }

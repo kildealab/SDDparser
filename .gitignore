@@ -6,3 +6,10 @@ SDDparser
 
 # Ignore karyogram directory for now - incomplete
 karyogram/
+
+# Ignore karyogram image
+karyogram.png
+
+# Ignore official SDD file and summary file
+SDDOutput_1.txt
+SDDOutput_1_summary.txt
