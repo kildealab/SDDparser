@@ -1,0 +1,8 @@
+# Ignore the entire object files directory
+objects/
+
+# Ignore the compiled C++ executable
+SDDparser
+
+# Ignore karyogram directory for now - incomplete
+karyogram/
