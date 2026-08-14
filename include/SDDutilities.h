@@ -544,5 +544,4 @@ inline std::string dataEntriesMeaning(const std::vector<int>& dataEntriesVec)
 }
 
 
-
 #endif

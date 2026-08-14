@@ -7,6 +7,7 @@
 bool Karyogram::generateKaryogram(
     const std::vector<double>& chromosomeSizes,
     const std::vector<double>& cellCyclePhase,
+    const std::vector<Exposure>& exposures,
     const std::string& outputFilename)
 {
     if (chromosomeSizes.empty())
@@ -15,9 +16,18 @@ bool Karyogram::generateKaryogram(
         return false;
     }
 
+    // Use this vector for plotting DSBs onto karyogram
+    std::vector<DSBlocation> dsbs = getDoubleStrandBreaks(exposures);
+
+    // Store the geometry of the chromosomes to draw the DSBs.
+    std::vector<ChromosomeGeometry> chromosomeGeometry;
+
     // The first entry specifies the number of chromosomes.
     const int chromosomeCount =
         static_cast<int>(chromosomeSizes[0]);
+
+    // Store number of homologs for DSB drawing 
+    const int homologousSetSize = (chromosomeCount - 2) / 2;
 
     // Check that the vector contains the expected
     // number of chromosome sizes.
@@ -171,6 +181,10 @@ bool Karyogram::generateKaryogram(
     	    drawChromosome(cr, leftChromosomeX, posY, firstHeight, chromosomeColor);
 
     	    drawChromosome(cr, rightChromosomeX, posY, secondHeight, chromosomeColor);
+
+	    chromosomeGeometry.push_back({i + 1, 1, leftChromosomeX, posY, firstHeight});
+
+	    chromosomeGeometry.push_back({i + homologousSetSize + 1, 1, rightChromosomeX, posY, secondHeight});
 	}
 
 	else
@@ -200,6 +214,16 @@ bool Karyogram::generateKaryogram(
     	    drawChromosome(cr, rightChromatid1X, posY, secondHeight, chromosomeColor);
 
     	    drawChromosome(cr, rightChromatid2X, posY, secondHeight, chromosomeColor);
+
+	    // Store drawn chromosome geometries for DSB placement
+	    chromosomeGeometry.push_back({i + 1, 1, leftChromatid1X, posY, firstHeight});
+
+	    chromosomeGeometry.push_back({i + 1, 2, leftChromatid2X, posY, firstHeight});
+
+	    chromosomeGeometry.push_back({i + homologousSetSize + 1, 1, rightChromatid1X, posY, secondHeight});
+
+	    chromosomeGeometry.push_back({i + homologousSetSize + 1, 2, rightChromatid2X, posY, secondHeight});
+
 	}
 
 	// ------------------------------------------
@@ -270,9 +294,13 @@ bool Karyogram::generateKaryogram(
     {
     	// Draw X
     	drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight, xColor);
+	// Store geometry of X chromosome for DSB drawing
+	chromosomeGeometry.push_back({chromosomeCount, 1, xChromosomeX, sexChromosomeY, xHeight});
 
         // Draw Y
         drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight, yColor);
+	// Store geometry of Y chromosome for DSB drawing
+	chromosomeGeometry.push_back({chromosomeCount - 1, 1, yChromosomeX, sexChromosomeY, yHeight});
 
     }
     else
@@ -281,13 +309,85 @@ bool Karyogram::generateKaryogram(
 	drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight, xColor);
 	drawChromosome(cr, xChromosomeX + chromosomeWidth + chromatidGap,
 		       sexChromosomeY, xHeight, xColor);
-	
+	// Store X chromatids 1 and 2 geometries for DSB drawing
+	chromosomeGeometry.push_back({chromosomeCount, 1, xChromosomeX, sexChromosomeY, xHeight});
+ 	chromosomeGeometry.push_back({chromosomeCount, 2, xChromosomeX + chromosomeWidth + chromatidGap, sexChromosomeY, xHeight});
+
         // Draw Y chromatids 1 and 2
         drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight, yColor);
         drawChromosome(cr, yChromosomeX + chromosomeWidth + chromatidGap, 
 		       sexChromosomeY, yHeight, yColor);
+
+	// Store Y chromatids 1 and 2 geometries for DSB drawing
+	chromosomeGeometry.push_back({chromosomeCount - 1, 1, yChromosomeX, sexChromosomeY, yHeight});
+	chromosomeGeometry.push_back({chromosomeCount - 1, 2, yChromosomeX + chromosomeWidth + chromatidGap, sexChromosomeY, yHeight});
+
     }
 
+
+    // --------------------------------------------------
+    // Draw double-strand break markers
+    // --------------------------------------------------
+
+    for (const auto& dsb : dsbs)
+    {
+        const int chromosomeID = dsb.chromosomeID.chromosomeNumber;
+
+        const int chromatidID = dsb.chromosomeID.chromatidNumber;
+
+        // Find the chromosome/chromatid geometry
+        for (const auto& geometry : chromosomeGeometry)
+        {
+            if (geometry.chromosomeNumber != chromosomeID)
+            {
+                continue;
+            }
+
+            if (geometry.chromatidNumber != chromatidID)
+            {
+                continue;
+            }
+
+            // ------------------------------------------
+            // Determine chromosome size
+            // ------------------------------------------
+	    
+	    const size_t sizeIndex = static_cast<size_t>(chromosomeID);
+
+            if (sizeIndex >= chromosomeSizes.size())
+            {
+                continue;
+            }
+
+            const double chromosomeSize = chromosomeSizes[sizeIndex];
+
+            // ------------------------------------------
+            // Convert SDD position to fraction
+            // ------------------------------------------
+
+            double damageFraction = getDamageFraction(dsb, chromosomeSize);
+
+            // Keep fraction safely within chromosome
+            damageFraction = std::clamp(damageFraction, 0.0, 1.0);
+
+            // ------------------------------------------
+            // Convert fraction to image coordinates
+            // ------------------------------------------
+
+            const double markerX = geometry.x + chromosomeWidth / 2.0;
+
+            const double markerY = geometry.y + damageFraction * geometry.height;
+
+            // ------------------------------------------
+            // Draw DSB marker
+            // ------------------------------------------
+
+            drawDamageMarker(cr, markerX, markerY);
+
+            // We found the correct geometry, so stop searching.
+            break;
+        }
+    }
 
     // Y label
     cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
@@ -320,6 +420,49 @@ bool Karyogram::generateKaryogram(
     return true;
 }
 
+
+std::vector<DSBlocation>
+Karyogram::getDoubleStrandBreaks(const std::vector<Exposure>& exposures)
+{
+    std::vector<DSBlocation> dsbs;
+
+    for (const auto& exposure : exposures)
+    {
+	for (const auto& damage : exposure.damages)
+	{
+            if (damage.damageType.presenceOfDoubleStrandBreaks == 1)
+            {
+		DSBlocation dsb;
+		dsb.chromosomeID = damage.chromosomeID;
+		dsb.chromosomePosition = damage.chromosomePosition;
+                dsbs.push_back(dsb);
+            }
+	}
+    }
+    return dsbs;
+}
+
+
+double Karyogram::getDamageFraction(const DSBlocation& dsb, double chromosomeSize)
+{
+    double position = dsb.chromosomePosition.position;
+
+    // Field 4 is already a fraction from the beginning of the p arm to the end of the q arm.
+    if (dsb.chromosomePosition.isFractional)
+    {
+        return position;
+    }
+
+    if (chromosomeSize <= 0.0)
+    {
+        return 0.0;
+    }
+
+    // p arm = top, q arm = bottom, chromosome sizes stored in Mbp
+    double chromosomeSizeBP = chromosomeSize * 1000000.0;
+
+    return position / chromosomeSizeBP;
+}
 
 
 void Karyogram::drawChromosome(
@@ -505,4 +648,26 @@ RGB Karyogram::generateChromosomeColor(int chromosomeNumber)
     b += m;
 
     return {r, g, b};
+}
+
+void Karyogram::drawDamageMarker(
+    cairo_t* cr,
+    double x,
+    double y)
+{
+    const double markerRadius = 2.0;
+
+    // Black marker
+    cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+
+    cairo_arc(
+        cr,
+        x,
+        y,
+        markerRadius,
+        0.0,
+        2.0 * M_PI
+    );
+
+    cairo_fill(cr);
 }

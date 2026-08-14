@@ -153,3 +153,12 @@ struct ChromosomeDamageSummary // Important damage information to be summarized 
     int numSingleStrandBreaks = 0;
     int numDoubleStrandBreaks = 0;
 };
+
+//-------------------------------------------------
+// Combines Field 3 and Field 4 structs for easy plotting
+//-------------------------------------------------
+struct DSBlocation
+{
+    ChromosomeID chromosomeID;
+    ChromosomePosition chromosomePosition;
+};
