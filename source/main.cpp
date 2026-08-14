@@ -64,7 +64,8 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 
     if (!karyogram.generateKaryogram(
             header.chromosome_sizes,
-            "karyogram.png"))
+            header.cell_cycle_phase,
+	    "karyogram.png"))
     {
         std::cerr << "Failed to generate karyogram.\n";
         return 1;

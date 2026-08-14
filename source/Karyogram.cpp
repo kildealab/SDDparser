@@ -6,6 +6,7 @@
 
 bool Karyogram::generateKaryogram(
     const std::vector<double>& chromosomeSizes,
+    const std::vector<double>& cellCyclePhase,
     const std::string& outputFilename)
 {
     if (chromosomeSizes.empty())
@@ -28,6 +29,18 @@ bool Karyogram::generateKaryogram(
         return false;
     }
 
+    // Check cell cycle phase to determine number of chromatids per chromosomes to draw.
+    bool doubleChromatid = false;
+
+    if (!cellCyclePhase.empty())
+    {
+        const int phase = static_cast<int>(cellCyclePhase[0]);
+
+        if (phase == 3 || phase == 4 || phase == 5)
+        {
+            doubleChromatid = true;
+    	}
+    }
 
     // We assume the last two chromosomes in the headerr are X and Y.
     if (chromosomeCount < 4 || (chromosomeCount - 2) % 2 != 0)
@@ -68,6 +81,9 @@ bool Karyogram::generateKaryogram(
 
     const double maxRenderHeight = 180.0;
 
+    const double chromosomeWidth = 14.0;
+    const double chromatidGap = 1.5;
+    
     cairo_surface_t* surface =
         cairo_image_surface_create(
             CAIRO_FORMAT_ARGB32,
@@ -137,19 +153,54 @@ bool Karyogram::generateKaryogram(
         // Position homologues beside each other
         // ------------------------------------------
 
-        const double homologGap = 8.0;
+        // Generate chromosome colours according to homologous pairs.
+    	RGB chromosomeColor = generateChromosomeColor(i);
 
+	const double homologGap = 18.0;
 
-	double leftChromosomeX = groupCenterX - 14.0 - (homologGap / 2.0);
+	if (!doubleChromatid)
+	{
+    	// --------------------------------------------------
+    	// Single-chromatid chromosomes
+    	// --------------------------------------------------
 
-        double rightChromosomeX = groupCenterX + (homologGap / 2.0);
+    	    double leftChromosomeX = groupCenterX - chromosomeWidth - (homologGap / 2.0);
 
-	// Draw first homolog
-        drawChromosome(cr, leftChromosomeX, posY, firstHeight);
+    	    double rightChromosomeX = groupCenterX + (homologGap / 2.0);
 
-	// Draw second homolog
-        drawChromosome(cr, rightChromosomeX, posY, secondHeight);
+    	    drawChromosome(cr, leftChromosomeX, posY, firstHeight, chromosomeColor);
 
+    	    drawChromosome(cr, rightChromosomeX, posY, secondHeight, chromosomeColor);
+	}
+
+	else
+	{
+    	// --------------------------------------------------
+    	// Double-chromatid chromosomes
+    	// --------------------------------------------------
+
+            const double homologGap = 40.0;
+
+	    // Homologue 1
+    	    double leftChromatid1X = groupCenterX - chromosomeWidth - homologGap / 2.0 - chromatidGap / 2.0;
+
+    	    double leftChromatid2X = leftChromatid1X + chromosomeWidth + chromatidGap;
+
+    	    // Homologue 2
+    	    double rightChromatid1X = groupCenterX + homologGap / 2.0;
+
+    	    double rightChromatid2X = rightChromatid1X + chromosomeWidth + chromatidGap;
+
+	    // Draw homologue 1
+    	    drawChromosome(cr, leftChromatid1X, posY, firstHeight, chromosomeColor);
+
+    	    drawChromosome(cr, leftChromatid2X, posY, firstHeight, chromosomeColor);
+
+    	    // Draw homologue 2
+    	    drawChromosome(cr, rightChromatid1X, posY, secondHeight, chromosomeColor);
+
+    	    drawChromosome(cr, rightChromatid2X, posY, secondHeight, chromosomeColor);
+	}
 
 	// ------------------------------------------
         // Label
@@ -161,7 +212,7 @@ bool Karyogram::generateKaryogram(
 
         cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
 
-        cairo_set_font_size(cr, 13.0);
+        cairo_set_font_size(cr, 16.0);
 
         std::string label =
             "Chr " + std::to_string(i + 1);
@@ -211,18 +262,39 @@ bool Karyogram::generateKaryogram(
 
     const double yChromosomeX = yGroupCenterX - 7.0;
 
-    // Draw Y
-    drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight);
+    RGB yColor = generateChromosomeColor(homologousPairs);
 
-    // Draw X
-    drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight);
+    RGB xColor = generateChromosomeColor(homologousPairs + 1);
+
+    if (!doubleChromatid)
+    {
+    	// Draw X
+    	drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight, xColor);
+
+        // Draw Y
+        drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight, yColor);
+
+    }
+    else
+    {
+	// Draw X chromatids 1 and 2
+	drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight, xColor);
+	drawChromosome(cr, xChromosomeX + chromosomeWidth + chromatidGap,
+		       sexChromosomeY, xHeight, xColor);
+	
+        // Draw Y chromatids 1 and 2
+        drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight, yColor);
+        drawChromosome(cr, yChromosomeX + chromosomeWidth + chromatidGap, 
+		       sexChromosomeY, yHeight, yColor);
+    }
+
 
     // Y label
     cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
 
     cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
 
-    cairo_set_font_size(cr, 13.0);
+    cairo_set_font_size(cr, 16.0);
 
     cairo_move_to(cr, xGroupCenterX - 4.0, sexChromosomeY + xHeight + 25.0);
 
@@ -254,7 +326,8 @@ void Karyogram::drawChromosome(
     cairo_t* cr,
     double x,
     double y,
-    double height)
+    double height,
+    RGB color)
 {
     const double width = 14.0;
 
@@ -322,9 +395,9 @@ void Karyogram::drawChromosome(
     // Fill
     cairo_set_source_rgb(
         cr,
-        0.8,
-        0.8,
-        0.8
+        color.r,
+        color.g,
+        color.b
     );
 
     cairo_fill_preserve(cr);
@@ -362,4 +435,74 @@ void Karyogram::drawChromosome(
     );
 
     cairo_stroke(cr);
+}
+
+
+RGB Karyogram::generateChromosomeColor(int chromosomeNumber)
+{
+    // Evenly distribute hues around the color wheel.
+//    double hue =
+//        static_cast<double>(chromosomeNumber) /
+//        static_cast<double>(totalChromosomes);
+
+//    hue *= 360.0;
+
+
+    // Golden-ratio spacing gives better visual separation
+    // between consecutive chromosome colors.
+    const double goldenRatio = 0.618033988749895;
+
+    double hue = std::fmod(chromosomeNumber * goldenRatio, 1.0);
+
+    const double saturation = 0.70;
+    const double value = 0.90;
+
+    double c = value * saturation;
+
+    double h = hue * 6.0;
+
+    double x = c * (1.0 - std::abs(std::fmod(h, 2.0) - 1.0));
+
+    double r = 0.0;
+    double g = 0.0;
+    double b = 0.0;
+
+    if (h < 1.0)
+    {
+        r = c;
+        g = x;
+    }
+    else if (h < 2.0)
+    {
+        r = x;
+        g = c;
+    }
+    else if (h < 3.0)
+    {
+        g = c;
+        b = x;
+    }
+    else if (h < 4.0)
+    {
+        g = x;
+        b = c;
+    }
+    else if (h < 5.0)
+    {
+        r = x;
+        b = c;
+    }
+    else
+    {
+        r = c;
+        b = x;
+    }
+
+    double m = value - c;
+
+    r += m;
+    g += m;
+    b += m;
+
+    return {r, g, b};
 }
