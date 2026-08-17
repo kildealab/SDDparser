@@ -1,12 +1,15 @@
 # SDDparser
 Writing a C++ package capable of parsing the Standard for DNA Damage file header and data fields. 
 
-This package is now capable of summarizing the SDD header fields and the data fields into a single summary file.
+This package is now capable of summarizing the SDD header fields and the data fields into a single summary file. It can also optionally plot a 
+Karyogram of the double-strand break locations onto the chromosomes the user passes in the SDD file header.
 
 HOW TO USE:
 1. To compile the SDDparser program, navigate to the directory where the files are stored (cd /path/to/SDDparserDirectory/)
 
 2. Ensure g++ is installed on your computer by checking "g++ --version". The terminal should return the version number and license.
+
+3. Ensure you have installed the libcairo2-dev library for plotting the associated Karyogram to the SDD file.
 
 3. Simply type 'make' into your terminal to compile the program 'SDDparser'.
 
@@ -14,8 +17,17 @@ HOW TO USE:
 
 5. The SDD file summary will be stored in a file labeled 'SDDinputFile_summary.txt' in the same directory as the SDDinputFile.
 
+6. If you decide to plot the Karyogram of the SDD file illustrating the locations of the double-strand breaks on each of the chromosomes, 
+type in the command-line './SDDparser /path/to/SDDinputFile.txt --karyogram human|other'. '--karyogram' indicates you want to draw
+the karyogram of the associated damages, and you must specify either 'human' for human genome centromere positions or 'other' for generic centromere
+locations. The output .png file will be in output to the same directory as the SDD input file.
 
-WHAT IS SUMMARIZED:
+7. IMPORTANT: So far, the karyogram plotter assumes the user will pass the sizes in the following way for human chromosomes: 1, 2, 3,..., 22, 1, 2, 3, 
+..., 22, Y, X. The karyogram plotter also works for more than 46 chromosomes assuming that this chromosome listing practice is upheld. The user must specify
+the homologous chromosomes as well. If the user desires, the cell cycle phase can also be specified in the SDD header, and the karyogram plotter will 
+account for if the cell cycle phase is pre-replication (G0 or G1 phase) or post-replication (S, G2, M phase). 
+
+WHAT IS SUMMARIZED IN THE SDD FILE SUMMARY:
 
 All important header fields are interpreted and summarized in a text format at the beginning of the summary file.
 The header summary is separated into 3 main subsections:
@@ -30,5 +42,15 @@ The data block is summarized under the subsection 'Chromosome Damages', where th
 4. Total number of base damages, single-strand breaks, and double-strand breaks over all chromosomes per exposure.
 5. The total number of base damages, single-strand breaks, and double-strand breaks over all chromosomes over all exposures.
 
-Further work is currently being done to produce a visualization of the double strand breaks for each chromosome in a Karyotype diagram.
-The visualization will probably be done in C++ using the libcairo library.
+WHAT IS PLOTTED IN THE SDD FILE KARYOGRAM:
+1. All chromosomes passed by the user are plotted with distinct colors for visual clarity. If the user passes in the SDD file a genome that is
+not of human origin (i.e. not 46 chromosomes), the user must specify the 'other' option when using the '--karyogram' option.
+2. Centromeric positions using the '--karyogram human' option are adjusted based on the chromosome being drawn, whereas non-human genomes will
+be drawn using the generic centromere locations at approximately 35% of the chromosomes length. 
+3. Double-strand breaks are denoted using black circles directly on the chromosomes themselves.
+
+FURTHER KARYOGRAM PLOTTING WORK:
+1. Add textbox to the karyogram to identify the different structures drawn.
+2. Be able to identify single-strand breaks and base damages on the karyogram in addition to the double-strand breaks.
+3. Add a zoom in and out and a panning option to conserve image quality. 
+

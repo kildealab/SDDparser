@@ -155,9 +155,9 @@ struct ChromosomeDamageSummary // Important damage information to be summarized 
 };
 
 //-------------------------------------------------
-// Combines Field 3 and Field 4 structs for easy plotting
+// Plotting double-strand break locations 
 //-------------------------------------------------
-struct DSBlocation
+struct DSBlocation		// Stores the chromosome position in base pairs where the damage occurs, converted to x and y coordinates for karyogram.
 {
     ChromosomeID chromosomeID;
     ChromosomePosition chromosomePosition;

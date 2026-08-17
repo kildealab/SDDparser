@@ -35,7 +35,7 @@ private:
 
     bool parseDamageEntries(std::ifstream& file); // Function to check if exposure data entries parsed correctly
 
-    std::vector<Exposure> exposures;
+    std::vector<Exposure> exposures;	// Stores the chromosome ID and its corresponding damages per exposure.
 
     void printHeaderSummary(std::ostream& out) const; // Function to print the SDD header summary to an output file 
 
