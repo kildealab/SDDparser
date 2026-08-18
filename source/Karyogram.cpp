@@ -145,7 +145,7 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     const int columns = 4;							// Desired number of columns in the karyogram
     const double colWidth = static_cast<double>(imgWidth) / columns;		// Column width also in number of pixels
     const double rowHeight = 250.0;						// Row height in number of pixels
-    const double startY = 40.0;							// Choosing the starting Y position for the first row of chromosomes
+    const double startY = 100.0;	// 40 for no legend						// Choosing the starting Y position for the first row of chromosomes
     const int rows = (homologousPairs + columns - 1) / columns;			// Determine number of rows based on number of chromosomes passed.
     const int imgHeight = static_cast<int>(startY + rows * rowHeight);		// Adjust image height based on the number of rows, also in pixels.
     const double maxRenderHeight = 180.0;					// Limit the maximum height of the image, also in pixels
@@ -169,6 +169,11 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
 
     cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);					// White background
     cairo_paint(cr);
+
+    // ----------------------------------------------------
+    // Draw Karyogram legend
+    // ----------------------------------------------------
+    drawLegend(cr);
 
     // -------------------------------------------
     // Draw homologous chromosome pairs first
@@ -511,9 +516,9 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
 }
 
 
-// ----------------------------------------------------------------------------------- //
-// --- Functions to draw individual chromosome shapes and choose chromosome colors --- //
-// ----------------------------------------------------------------------------------- //
+// ----------------------------------------------------------------------- //
+// --- Helper functions to draw the shapes within the Karyogram itself --- //
+// ----------------------------------------------------------------------- //
 void Karyogram::drawChromosome(
     cairo_t* cr,
     double x,						// Pixel X coordinate
@@ -762,6 +767,340 @@ void Karyogram::drawDamageMarker(
 
     cairo_fill(cr);
 }
+
+
+void Karyogram::drawLegend(cairo_t* cr)
+{
+    // --------------------------------------------------
+    // Legend position
+    // --------------------------------------------------
+
+    const double legendX = 50.0;
+    const double legendY = 55.0;
+
+    // --------------------------------------------------
+    // Legend border
+    // --------------------------------------------------
+
+    const double legendWidth = 800.0;
+    const double legendHeight = 65.0;
+
+    const double borderPaddingX = 15.0;
+    const double borderPaddingY = 10.0;
+
+    // Center chromosome vertically inside legend
+    const double legendTop = legendY - 25.0 - borderPaddingY;
+    const double legendCenterY = legendTop + legendHeight / 2.0;
+
+    cairo_set_source_rgb(
+        cr,
+        0.0,
+        0.0,
+        0.0
+    );
+
+    cairo_set_line_width(cr, 1.5);
+
+    cairo_rectangle(
+        cr,
+        legendX - borderPaddingX,
+        legendY - 25.0 - borderPaddingY,
+        legendWidth,
+        legendHeight
+    );
+
+    cairo_stroke(cr);
+
+
+    cairo_set_source_rgb(
+        cr,
+        0.1,
+        0.1,
+        0.1
+    );
+
+    cairo_select_font_face(
+        cr,
+        "Sans",
+        CAIRO_FONT_SLANT_NORMAL,
+        CAIRO_FONT_WEIGHT_NORMAL
+    );
+
+    cairo_set_font_size(cr, 16.0);
+
+    // Centering legend labels
+    cairo_font_extents_t fontExtents;
+    cairo_font_extents(cr, &fontExtents);
+
+    const double textBaseline = legendCenterY +
+    (fontExtents.ascent - fontExtents.descent) / 2.0;
+
+    // --------------------------------------------------
+    // Legend title
+    // --------------------------------------------------
+
+    cairo_move_to(
+        cr,
+        legendX,
+        textBaseline
+    );
+
+    cairo_show_text(
+        cr,
+        "Symbols:"
+    );
+
+
+    // -------------------------------------------------
+    // Draw generic chromosome symbole
+    // -------------------------------------------------
+
+    const double chromosomeWidth = 14.0;
+    const double chromosomeHeight = 40.0;
+
+    // Position chromosome by its center
+    const double chromosomeCenterX = legendX + 100.0;
+    const double chromosomeX = chromosomeCenterX - chromosomeWidth / 2.0;
+    const double chromosomeY = legendCenterY - chromosomeHeight / 2.0;
+
+    // Generic centromere location
+    const double centromereCenter = 0.5;
+    const double constrictionAmount = 1.5;
+    const double capRadius = chromosomeWidth / 2.0;
+    const double centerY = chromosomeY + chromosomeHeight * centromereCenter;
+    const double constrictionHeight = 5.0;
+    const double constrictionTop = centerY - constrictionHeight / 2.0;
+    const double constrictionBottom = centerY + constrictionHeight / 2.0;
+
+    cairo_new_path(cr);
+
+    // Top cap
+    cairo_arc(
+        cr,
+        chromosomeX + capRadius,
+        chromosomeY + capRadius,
+        capRadius,
+        M_PI,
+        2.0 * M_PI
+    );
+
+    // Right side
+    cairo_line_to(
+        cr,
+        chromosomeX + chromosomeWidth,
+        constrictionTop
+    );
+
+    cairo_line_to(
+        cr,
+        chromosomeX + chromosomeWidth - constrictionAmount,
+        centerY
+    );
+
+    cairo_line_to(
+        cr,
+        chromosomeX + chromosomeWidth,
+        constrictionBottom
+    );
+
+    cairo_line_to(
+        cr,
+        chromosomeX + chromosomeWidth,
+        chromosomeY + chromosomeHeight - capRadius
+    );
+
+    // Bottom cap
+    cairo_arc(
+        cr,
+        chromosomeX + capRadius,
+        chromosomeY + chromosomeHeight - capRadius,
+        capRadius,
+        0.0,
+        M_PI
+    );
+
+    // Left side
+    cairo_line_to(
+        cr,
+        chromosomeX,
+        constrictionBottom
+    );
+
+    cairo_line_to(
+        cr,
+        chromosomeX + constrictionAmount,
+        centerY
+    );
+
+    cairo_line_to(
+        cr,
+        chromosomeX,
+        constrictionTop
+    );
+
+    cairo_close_path(cr);
+
+    // Generic chromosome colour
+    RGB chromosomeColor =
+        generateChromosomeColor(0);
+
+    cairo_set_source_rgb(
+        cr,
+        chromosomeColor.r,
+        chromosomeColor.g,
+        chromosomeColor.b
+    );
+
+    cairo_fill_preserve(cr);
+
+    // Outline
+    cairo_set_source_rgb(
+        cr,
+        0.1,
+        0.1,
+        0.1
+    );
+
+    cairo_set_line_width(cr, 1.0);
+
+    cairo_stroke(cr);
+
+    // Chromosome label
+    cairo_set_source_rgb(
+        cr,
+        0.0,
+        0.0,
+        0.0
+    );
+
+    cairo_move_to(
+        cr,
+        chromosomeX + chromosomeWidth + 10.0,
+        textBaseline
+    );
+
+    cairo_show_text(
+        cr,
+        "Chromosome"
+    );
+
+
+    // --------------------------------------------------
+    // DSB marker symbol
+    // --------------------------------------------------
+
+    const double dsbX =
+        chromosomeX + 155.0;
+
+    const double dsbY =
+        legendCenterY;
+
+    cairo_set_source_rgb(
+        cr,
+        0.0,
+        0.0,
+        0.0
+    );
+
+    cairo_arc(
+        cr,
+        dsbX,
+        dsbY,
+        4.0,
+        0.0,
+        2.0 * M_PI
+    );
+
+    cairo_fill(cr);
+
+    // DSB label
+    cairo_set_source_rgb(
+        cr,
+        0.0,
+        0.0,
+        0.0
+    );
+
+    cairo_move_to(
+        cr,
+        dsbX + 12.0,
+        textBaseline
+    );
+
+    cairo_show_text(
+        cr,
+        "Double-Strand Break"
+    );
+
+
+    // --------------------------------------------------
+    // Centromere marker symbol
+    // --------------------------------------------------
+
+    const double centromereX =
+        dsbX + 210.0;
+
+    const double centromereY =
+        legendCenterY;
+
+    const double ellipseWidth = 14.0;
+    const double ellipseHeight = 8.0;
+
+    cairo_save(cr);
+
+    cairo_translate(
+	cr,
+	centromereX,
+	centromereY
+    );
+
+    cairo_scale(
+	cr,
+	ellipseWidth / 2.0,
+	ellipseHeight / 2.0
+    );
+
+    cairo_arc(
+        cr,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        2.0 * M_PI
+    );
+
+    cairo_restore(cr);
+
+    // Gray fill
+    cairo_set_source_rgb(
+        cr,
+        0.6,
+        0.6,
+        0.6
+    );
+
+    cairo_fill_preserve(cr);
+
+    // Centromere label
+    cairo_set_source_rgb(
+	cr,
+	0.0,
+	0.0,
+	0.0
+    );
+
+    cairo_move_to(
+        cr,
+        centromereX + 14.0,
+        textBaseline
+    );
+
+    cairo_show_text(
+        cr,
+        "Centromere"
+    );
+}
+
 
 // ---------------------------------------------------------------------------------------- //
 // --------------- Helper functions to convert exposure data to karyogram ----------------- //

@@ -60,4 +60,5 @@ private:
 
     const CentromerePosition* getHumanCentromere(int chromosomeID);		// Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
 
+    void drawLegend(cairo_t* cr);						// Function to draw the karyogram legend.
 };
