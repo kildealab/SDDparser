@@ -155,10 +155,11 @@ struct ChromosomeDamageSummary // Important damage information to be summarized 
 };
 
 //-------------------------------------------------
-// Plotting double-strand break locations 
+// Plotting double-strand/ single-strand break locations 
 //-------------------------------------------------
-struct DSBlocation		// Stores the chromosome position in base pairs where the damage occurs, converted to x and y coordinates for karyogram.
+struct DamageLocation		// Stores the chromosome position in base pairs where the damage occurs, converted to x and y coordinates for karyogram.
 {
     ChromosomeID chromosomeID;
     ChromosomePosition chromosomePosition;
+    int numSingleStrandBreaks;
 };

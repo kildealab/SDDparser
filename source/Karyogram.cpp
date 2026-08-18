@@ -72,8 +72,6 @@ const CentromerePosition* Karyogram::getHumanCentromere(			// Function to return
 }
 
 
-
-
 bool Karyogram::generateKaryogram(						// Function that generates the overall Karyogram structure
     const std::vector<double>& chromosomeSizes,					// Requires chromosome sizes in the SDD file header for scaling on the image
     const std::vector<double>& cellCyclePhase,					// Requires cell cycle phase in the SDD file header for determining presence of duplicated chromosomes.
@@ -88,7 +86,9 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
         return false;
     }
 
-    std::vector<DSBlocation> dsbVec = getDoubleStrandBreaks(exposures);		// Use this vector for plotting DSBs onto karyogram
+    std::vector<DamageLocation> dsbVec = getDoubleStrandBreaks(exposures);		// Use this vector for plotting DSBs onto karyogram
+
+    std::vector<DamageLocation> ssbVec = getSingleStrandBreaks(exposures);
 
     std::vector<ChromosomeGeometry> chromosomeGeometry;				// Store the geometry of the chromosomes in x and y pixel coordinates to draw the DSBs.
 
@@ -241,7 +241,7 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
         }
 
 	// ------------------------------------------
-        // Position homologues beside each other
+        // Position homologs beside each other
         // ------------------------------------------
 
     	RGB chromosomeColor = generateChromosomeColor(i);				// Generate chromosome colours according to homologous pairs.
@@ -478,11 +478,74 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
             // Draw DSB marker
             // ------------------------------------------
 
-            drawDamageMarker(cr, markerX, markerY);
+            drawDoubleStrandBreakMarker(cr, markerX, markerY, chromosomeWidth);
 
             break;
         }
     }
+
+    // --------------------------------------------------
+    // Draw single-strand break markers
+    // --------------------------------------------------
+
+    for (const auto& ssb : ssbVec)
+    {
+    	const int chromosomeID = ssb.chromosomeID.chromosomeNumber;
+
+    	const int chromatidID = ssb.chromosomeID.chromatidNumber;
+
+    	// Find the chromosome/chromatid geometry
+    	for (const auto& geometry : chromosomeGeometry)
+    	{
+            if (geometry.chromosomeNumber != chromosomeID)
+            {
+            	continue;
+            }
+
+            if (geometry.chromatidNumber != chromatidID)
+            {
+            	continue;
+            }
+
+            // ------------------------------------------
+            // Determine chromosome size
+            // ------------------------------------------
+
+            const size_t sizeIndex = static_cast<size_t>(chromosomeID);
+
+            if (sizeIndex >= chromosomeSizes.size())
+            {
+            	continue;
+            }
+
+            const double chromosomeSize = chromosomeSizes[sizeIndex];
+
+            // ------------------------------------------
+            // Convert SSB position to fraction
+            // ------------------------------------------
+
+            double damageFraction = getDamageFraction(ssb, chromosomeSize);
+
+            damageFraction = std::clamp(damageFraction, 0.0, 1.0);
+
+            // ------------------------------------------
+            // Convert fraction to image coordinates
+            // ------------------------------------------
+
+            const double markerX = geometry.x + chromosomeWidth / 2.0;
+
+            const double markerY = geometry.y + damageFraction * geometry.height;
+
+            // ------------------------------------------
+            // Draw SSB marker
+            // ------------------------------------------
+
+            drawSingleStrandBreakMarker(cr, markerX, markerY, ssb.numSingleStrandBreaks);
+
+            break;
+    	}
+    }
+
 
     // X label
     cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
@@ -746,15 +809,77 @@ RGB Karyogram::generateChromosomeColor(int chromosomeNumber)
     return {r, g, b};
 }
 
-void Karyogram::drawDamageMarker(
+
+
+void Karyogram::drawDoubleStrandBreakMarker(
     cairo_t* cr,
     double x,
-    double y)
+    double y,
+    double chromosomeWidth)
 {
-    const double markerRadius = 2.0;
 
-    // Black double-strand break marker
-    cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+    const double markerWidth = chromosomeWidth;
+    const double markerLineWidth = 1.0;
+
+    // Black DSB line marker
+    cairo_set_source_rgb(
+        cr,
+        0.0,
+        0.0,
+        0.0
+    );
+
+    cairo_set_line_width(
+        cr,
+        markerLineWidth
+    );
+
+    cairo_move_to(
+        cr,
+        x - markerWidth / 2.0,
+        y
+    );
+
+    cairo_line_to(
+        cr,
+        x + markerWidth / 2.0,
+        y
+    );
+
+    cairo_stroke(cr);
+
+}
+
+
+void Karyogram::drawSingleStrandBreakMarker(
+    cairo_t* cr,
+    double x,
+    double y,
+    int numSingleBackboneBreaks)
+{
+    if (numSingleBackboneBreaks <= 0)
+    {
+	return;
+    }
+
+//    const double markerRadius = 1.5;
+
+    // Scale marker radius according to number of SSBs.
+    // log1p() prevents very large SSB counts from producing
+    // excessively large markers.
+    double markerRadius = 1.5 + std::log1p(static_cast<double>(numSingleBackboneBreaks));
+
+    // Prevent very large SSB counts from overwhelming the chromosome.
+    markerRadius = std::min(markerRadius, 7.0);
+
+
+    // White SSB marker
+    cairo_set_source_rgb(
+        cr,
+        1.0,
+        1.0,
+        1.0
+    );
 
     cairo_arc(
         cr,
@@ -769,6 +894,7 @@ void Karyogram::drawDamageMarker(
 }
 
 
+
 void Karyogram::drawLegend(cairo_t* cr)
 {
     // --------------------------------------------------
@@ -776,14 +902,14 @@ void Karyogram::drawLegend(cairo_t* cr)
     // --------------------------------------------------
 
     const double legendX = 50.0;
-    const double legendY = 55.0;
+    const double legendY = 45.0;
 
     // --------------------------------------------------
     // Legend border
     // --------------------------------------------------
 
-    const double legendWidth = 800.0;
-    const double legendHeight = 65.0;
+    const double legendWidth = 900.0;
+    const double legendHeight = 70.0;
 
     const double borderPaddingX = 15.0;
     const double borderPaddingY = 10.0;
@@ -852,14 +978,14 @@ void Karyogram::drawLegend(cairo_t* cr)
 
 
     // -------------------------------------------------
-    // Draw generic chromosome symbole
+    // Draw generic chromosome symbol
     // -------------------------------------------------
 
     const double chromosomeWidth = 14.0;
     const double chromosomeHeight = 40.0;
 
     // Position chromosome by its center
-    const double chromosomeCenterX = legendX + 100.0;
+    const double chromosomeCenterX = 150.0;
     const double chromosomeX = chromosomeCenterX - chromosomeWidth / 2.0;
     const double chromosomeY = legendCenterY - chromosomeHeight / 2.0;
 
@@ -989,8 +1115,7 @@ void Karyogram::drawLegend(cairo_t* cr)
     // DSB marker symbol
     // --------------------------------------------------
 
-    const double dsbX =
-        chromosomeX + 155.0;
+    const double dsbX = 330.0;
 
     const double dsbY =
         legendCenterY;
@@ -1002,16 +1127,21 @@ void Karyogram::drawLegend(cairo_t* cr)
         0.0
     );
 
-    cairo_arc(
-        cr,
-        dsbX,
-        dsbY,
-        4.0,
-        0.0,
-        2.0 * M_PI
+    cairo_set_line_width(cr, 1.0);
+
+    cairo_move_to(
+    	cr,
+    	dsbX - 7.0,
+    	dsbY
     );
 
-    cairo_fill(cr);
+    cairo_line_to(
+    	cr,
+    	dsbX + 7.0,
+    	dsbY
+    );
+
+    cairo_stroke(cr);    
 
     // DSB label
     cairo_set_source_rgb(
@@ -1023,7 +1153,7 @@ void Karyogram::drawLegend(cairo_t* cr)
 
     cairo_move_to(
         cr,
-        dsbX + 12.0,
+        dsbX + 10.0,
         textBaseline
     );
 
@@ -1034,11 +1164,73 @@ void Karyogram::drawLegend(cairo_t* cr)
 
 
     // --------------------------------------------------
+    // Single-Strand Break symbol
+    // --------------------------------------------------
+    double markerRadius = 7.0;
+
+    const double ssbX = 550.0;
+
+    const double ssbY = legendCenterY;
+
+    cairo_new_path(cr);
+
+    // White SSB marker
+    cairo_set_source_rgb(
+        cr,
+        1.0,
+        1.0,
+        1.0
+    );
+
+    cairo_arc(
+        cr,
+        ssbX,
+        ssbY,
+        markerRadius,
+        0.0,
+        2.0 * M_PI
+    );
+
+    cairo_fill_preserve(cr);
+
+    // Black SSB marker outline for clarity
+    cairo_set_source_rgb(
+        cr,
+        0.0,
+        0.0,
+        0.0
+    );
+
+    cairo_set_line_width(cr, 1.0);
+
+    cairo_stroke(cr);
+
+    // SSB label
+    cairo_set_source_rgb(
+        cr,
+        0.0,
+        0.0,
+        0.0
+    );
+
+    cairo_move_to(
+        cr,
+        ssbX + 10.0,
+        textBaseline
+    );
+
+    cairo_show_text(
+        cr,
+        "Single-Strand Break"
+    );
+
+
+
+    // --------------------------------------------------
     // Centromere marker symbol
     // --------------------------------------------------
 
-    const double centromereX =
-        dsbX + 210.0;
+    const double centromereX = 770.0;
 
     const double centromereY =
         legendCenterY;
@@ -1091,7 +1283,7 @@ void Karyogram::drawLegend(cairo_t* cr)
 
     cairo_move_to(
         cr,
-        centromereX + 14.0,
+        centromereX + 10.0,
         textBaseline
     );
 
@@ -1107,9 +1299,9 @@ void Karyogram::drawLegend(cairo_t* cr)
 // ---------------------------------------------------------------------------------------- //
 
 // Function to return the location in base pairs for a double strand break associated with a given chromosome Number and exposure.
-std::vector<DSBlocation> Karyogram::getDoubleStrandBreaks(const std::vector<Exposure>& exposures)
+std::vector<DamageLocation> Karyogram::getDoubleStrandBreaks(const std::vector<Exposure>& exposures)
 {
-    std::vector<DSBlocation> dsbVec;					// Initialize the double-strand break vector to store base pair locations of DSBs per chromosome per exposure.
+    std::vector<DamageLocation> dsbVec;					// Initialize the double-strand break vector to store base pair locations of DSBs per chromosome per exposure.
 
     for (const auto& exposure : exposures)				// Loop through all exposures
     {
@@ -1117,7 +1309,7 @@ std::vector<DSBlocation> Karyogram::getDoubleStrandBreaks(const std::vector<Expo
 	{
             if (damage.damageType.presenceOfDoubleStrandBreaks == 1)	// If double strand break is present, store chromosome ID, base pair location to dsbVec
             {
-		DSBlocation dsb;					// Instantiate the DSBlocation object dsb for easy access to DSB location and chromosome ID. 
+		DamageLocation dsb;					// Instantiate the DSBlocation object dsb for easy access to DSB location and chromosome ID. 
 		dsb.chromosomeID = damage.chromosomeID;
 		dsb.chromosomePosition = damage.chromosomePosition;
                 dsbVec.push_back(dsb);					// Store in dsbVec the following; {'chromosomeID', chromosomePosition}
@@ -1127,12 +1319,37 @@ std::vector<DSBlocation> Karyogram::getDoubleStrandBreaks(const std::vector<Expo
     return dsbVec;
 }
 
-// Function to convert the damage location stored in the SDD damage block in base pairs to the fractional length of the chromosome. 
-double Karyogram::getDamageFraction(const DSBlocation& dsb, double chromosomeSize)
-{
-    double position = dsb.chromosomePosition.position;
 
-    if (dsb.chromosomePosition.isFractional)			// Check if SDD data field 4 is already in a fractional field format
+std::vector<DamageLocation> Karyogram::getSingleStrandBreaks(const std::vector<Exposure>& exposures)
+{
+    std::vector<DamageLocation> ssbVec;
+
+    for (const auto& exposure : exposures)
+    {
+        for (const auto& damage : exposure.damages)
+        {
+            // SSB = single-strand break present,
+            // but no double-strand break.
+            if (damage.damageType.numSingleBackboneBreaks > 0)
+            {
+                DamageLocation ssb;
+                ssb.chromosomeID = damage.chromosomeID;
+                ssb.chromosomePosition = damage.chromosomePosition;
+		ssb.numSingleStrandBreaks = damage.damageType.numSingleBackboneBreaks;
+                ssbVec.push_back(ssb);
+            }
+        }
+    }
+
+    return ssbVec;
+}
+
+// Function to convert the damage location stored in the SDD damage block in base pairs to the fractional length of the chromosome. 
+double Karyogram::getDamageFraction(const DamageLocation& damage, double chromosomeSize)
+{
+    double position = damage.chromosomePosition.position;
+
+    if (damage.chromosomePosition.isFractional)			// Check if SDD data field 4 is already in a fractional field format
     {
         return position;					// If so, return the fractional position, no conversion needed.
     }

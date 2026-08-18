@@ -4,10 +4,5 @@ objects/
 # Ignore the compiled C++ executable
 SDDparser
 
-# Ignore test SDD file, summary file, and corresponding karyogram
-testSDD.txt
-testSDD_summary.txt
-testSDD_karyogram.png
-
 # Ignore prototype code for zooming and panning karyogram
 chromosome_viewer.cpp

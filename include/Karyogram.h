@@ -52,11 +52,15 @@ private:
 
     void drawChromosome(cairo_t* cr, double x, double y, double height, RGB color, double centromereStart, double centromereEnd); // The main draw chromosome function, accounting for individual chromosome sizes and centromere ranges and locations.
 
-    std::vector<DSBlocation> getDoubleStrandBreaks(const std::vector<Exposure>& exposures); // Use to obtain the stored double strand break locations in each exposure and determine their coordinates on the Karyogram. 
+    std::vector<DamageLocation> getDoubleStrandBreaks(const std::vector<Exposure>& exposures); // Use to obtain the stored double strand break locations in each exposure and determine their coordinates on the Karyogram. 
 
-    double getDamageFraction(const DSBlocation& dsb, double chromosomeSize);		// Convert double-strand break damage locations in base pairs to a fractional length along the chromosome for easy Karyogram pixel conversion.
+    std::vector<DamageLocation> getSingleStrandBreaks(const std::vector<Exposure>& exposures);
 
-    void drawDamageMarker(cairo_t* cr, double x, double y);				// Function to draw the damage locations at a given x and y coordinate on the Karyogram.
+    double getDamageFraction(const DamageLocation& damage, double chromosomeSize);		// Convert damage locations in base pairs to a fractional length along the chromosome for easy Karyogram pixel conversion.
+
+    void drawDoubleStrandBreakMarker(cairo_t* cr, double x, double y, double chromosomeWidth);				// Function to draw the damage locations at a given x and y coordinate on the Karyogram, the entire width of the drawn chromosome.
+
+    void drawSingleStrandBreakMarker(cairo_t* cr, double x, double y, int numSingleStrandBreaks);
 
     const CentromerePosition* getHumanCentromere(int chromosomeID);		// Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
 
