@@ -44,6 +44,9 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
     bool drawKaryogram = false;
     bool humanGenome = false;
 
+
+    std::string genomeType = argv[3];					// The fourth argument is the genomeType = 'human'|'other'
+
     if (argc >= 3)							// If more at least 3 arguments are passed, must be '--karyogram'
     {
         if (std::string(argv[2]) == "--karyogram")
@@ -56,8 +59,6 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
                           << "either 'human' or 'other'.\n";
                 return 1;
             }
-
-            std::string genomeType = argv[3];				// The fourth argument is the genomeType = 'human'|'other'
 
             if (genomeType == "human")
             {
@@ -136,7 +137,7 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 
 	std::filesystem::path karyogramPath =				// Create karyogram output filename using the input filename and generic suffix "_karyogram.png"
         inputPath.parent_path() /
-        (inputPath.stem().string() + "_karyogram.png");
+        (inputPath.stem().string() + "_karyogram_" +  genomeType + ".png");
 
 
         if (!karyogram.generateKaryogram(				// Ensure Karyogram could be generated, if there are insufficient data in the SDD file.
