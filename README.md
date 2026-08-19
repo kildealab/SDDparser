@@ -48,10 +48,11 @@ not of human origin (i.e. not 46 chromosomes), the user must specify the 'other'
 2. Centromeric positions using the '--karyogram human' option are adjusted based on the chromosome being drawn, whereas non-human genomes will
 be drawn using the generic centromere locations at approximately 35% of the chromosomes length. 
 3. Double-strand breaks are denoted using black circles directly on the chromosomes themselves.
-4. Single-strand breaks are denoted using white circles on the chromosomes and the circle sizes are
-scaled based on the number of single-strand breaks within a given damage site (within a given SDD data row). 
+4. Single-strand breaks are denoted using white lines on the chromosomes and the line lengths are
+scaled based on the number of single-strand breaks within a given damage site (i.e. a given SDD data row) (usually between 0-5 SSBs). 
 5. Legend at the top to describe what each symbol signifies in the karyogram.
 
 FURTHER KARYOGRAM PLOTTING WORK:
 1. Add a zoom in and out and a panning option to conserve image quality. 
+2. Be able to read a Standard for DNA repair (SDR) file and plot the mutations on the Karyogram.
 ... and much more.

@@ -149,7 +149,7 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     const int rows = (homologousPairs + columns - 1) / columns;			// Determine number of rows based on number of chromosomes passed.
     const int imgHeight = static_cast<int>(startY + rows * rowHeight);		// Adjust image height based on the number of rows, also in pixels.
     const double maxRenderHeight = 180.0;					// Limit the maximum height of the image, also in pixels
-    const double chromosomeWidth = 14.0;					// Individual chromosomes are 14 pixels wide.
+    const double chromosomeWidth = 20.0; // was 14					// Individual chromosomes are 14 pixels wide.
     const double chromatidGap = 1.5;						// The gaps between homologs in a replicated chromosome are 1.5 pixels.
     
 
@@ -259,8 +259,8 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     	    double rightChromosomeX = groupCenterX + (homologGap / 2.0);		// Right homolog position
 
 	    // Draw homologous pair at the desired coordinates with the desired heights, color, and centromere positions.
-	    drawChromosome(cr, leftChromosomeX, posY, firstHeight, chromosomeColor, firstCentromereStart, firstCentromereEnd); 
-	    drawChromosome(cr, rightChromosomeX, posY, secondHeight, chromosomeColor, secondCentromereStart, secondCentromereEnd);
+	    drawChromosome(cr, leftChromosomeX, posY, firstHeight, chromosomeWidth, chromosomeColor, firstCentromereStart, firstCentromereEnd); 
+	    drawChromosome(cr, rightChromosomeX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
 
 	    // Store chromosome geometry (pixel coordinates) to draw corresponding chromosome damages from exposure data.
 	    chromosomeGeometry.push_back({i + 1, 1, leftChromosomeX, posY, firstHeight});
@@ -285,12 +285,12 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     	    double rightChromatid2X = rightChromatid1X + chromosomeWidth + chromatidGap;
 
 	    // Draw homologue 1
-	    drawChromosome(cr, leftChromatid1X, posY, firstHeight, chromosomeColor, firstCentromereStart, firstCentromereEnd);
-	    drawChromosome(cr, leftChromatid2X, posY, firstHeight, chromosomeColor, firstCentromereStart, firstCentromereEnd);
+	    drawChromosome(cr, leftChromatid1X, posY, firstHeight, chromosomeWidth, chromosomeColor, firstCentromereStart, firstCentromereEnd);
+	    drawChromosome(cr, leftChromatid2X, posY, firstHeight, chromosomeWidth, chromosomeColor, firstCentromereStart, firstCentromereEnd);
 
     	    // Draw homologue 2
-	    drawChromosome(cr, rightChromatid1X, posY, secondHeight, chromosomeColor, secondCentromereStart, secondCentromereEnd);
-	    drawChromosome(cr, rightChromatid2X, posY, secondHeight, chromosomeColor, secondCentromereStart, secondCentromereEnd);
+	    drawChromosome(cr, rightChromatid1X, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
+	    drawChromosome(cr, rightChromatid2X, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
 
 	    // Store drawn chromosome geometries (pixel coordinates) to draw corresponding damages from exposure data.
 	    chromosomeGeometry.push_back({i + 1, 1, leftChromatid1X, posY, firstHeight});		// Homolog 1 chromatid 1
@@ -381,8 +381,8 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     const double xGroupCenterX = (xColumn * colWidth) + (colWidth / 2.0);
     const double yGroupCenterX = (yColumn * colWidth) + (colWidth / 2.0);
     const double sexChromosomeY = startY + (sexChromosomeRow * rowHeight);
-    const double xChromosomeX = xGroupCenterX - 7.0;
-    const double yChromosomeX = yGroupCenterX - 7.0;
+    const double xChromosomeX = xGroupCenterX - chromosomeWidth / 2.0;
+    const double yChromosomeX = yGroupCenterX - chromosomeWidth / 2.0;
 
 
     // Set X and Y chromosome Colors
@@ -392,12 +392,12 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     if (!doubleChromatid)							// Depending on if SDD header 'Cell cycle phase' specified a post-replicated chromosome.
     {
     	// Draw X
-    	drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight, xColor, xCentromereStart, xCentromereEnd);
+    	drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
 	// Store geometry of X chromosome for DSB drawing
 	chromosomeGeometry.push_back({chromosomeCount, 1, xChromosomeX, sexChromosomeY, xHeight});
 
         // Draw Y
-        drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight, yColor, yCentromereStart, yCentromereEnd);
+        drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
 	// Store geometry of Y chromosome for DSB drawing
 	chromosomeGeometry.push_back({chromosomeCount - 1, 1, yChromosomeX, sexChromosomeY, yHeight});
 
@@ -405,17 +405,17 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     else
     {
 	// Draw X chromatids 1 and 2
-	drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight, xColor, xCentromereStart, xCentromereEnd);
+	drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
 	drawChromosome(cr, xChromosomeX + chromosomeWidth + chromatidGap,
-		       sexChromosomeY, xHeight, xColor, xCentromereStart, xCentromereEnd);
+		       sexChromosomeY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
 	// Store X chromatids 1 and 2 geometries for DSB drawing
 	chromosomeGeometry.push_back({chromosomeCount, 1, xChromosomeX, sexChromosomeY, xHeight});
  	chromosomeGeometry.push_back({chromosomeCount, 2, xChromosomeX + chromosomeWidth + chromatidGap, sexChromosomeY, xHeight});
 
         // Draw Y chromatids 1 and 2
-        drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight, yColor, yCentromereStart, yCentromereEnd);
+        drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
         drawChromosome(cr, yChromosomeX + chromosomeWidth + chromatidGap, 
-		       sexChromosomeY, yHeight, yColor, yCentromereStart, yCentromereEnd);
+		       sexChromosomeY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
 
 	// Store Y chromatids 1 and 2 geometries for DSB drawing
 	chromosomeGeometry.push_back({chromosomeCount - 1, 1, yChromosomeX, sexChromosomeY, yHeight});
@@ -471,7 +471,7 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
             // ------------------------------------------
             // Convert fraction to image pixel coordinates
             // ------------------------------------------
-            const double markerX = geometry.x + chromosomeWidth / 2.0;
+            const double markerX = geometry.x + chromosomeWidth / 2.0;	
             const double markerY = geometry.y + damageFraction * geometry.height;
 
             // ------------------------------------------
@@ -536,11 +536,23 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
 
             const double markerY = geometry.y + damageFraction * geometry.height;
 
+
+	    // ------------------------------------------
+	    // Determine SSB marker length
+	    // ------------------------------------------
+
+	    const double ssbBaseLength = 4.0;						// Scaling single-strand break line length based on number of damages in the damage site
+    	    const double ssbLengthPerBreak = 4.0;					// Marker length per individual single-strand break to be summed over the whole site
+    	    const double maxSSBLength = chromosomeWidth;				// Maximum single-strand break marker length is the width of the chromosome
+
+	    double markerLength = ssbBaseLength + ssbLengthPerBreak * (ssb.numSingleStrandBreaks - 1);
+	    markerLength = std::min(markerLength, maxSSBLength);
+
             // ------------------------------------------
             // Draw SSB marker
             // ------------------------------------------
 
-            drawSingleStrandBreakMarker(cr, markerX, markerY, ssb.numSingleStrandBreaks);
+            drawSingleStrandBreakMarker(cr, markerX, markerY, markerLength);
 
             break;
     	}
@@ -587,6 +599,7 @@ void Karyogram::drawChromosome(
     double x,						// Pixel X coordinate
     double y,						// Pixel Y coordinate
     double height,					// Scaled chromosome pixel height
+    double width,					// Chromosome width in pixels
     RGB color,						// Associated chromosome color
     double centromereStart,				// Centromere start location as fraction of the chromosome length from p arm to q arm
     double centromereEnd)				// Centromere end location as fraction of the chromosome length from p arm to q arm.
@@ -595,12 +608,11 @@ void Karyogram::drawChromosome(
     // --------------------------------------
     // Centromere position and dimensions
     // --------------------------------------
-    const double width = 14.0;
     const double capRadius = width / 2.0;
     const double centromereCenter = (centromereStart + centromereEnd) / 2.0;
     const double centromereY = y + (height * centromereCenter);
-    const double constrictionHeight = 8.0;
-    const double constrictionAmount = 1.5;
+    const double constrictionHeight = 7.0;
+    const double constrictionAmount = 2.0;
     const double constrictionTop = centromereY - constrictionHeight / 2.0;
     const double constrictionBottom = centromereY + constrictionHeight / 2.0;
 
@@ -818,7 +830,7 @@ void Karyogram::drawDoubleStrandBreakMarker(
     double chromosomeWidth)
 {
 
-    const double markerWidth = chromosomeWidth;
+    const double markerWidth = chromosomeWidth + 8.0; // Extend DSB markers past the chromosome width for clarity.
     const double markerLineWidth = 1.0;
 
     // Black DSB line marker
@@ -851,7 +863,7 @@ void Karyogram::drawDoubleStrandBreakMarker(
 }
 
 
-void Karyogram::drawSingleStrandBreakMarker(
+/*void Karyogram::drawSingleStrandBreakMarker(
     cairo_t* cr,
     double x,
     double y,
@@ -892,6 +904,40 @@ void Karyogram::drawSingleStrandBreakMarker(
 
     cairo_fill(cr);
 }
+*/
+
+
+void Karyogram::drawSingleStrandBreakMarker(
+    cairo_t* cr,
+    double x,
+    double y,
+    double markerLength)
+{
+    // White SSB marker
+    cairo_set_source_rgb(
+        cr,
+        1.0,
+        1.0,
+        1.0
+    );
+
+    cairo_set_line_width(cr, 1.5);
+
+    cairo_move_to(
+        cr,
+        x - markerLength / 2.0,
+        y
+    );
+
+    cairo_line_to(
+        cr,
+        x + markerLength / 2.0,
+        y
+    );
+
+    cairo_stroke(cr);
+}
+
 
 
 
@@ -1127,17 +1173,17 @@ void Karyogram::drawLegend(cairo_t* cr)
         0.0
     );
 
-    cairo_set_line_width(cr, 1.0);
+    cairo_set_line_width(cr, 2.0);
 
     cairo_move_to(
     	cr,
-    	dsbX - 7.0,
+    	dsbX - 10.0,
     	dsbY
     );
 
     cairo_line_to(
     	cr,
-    	dsbX + 7.0,
+    	dsbX + 10.0,
     	dsbY
     );
 
@@ -1153,7 +1199,7 @@ void Karyogram::drawLegend(cairo_t* cr)
 
     cairo_move_to(
         cr,
-        dsbX + 10.0,
+        dsbX + 14.0,
         textBaseline
     );
 
@@ -1162,48 +1208,45 @@ void Karyogram::drawLegend(cairo_t* cr)
         "Double-Strand Break"
     );
 
+// --------------------------------------------------
+// Single-Strand Break symbol
+// --------------------------------------------------
 
-    // --------------------------------------------------
-    // Single-Strand Break symbol
-    // --------------------------------------------------
-    double markerRadius = 7.0;
+const double ssbX = 550.0;
+const double ssbY = legendCenterY;
 
-    const double ssbX = 550.0;
+const double ssbMarkerWidth = 14.0;
+const double ssbMarkerHeight = 3.0;
 
-    const double ssbY = legendCenterY;
+// Draw white rectangle
+cairo_rectangle(
+    cr,
+    ssbX - ssbMarkerWidth / 2.0,
+    ssbY - ssbMarkerHeight / 2.0,
+    ssbMarkerWidth,
+    ssbMarkerHeight
+);
 
-    cairo_new_path(cr);
+cairo_set_source_rgb(
+    cr,
+    1.0,
+    1.0,
+    1.0
+);
 
-    // White SSB marker
-    cairo_set_source_rgb(
-        cr,
-        1.0,
-        1.0,
-        1.0
-    );
+cairo_fill_preserve(cr);
 
-    cairo_arc(
-        cr,
-        ssbX,
-        ssbY,
-        markerRadius,
-        0.0,
-        2.0 * M_PI
-    );
+// Black outline
+cairo_set_source_rgb(
+    cr,
+    0.0,
+    0.0,
+    0.0
+);
 
-    cairo_fill_preserve(cr);
+cairo_set_line_width(cr, 1.0);
 
-    // Black SSB marker outline for clarity
-    cairo_set_source_rgb(
-        cr,
-        0.0,
-        0.0,
-        0.0
-    );
-
-    cairo_set_line_width(cr, 1.0);
-
-    cairo_stroke(cr);
+cairo_stroke(cr);
 
     // SSB label
     cairo_set_source_rgb(
