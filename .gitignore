@@ -4,5 +4,8 @@ objects/
 # Ignore the compiled C++ executable
 SDDparser
 
+# Ignore all test files
+test*
+
 # Ignore prototype code for zooming and panning karyogram
 chromosome_viewer.cpp
