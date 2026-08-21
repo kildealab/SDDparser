@@ -4,9 +4,9 @@
 
 #include "Karyogram.h"
 
-const std::vector<CentromerePosition> humanCentromeres =			// Vector storing the associated chromosome ID centromere positions to draw the centromere location if the human option of '--karyotype' is passed by the user in the command-line
-{										// Vector stores the CentromerePosition struct
-    {"1", 121535434, 124535434},						// Each vector element contains {'Chromosome Number', Centromere Start Position (bp), Centromere End Position (bp)}
+const std::vector<CentromerePosition> humanCentromeres =			// Vector storing the associated chromosome ID centromere positions to 
+{										// draw the centromere location if the human option of '--karyotype' is passed by the user in the command-line
+    {"1", 121535434, 124535434},						// Each vector element contains {'Chromosome ID', Centromere Start Position (bp), Centromere End Position (bp)}
     {"2",  92326171,  95326171},
     {"3",  90504854,  93504854},
     {"4",  49660117,  52660117},
@@ -94,7 +94,7 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
 
     const int chromosomeCount = static_cast<int>(chromosomeSizes[0]);		// The first entry specifies the number of chromosomes.
         
-    const int homologousSetSize = (chromosomeCount - 2) / 2;			// Store number of homologs for DSB drawing 
+    //const int homologousSetSize = (chromosomeCount - 2) / 2;			// Store number of homologs for DSB drawing 
 
     const double genericCentromereStart = 0.34;					// In case non-human chromosomes specified, draw generic centromere regions
     const double genericCentromereEnd = 0.36;					// Will be replaced later if human genome is specified with actual centromere positions.
@@ -119,22 +119,33 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     	}
     }
 
-    if (chromosomeCount < 4 || (chromosomeCount - 2) % 2 != 0)			// For our purposes the last two chromosome IDs must be Y, then X.
-    {
-        std::cerr << "ERROR: Chromosome count is not compatible "
-                  << "with the expected homologous-pair + X/Y format.\n";
-        return false;
-    }
+    // ------------------------------------------------------------
+    // Determine chromosome layout
+    // ------------------------------------------------------------
 
-    const int homologousPairs = (chromosomeCount - 2) / 2;			// Store number of homologous Pairs for karyogram generation.
+    const ChromosomeLayout chromosomeLayout = determineChromosomeLayout(chromosomeSizes); // Determine which layout the chromosome sizes are listed in for plotting logic.
+
+    const bool hasHomologs = chromosomeLayout != ChromosomeLayout::NON_HOMOLOGOUS;	// Default layout is non-homologous 1,...,N,Y,X
+
+    const int homologousPairs = hasHomologs ? (chromosomeCount - 2) / 2 : 0;   // Number of homologous pairs if homologs present.
+
+    const int drawableGroups = hasHomologs ? homologousPairs : chromosomeCount - 2; // Number of chromosome groups that will be drawn before the Y and X
+
 
     double maxBP = 0.0;								// Find largest chromosome, scale all chromosomes with respect to the largest
+
     for (size_t i = 1 ; i < chromosomeSizes.size(); i++)
     {
         if (chromosomeSizes[i] > maxBP)
         {
             maxBP = chromosomeSizes[i];
         }
+    }
+
+    if (maxBP <= 0.0)
+    {
+	std::cerr << "ERROR: Chromosome sizes must contain positive values.\n";
+	return false;
     }
 
     // ----------------------------------------------------
@@ -145,11 +156,11 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     const int columns = 4;							// Desired number of columns in the karyogram
     const double colWidth = static_cast<double>(imgWidth) / columns;		// Column width also in number of pixels
     const double rowHeight = 250.0;						// Row height in number of pixels
-    const double startY = 100.0;	// 40 for no legend						// Choosing the starting Y position for the first row of chromosomes
-    const int rows = (homologousPairs + columns - 1) / columns;			// Determine number of rows based on number of chromosomes passed.
+    const double startY = 100.0;						// Choosing the starting Y position for the first row of chromosomes
+    const int rows = (drawableGroups + columns - 1) / columns;			// Determine number of rows based on number of chromosomes passed.
     const int imgHeight = static_cast<int>(startY + rows * rowHeight);		// Adjust image height based on the number of rows, also in pixels.
-    const double maxRenderHeight = 180.0;					// Limit the maximum height of the image, also in pixels
-    const double chromosomeWidth = 20.0; // was 14					// Individual chromosomes are 14 pixels wide.
+    const double maxRenderHeight = 180.0;					// Limit the maximum height of the chromosome, also in pixels
+    const double chromosomeWidth = 20.0; 					// Individual chromosomes are 20 pixels wide.
     const double chromatidGap = 1.5;						// The gaps between homologs in a replicated chromosome are 1.5 pixels.
     
 
@@ -175,171 +186,329 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     // ----------------------------------------------------
     drawLegend(cr);
 
-    // -------------------------------------------
-    // Draw homologous chromosome pairs first
-    // -------------------------------------------
+    // -----------------------------------------------------------
+    // Draw chromosomes depending on chromosome size layout given
+    // -----------------------------------------------------------
 
-    for (int i = 0; i < homologousPairs; ++i)
+    for (int i = 0; i < drawableGroups; ++i)
     {
-	const size_t firstIndex = static_cast<size_t>(i + 1); 			// First homolog
+	size_t firstIndex = 0; 							// Declare index of first homolog to be determined depending on chromosome sizes layout.
+	size_t secondIndex = 0; 						// Second homolog begins after the first 
 
-	const size_t secondIndex = static_cast<size_t>(i + 1 + homologousPairs);// Second homolog begins after the first 
+	// -----------------------------------------------------
+	// Determine indexing based off chromosome sizes layout
+	// -----------------------------------------------------
 
-	// Initialize centromere start and end locations with the generic locations in case user specified option '--karyogram other'
-	double firstCentromereStart = genericCentromereStart;			// First homolog centromere start position (from p arm to q arm)
-	double firstCentromereEnd = genericCentromereEnd;			// First homolog centromere end position (from p arm to q arm)
-	double secondCentromereStart = genericCentromereStart;			// Second homolog centromere start position (from p arm to q arm)
-	double secondCentromereEnd = genericCentromereEnd;			// Second homolog centromere end position (from p arm to q arm)
-	
-	if (humanGenome)							// Check if humanGenome option passed by the user is true.
+	if (chromosomeLayout == ChromosomeLayout::SPLIT_HOMOLOGS)		// Chromosomes listed 1,2,3,..., 1,2,3,..., Y, X
+    	{
+            firstIndex = static_cast<size_t>(i + 1);
+            secondIndex = static_cast<size_t>(i + 1 + homologousPairs);
+    	}
+    	else if (chromosomeLayout == ChromosomeLayout::ADJACENT_HOMOLOGS)	// Chromosomes listed 1,1,2,2,...,Y,X
+    	{
+            firstIndex = static_cast<size_t>(2 * i + 1);
+            secondIndex = static_cast<size_t>(2 * i + 2);
+    	}
+	else									// Chromosomes listed 1,2,3,4...,N-2,Y,X
 	{
-    	    const CentromerePosition* centromere = getHumanCentromere(i + 1);
-
-    	    if (centromere != nullptr)
-    	    {
-		// Scale centromere positions to convert to base pairs from mega base pairs. All centromere locations are stored as fractions of the chromosome length afterwards.
-	        firstCentromereStart = static_cast<double>(centromere->start) / (chromosomeSizes[firstIndex] * 1000000.0);
-
-                firstCentromereEnd = static_cast<double>(centromere->end) / (chromosomeSizes[firstIndex] * 1000000.0);
-
-        	secondCentromereStart = static_cast<double>(centromere->start) / (chromosomeSizes[secondIndex] * 1000000.0);
-
-        	secondCentromereEnd = static_cast<double>(centromere->end) / (chromosomeSizes[secondIndex] * 1000000.0);
-	    }
+	    firstIndex = static_cast<size_t>(i + 1);
 	}
 
+
+	// Determine position of chromosome group
         int col = i % columns;
         int row = i / columns;
 
-        double groupCenterX =
-            (col * colWidth) + (colWidth / 2.0);
+        double groupCenterX = (col * colWidth) + (colWidth / 2.0);
+        double posY = startY + (row * rowHeight);
 
-        double posY =
-            startY + (row * rowHeight);
+	RGB chromosomeColor = generateChromosomeColor(i);			// Homologs receive same color, non-homologous chromosomes receive their own color.
 
 
-	// --------------------------------------
-	// First Homolog
-	// --------------------------------------
+	// -----------------------------------------------------------------
+	// NON-HOMOLOGOUS CHROMOSOME DRAWING
+	// -----------------------------------------------------------------
 
-	double firstHeight = (chromosomeSizes[firstIndex] / maxBP) * maxRenderHeight; 	// Scale chromosome heights by the largest chromosome.
-
-        if (firstHeight < 30.0)							      	// Prevent chromosomes from being smaller than 30 pixels
+	if (chromosomeLayout == ChromosomeLayout::NON_HOMOLOGOUS)
         {
-            firstHeight = 30.0;
+            const double chromosomeSize = chromosomeSizes[firstIndex];		// Only care about firstIndex because there are no homologs.
+
+            double chromosomeHeight = (chromosomeSize / maxBP) * maxRenderHeight; // Normalize chromosome heights relative to the largest chromosoem maxBP
+
+            if (chromosomeHeight < 30.0)					// Prevent too small chromosome sizes.
+            {
+                chromosomeHeight = 30.0;
+            }
+
+	    // If non-human genome passed, use generic centromere start and end locations
+	    double centromereStart = genericCentromereStart;
+	    double centromereEnd = genericCentromereEnd;
+
+	    // Adjust centromere locations to the ones listed at the start if a humanGenome specified.
+	    if (humanGenome)
+	    {
+		int humanChromosomeID = static_cast<int>(firstIndex);
+
+		if (chromosomeCount == 24)
+        	{
+                    if (firstIndex == 23)					// When chromosome sizes index 23 is reached, associate that with the Y chromosome
+            	    {
+                	humanChromosomeID = 45;   // Y
+            	    }
+            	    else if (firstIndex == 24)					// When chromosome sizes index 24 is reached, associate that with the X chromosome.
+            	    {
+                	humanChromosomeID = 46;   // X
+            	    }
+        	}
+
+
+		const CentromerePosition* centromere = getHumanCentromere(humanChromosomeID);	// Get corresponding centromere positions per chromosome ID
+
+		if (centromere != nullptr)
+		{
+		    // Set corresponding centromere ranges and convert to fraction of the chromosome length for conversion to pixels later.
+		    centromereStart = static_cast<double>(centromere->start) / (chromosomeSize * 1000000.0);	// chromosome sizes listed in Mbp, convert to bp.
+		    centromereEnd = static_cast<double>(centromere->end)/ (chromosomeSize*1000000.0);
+		}
+	    }
+
+
+	    // ------------------------------------------------
+	    // Single-chromatid drawing
+	    // ------------------------------------------------
+	    if (!doubleChromatid)
+	    {
+		const double posX = groupCenterX - chromosomeWidth / 2.0;		// Set the horizontal position of the single chromatid drawing
+		// Draw single-chromatid chromosome and store the ID, chromatid number, position and size in chromosomeGeometry.
+		drawChromosome(cr, posX, posY, chromosomeHeight, chromosomeWidth, chromosomeColor, centromereStart, centromereEnd);	
+		chromosomeGeometry.push_back({static_cast<int>(firstIndex), 1, posX, posY, chromosomeHeight});
+
+	    }
+
+	    // ------------------------------------------------
+	    // Two chromatids drawing
+	    // ------------------------------------------------
+	    else
+	    {
+		// Determine horizontal X positions in the karyogram of the two chromatids for the corresponding chromosome.
+		const double posX = groupCenterX - chromosomeWidth - chromatidGap / 2.0;
+		const double posX2 = groupCenterX + chromosomeWidth + chromatidGap;
+
+		// Draw both chromatids of the chromosome in their respective X positions.
+		drawChromosome(cr, posX, posY, chromosomeHeight, chromosomeWidth, chromosomeColor, centromereStart, centromereEnd);
+		drawChromosome(cr, posX2, posY, chromosomeHeight, chromosomeWidth, chromosomeColor, centromereStart, centromereEnd);
+
+		// Both chromatids in the non-homologous case are assigned the same chromosome ID, it is just in the post-replicated cell phase, so there are two.
+		chromosomeGeometry.push_back({static_cast<int>(firstIndex), 1, posX, posY, chromosomeHeight});
+		chromosomeGeometry.push_back({static_cast<int>(firstIndex), 2, posX2, posY, chromosomeHeight});
+	    }
+
+	    // ------------------------------------------------
+	    // Label chromosome
+	    // ------------------------------------------------
+	    cairo_set_source_rgb(
+                cr,
+                0.1,
+                0.1,
+                0.1
+            );
+
+            cairo_select_font_face(
+                cr,
+                "Sans",
+                CAIRO_FONT_SLANT_NORMAL,
+                CAIRO_FONT_WEIGHT_BOLD
+            );
+
+            cairo_set_font_size(cr, 16.0);
+
+            std::string label =
+                "Chr " + std::to_string(i + 1);
+
+            cairo_move_to(
+                cr,
+                groupCenterX - 20.0,
+                posY + chromosomeHeight + 25.0
+            );
+
+            cairo_show_text(
+                cr,
+                label.c_str()
+            );
         }
 
-        // ------------------------------------------
-        // Second homolog
-        // ------------------------------------------
-
-        double secondHeight = (chromosomeSizes[secondIndex] / maxBP) * maxRenderHeight;	// Scale chromosome heights by the largest chromosome
-
-        if (secondHeight < 30.0)						       	// Prevent chromosomes from being smaller than 30 pixels.
-        {
-            secondHeight = 30.0;
-        }
-
-	// ------------------------------------------
-        // Position homologs beside each other
-        // ------------------------------------------
-
-    	RGB chromosomeColor = generateChromosomeColor(i);				// Generate chromosome colours according to homologous pairs.
-
-	const double homologGap = 18.0;							// Set gap between homologous pairs to be 18 pixels
-
-	if (!doubleChromatid)								// Depending on SDD header 'Cell cycle phase' entry, doubleChromatid is determined to be true or false.
-	{
-    	// --------------------------------------------------
-    	// Single-chromatid chromosomes
-    	// --------------------------------------------------
-
-    	    double leftChromosomeX = groupCenterX - chromosomeWidth - (homologGap / 2.0);// Left homolog position
-
-    	    double rightChromosomeX = groupCenterX + (homologGap / 2.0);		// Right homolog position
-
-	    // Draw homologous pair at the desired coordinates with the desired heights, color, and centromere positions.
-	    drawChromosome(cr, leftChromosomeX, posY, firstHeight, chromosomeWidth, chromosomeColor, firstCentromereStart, firstCentromereEnd); 
-	    drawChromosome(cr, rightChromosomeX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
-
-	    // Store chromosome geometry (pixel coordinates) to draw corresponding chromosome damages from exposure data.
-	    chromosomeGeometry.push_back({i + 1, 1, leftChromosomeX, posY, firstHeight});
-	    chromosomeGeometry.push_back({i + homologousSetSize + 1, 1, rightChromosomeX, posY, secondHeight});
-	}
+	// -----------------------------------------------------
+	// HOMOLOGOUS CHROMOSOMES DRAWING
+	// -----------------------------------------------------
 
 	else
 	{
-    	// --------------------------------------------------
-    	// Double-chromatid chromosomes
-    	// --------------------------------------------------
+	    // Initialize centromere positions per chromosome ID for each homolog
 
-            const double homologGap = 40.0;							// Set gap of 40 pixels between successive homologous pairs for post-replicated chromosomes.
+	    double firstCentromereStart = genericCentromereStart;	
+
+            double firstCentromereEnd = genericCentromereEnd;
+
+            double secondCentromereStart = genericCentromereStart;
+
+            double secondCentromereEnd = genericCentromereEnd;
+
+	    // If human centromeres, get the positions corresponding to the correct ID.
+
+	    if (humanGenome)
+	    {
+		const CentromerePosition* centromere = getHumanCentromere(i + 1);
+
+		if(centromere != nullptr)
+		{
+		// Obtain centromre start and end positions for both homologs from the CentromerePosition struct.
+		    firstCentromereStart = static_cast<double>(centromere->start) / (chromosomeSizes[firstIndex] * 1000000.0);
+		    firstCentromereEnd = static_cast<double>(centromere->end) / (chromosomeSizes[firstIndex] * 1000000.0);
+		    secondCentromereStart = static_cast<double>(centromere->start) / (chromosomeSizes[secondIndex] * 1000000.0);
+                    secondCentromereEnd = static_cast<double>(centromere->end) / (chromosomeSizes[secondIndex] * 1000000.0);
+		}
+
+	    }
 
 
-	    // Homologue 1 left and right chromatid positions
-    	    double leftChromatid1X = groupCenterX - chromosomeWidth - homologGap / 2.0 - chromatidGap / 2.0;
-    	    double leftChromatid2X = leftChromatid1X + chromosomeWidth + chromatidGap;
+	    // ----------------------------------------------
+            // Scale chromosome heights
+            // ----------------------------------------------
 
-    	    // Homologue 2 left and right chromatid positions
-    	    double rightChromatid1X = groupCenterX + homologGap / 2.0;
-    	    double rightChromatid2X = rightChromatid1X + chromosomeWidth + chromatidGap;
+            double firstHeight = (chromosomeSizes[firstIndex] / maxBP) * maxRenderHeight;	// Normalize height of first homolog to the largest chromosome height
 
-	    // Draw homologue 1
-	    drawChromosome(cr, leftChromatid1X, posY, firstHeight, chromosomeWidth, chromosomeColor, firstCentromereStart, firstCentromereEnd);
-	    drawChromosome(cr, leftChromatid2X, posY, firstHeight, chromosomeWidth, chromosomeColor, firstCentromereStart, firstCentromereEnd);
+            double secondHeight = (chromosomeSizes[secondIndex] / maxBP) * maxRenderHeight;	// Normalize height of second homolog to the largest chromosome height.
 
-    	    // Draw homologue 2
-	    drawChromosome(cr, rightChromatid1X, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
-	    drawChromosome(cr, rightChromatid2X, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
+            if (firstHeight < 30.0)
+            {
+                firstHeight = 30.0;
+            }
 
-	    // Store drawn chromosome geometries (pixel coordinates) to draw corresponding damages from exposure data.
-	    chromosomeGeometry.push_back({i + 1, 1, leftChromatid1X, posY, firstHeight});		// Homolog 1 chromatid 1
-	    chromosomeGeometry.push_back({i + 1, 2, leftChromatid2X, posY, firstHeight});		// Homolog 1 chromatid 2
-	    chromosomeGeometry.push_back({i + homologousSetSize + 1, 1, rightChromatid1X, posY, secondHeight}); // Homolog 2 chromatid 1
-	    chromosomeGeometry.push_back({i + homologousSetSize + 1, 2, rightChromatid2X, posY, secondHeight}); // Homolog 2 chromatid 2
+            if (secondHeight < 30.0)
+            {
+                secondHeight = 30.0;
+            }
 
-	}
 
-	// ------------------------------------------
-        // Label
-	// ------------------------------------------
-	// Labeling each chromosome 1-22, Y and X. Homologous pairs are given a single chromosome ID.
-	double labelHeight = std::max(firstHeight, secondHeight);
+	    // ----------------------------------------------
+            // Single-chromatid homologs
+            // ----------------------------------------------
 
-        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+            if (!doubleChromatid)
+            {
+                const double homologGap = 18.0;						// Define spacing between homologs in pixels.
 
-        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+                const double leftChromPosX = groupCenterX - chromosomeWidth - homologGap / 2.0;		// Determine the X positions of the left homolog
 
-        cairo_set_font_size(cr, 16.0);
+                const double rightChromPosX = groupCenterX + homologGap / 2.0;		// Determine the X positions of the right homolog
 
-        std::string label =
-            "Chr " + std::to_string(i + 1);
+		// Draw first homolog at the desired location with the desired dimensions
+                drawChromosome(cr, leftChromPosX, posY, firstHeight, chromosomeWidth, chromosomeColor, firstCentromereStart, firstCentromereEnd);
 
-        cairo_move_to(cr, groupCenterX - 20.0, posY + labelHeight + 25.0);
+                // Draw second homolog at the desired location with the desired dimensions
+                drawChromosome(cr, rightChromPosX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
 
-        cairo_show_text(cr, label.c_str());
+		// Store actual SDD chromosome IDs and their corresponding dimensions and locations --> for damage marker drawings later on.
+                chromosomeGeometry.push_back({static_cast<int>(firstIndex), 1, leftChromPosX, posY, firstHeight});
+                chromosomeGeometry.push_back({static_cast<int>(secondIndex), 1, rightChromPosX, posY, secondHeight});
+            }
+
+
+	    // ----------------------------------------------
+ 	    // Double-chromatid homologs
+            // ----------------------------------------------
+
+            else
+            {
+                const double homologGap = 40.0;						// Increase homolog gap to account for second chromatids
+
+                // Determine homolog 1 left and right chromatid positions
+                const double leftChromatid1PosX = groupCenterX - chromosomeWidth - homologGap / 2.0 - chromatidGap / 2.0;
+                const double leftChromatid2PosX = leftChromatid1PosX + chromosomeWidth + chromatidGap;
+
+                // Determine homolog 2 left and right chromatid positions
+                const double rightChromatid1PosX = groupCenterX + homologGap / 2.0;
+                const double rightChromatid2PosX = rightChromatid1PosX + chromosomeWidth + chromatidGap;
+
+
+                // Draw homolog 1 chromatids at the desired locations with the desired dimensions
+                drawChromosome(cr, leftChromatid1PosX, posY, firstHeight, chromosomeWidth, chromosomeColor, firstCentromereStart, firstCentromereEnd);
+         	drawChromosome(cr, leftChromatid2PosX, posY, firstHeight, chromosomeWidth, chromosomeColor, firstCentromereStart, firstCentromereEnd);
+
+
+                // Draw homolog 2 chromatids at the desired locations with the desired dimensions
+                drawChromosome(cr, rightChromatid1PosX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
+		drawChromosome(cr, rightChromatid2PosX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
+
+                // Store actual SDD chromosome IDs with their corresponding dimensions and locations --> for damage marker drawings later on
+                chromosomeGeometry.push_back({static_cast<int>(firstIndex), 1, leftChromatid1PosX, posY, firstHeight});
+                chromosomeGeometry.push_back({static_cast<int>(firstIndex), 2, leftChromatid2PosX, posY, firstHeight});
+                chromosomeGeometry.push_back({static_cast<int>(secondIndex), 1, rightChromatid1PosX, posY, secondHeight});
+                chromosomeGeometry.push_back({static_cast<int>(secondIndex), 2, rightChromatid2PosX, posY, secondHeight});
+            }
+
+
+	    // ----------------------------------------------
+            // Label homologous pair
+            // ----------------------------------------------
+
+            const double labelHeight = std::max(firstHeight, secondHeight);
+
+            cairo_set_source_rgb(
+                cr,
+                0.1,
+                0.1,
+                0.1
+            );
+
+            cairo_select_font_face(
+                cr,
+                "Sans",
+                CAIRO_FONT_SLANT_NORMAL,
+                CAIRO_FONT_WEIGHT_BOLD
+            );
+
+            cairo_set_font_size(cr, 16.0);
+
+            std::string label =
+                "Chr " + std::to_string(i + 1);
+
+            cairo_move_to(
+                cr,
+                groupCenterX - 20.0,
+                posY + labelHeight + 25.0
+            );
+
+            cairo_show_text(
+                cr,
+                label.c_str()
+            );
+        }
     }
+
 
     // --------------------------------------------------
     // X and Y chromosome drawing
     // --------------------------------------------------
 
+    // Always assume the user gives the Y chromosome then the X chromosome as the last two listed chromosome sizes.
     const size_t xIndex = static_cast<size_t>(chromosomeCount);				// Determining the index of the X chromosome
-	
     const size_t yIndex = static_cast<size_t>(chromosomeCount - 1);			// Determining the index of the Y chromosome
 
     // Set the centromere locations to the generic positions, replaced if user passed '--karyogram human' option.
     double xCentromereStart = genericCentromereStart;
     double xCentromereEnd = genericCentromereEnd;
-
     double yCentromereStart = genericCentromereStart;
     double yCentromereEnd = genericCentromereEnd;
 
     if (humanGenome)									// If user specified a human genome '--karyogram human'
     {
+	int xHumanID = 45;
+	int yHumanID = 46;
+
 	// Get the base pair locations of the centromeres for the X and Y chromosomes
-        const CentromerePosition* xCentromere = getHumanCentromere(chromosomeCount);    
-        const CentromerePosition* yCentromere = getHumanCentromere(chromosomeCount - 1);
+        const CentromerePosition* xCentromere = getHumanCentromere(xHumanID);    
+        const CentromerePosition* yCentromere = getHumanCentromere(yHumanID);
 
     	if (xCentromere != nullptr)
     	{
@@ -374,52 +543,50 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     // X and Y chromosome pixel dimensions
     // -------------------------------------------------------------
     // X and Y occupy the remaining positions in the final row.
-    const int sexChromosomeRow = (homologousPairs - 1) / columns;
+    const int sexChromosomeRow = (drawableGroups > 0) ? (drawableGroups - 1) / columns : 0;
     // Plot X first then Y next.
     const int xColumn = 2;
     const int yColumn = 3;
     const double xGroupCenterX = (xColumn * colWidth) + (colWidth / 2.0);
     const double yGroupCenterX = (yColumn * colWidth) + (colWidth / 2.0);
-    const double sexChromosomeY = startY + (sexChromosomeRow * rowHeight);
-    const double xChromosomeX = xGroupCenterX - chromosomeWidth / 2.0;
-    const double yChromosomeX = yGroupCenterX - chromosomeWidth / 2.0;
+    const double sexChromPosY = startY + (sexChromosomeRow * rowHeight);
+    const double xChromPosX = xGroupCenterX - chromosomeWidth / 2.0;
+    const double yChromPosX = yGroupCenterX - chromosomeWidth / 2.0;
 
 
     // Set X and Y chromosome Colors
-    RGB yColor = generateChromosomeColor(homologousPairs);
-    RGB xColor = generateChromosomeColor(homologousPairs + 1);
+    RGB yColor = generateChromosomeColor(drawableGroups);
+    RGB xColor = generateChromosomeColor(drawableGroups + 1);
 
     if (!doubleChromatid)							// Depending on if SDD header 'Cell cycle phase' specified a post-replicated chromosome.
     {
     	// Draw X
-    	drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
-	// Store geometry of X chromosome for DSB drawing
-	chromosomeGeometry.push_back({chromosomeCount, 1, xChromosomeX, sexChromosomeY, xHeight});
+    	drawChromosome(cr, xChromPosX, sexChromPosY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
+	// Store geometry of X chromosome for damage drawing
+	chromosomeGeometry.push_back({chromosomeCount, 1, xChromPosX, sexChromPosY, xHeight});
 
         // Draw Y
-        drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
-	// Store geometry of Y chromosome for DSB drawing
-	chromosomeGeometry.push_back({chromosomeCount - 1, 1, yChromosomeX, sexChromosomeY, yHeight});
+        drawChromosome(cr, yChromPosX, sexChromPosY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
+	// Store geometry of Y chromosome for damage drawing
+	chromosomeGeometry.push_back({chromosomeCount - 1, 1, yChromPosX, sexChromPosY, yHeight});
 
     }
     else
     {
 	// Draw X chromatids 1 and 2
-	drawChromosome(cr, xChromosomeX, sexChromosomeY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
-	drawChromosome(cr, xChromosomeX + chromosomeWidth + chromatidGap,
-		       sexChromosomeY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
-	// Store X chromatids 1 and 2 geometries for DSB drawing
-	chromosomeGeometry.push_back({chromosomeCount, 1, xChromosomeX, sexChromosomeY, xHeight});
- 	chromosomeGeometry.push_back({chromosomeCount, 2, xChromosomeX + chromosomeWidth + chromatidGap, sexChromosomeY, xHeight});
+	drawChromosome(cr, xChromPosX, sexChromPosY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
+	drawChromosome(cr, xChromPosX + chromosomeWidth + chromatidGap, sexChromPosY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
+	// Store X chromatids 1 and 2 geometries for damage drawing
+	chromosomeGeometry.push_back({chromosomeCount, 1, xChromPosX, sexChromPosY, xHeight});
+ 	chromosomeGeometry.push_back({chromosomeCount, 2, xChromPosX + chromosomeWidth + chromatidGap, sexChromPosY, xHeight});
 
         // Draw Y chromatids 1 and 2
-        drawChromosome(cr, yChromosomeX, sexChromosomeY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
-        drawChromosome(cr, yChromosomeX + chromosomeWidth + chromatidGap, 
-		       sexChromosomeY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
+        drawChromosome(cr, yChromPosX, sexChromPosY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
+        drawChromosome(cr, yChromPosX + chromosomeWidth + chromatidGap, sexChromPosY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
 
-	// Store Y chromatids 1 and 2 geometries for DSB drawing
-	chromosomeGeometry.push_back({chromosomeCount - 1, 1, yChromosomeX, sexChromosomeY, yHeight});
-	chromosomeGeometry.push_back({chromosomeCount - 1, 2, yChromosomeX + chromosomeWidth + chromatidGap, sexChromosomeY, yHeight});
+	// Store Y chromatids 1 and 2 geometries for damage drawing
+	chromosomeGeometry.push_back({chromosomeCount - 1, 1, yChromPosX, sexChromPosY, yHeight});
+	chromosomeGeometry.push_back({chromosomeCount - 1, 2, yChromPosX + chromosomeWidth + chromatidGap, sexChromPosY, yHeight});
 
     }
 
@@ -566,12 +733,12 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
 
     cairo_set_font_size(cr, 16.0);
 
-    cairo_move_to(cr, xGroupCenterX - 4.0, sexChromosomeY + xHeight + 25.0);
+    cairo_move_to(cr, xGroupCenterX - 4.0, sexChromPosY + xHeight + 25.0);
 
     cairo_show_text(cr, "X");
 
     // Y label
-    cairo_move_to(cr, yGroupCenterX - 4.0, sexChromosomeY + yHeight + 25.0);
+    cairo_move_to(cr, yGroupCenterX - 4.0, sexChromPosY + yHeight + 25.0);
 
     cairo_show_text(cr, "Y");
 
@@ -861,50 +1028,6 @@ void Karyogram::drawDoubleStrandBreakMarker(
     cairo_stroke(cr);
 
 }
-
-
-/*void Karyogram::drawSingleStrandBreakMarker(
-    cairo_t* cr,
-    double x,
-    double y,
-    int numSingleBackboneBreaks)
-{
-    if (numSingleBackboneBreaks <= 0)
-    {
-	return;
-    }
-
-//    const double markerRadius = 1.5;
-
-    // Scale marker radius according to number of SSBs.
-    // log1p() prevents very large SSB counts from producing
-    // excessively large markers.
-    double markerRadius = 1.5 + std::log1p(static_cast<double>(numSingleBackboneBreaks));
-
-    // Prevent very large SSB counts from overwhelming the chromosome.
-    markerRadius = std::min(markerRadius, 7.0);
-
-
-    // White SSB marker
-    cairo_set_source_rgb(
-        cr,
-        1.0,
-        1.0,
-        1.0
-    );
-
-    cairo_arc(
-        cr,
-        x,
-        y,
-        markerRadius,
-        0.0,
-        2.0 * M_PI
-    );
-
-    cairo_fill(cr);
-}
-*/
 
 
 void Karyogram::drawSingleStrandBreakMarker(
@@ -1208,45 +1331,45 @@ void Karyogram::drawLegend(cairo_t* cr)
         "Double-Strand Break"
     );
 
-// --------------------------------------------------
-// Single-Strand Break symbol
-// --------------------------------------------------
+    // --------------------------------------------------
+    // Single-Strand Break symbol
+    // --------------------------------------------------
 
-const double ssbX = 550.0;
-const double ssbY = legendCenterY;
+    const double ssbX = 550.0;
+    const double ssbY = legendCenterY;
 
-const double ssbMarkerWidth = 14.0;
-const double ssbMarkerHeight = 3.0;
+    const double ssbMarkerWidth = 14.0;
+    const double ssbMarkerHeight = 3.0;
 
-// Draw white rectangle
-cairo_rectangle(
-    cr,
-    ssbX - ssbMarkerWidth / 2.0,
-    ssbY - ssbMarkerHeight / 2.0,
-    ssbMarkerWidth,
-    ssbMarkerHeight
-);
+    // Draw white rectangle
+    cairo_rectangle(
+    	cr,
+    	ssbX - ssbMarkerWidth / 2.0,
+    	ssbY - ssbMarkerHeight / 2.0,
+    	ssbMarkerWidth,
+    	ssbMarkerHeight
+    );
 
-cairo_set_source_rgb(
-    cr,
-    1.0,
-    1.0,
-    1.0
-);
+    cairo_set_source_rgb(
+    	cr,
+    	1.0,
+    	1.0,
+    	1.0
+    );
 
-cairo_fill_preserve(cr);
+    cairo_fill_preserve(cr);
 
-// Black outline
-cairo_set_source_rgb(
-    cr,
-    0.0,
-    0.0,
-    0.0
-);
+    // Black outline
+    cairo_set_source_rgb(
+    	cr,
+    	0.0,
+    	0.0,
+   	0.0
+    );
 
-cairo_set_line_width(cr, 1.0);
-
-cairo_stroke(cr);
+    cairo_set_line_width(cr, 1.0);
+ 
+    cairo_stroke(cr);
 
     // SSB label
     cairo_set_source_rgb(
@@ -1335,6 +1458,88 @@ cairo_stroke(cr);
         "Centromere"
     );
 }
+
+ChromosomeLayout Karyogram::determineChromosomeLayout(
+    const std::vector<double>& chromosomeSizes)
+{
+    if (chromosomeSizes.empty())
+    {
+	std::cerr << "Require Chromosome sizes in mega base pairs to plot karyogram.\n";
+	return ChromosomeLayout::NON_HOMOLOGOUS;
+    }
+
+    // The first entry is the number of chromosomes.
+    const int chromosomeCount = static_cast<int>(chromosomeSizes[0]);
+
+    // Need at least two chromosomes to determine a mapping.
+    if (chromosomeCount < 2 || chromosomeSizes.size() != static_cast<size_t>(chromosomeCount + 1))
+    {
+        return ChromosomeLayout::NON_HOMOLOGOUS;
+    }
+
+    // --------------------------------------------------
+    // Helper for comparing chromosome sizes.
+    //
+    // Add a tolerance to the homologous chromosome sizes of 1e-6 * chromosome size <= 250 bases.
+    // --------------------------------------------------
+
+    const auto approximatelyEqual = [](double a, double b)
+        {
+            const double tolerance = 1e-6;
+
+            return std::abs(a - b) <= tolerance * std::max({1.0, std::abs(a), std::abs(b)});
+        };
+
+
+    // --------------------------------------------------
+    // Case 1: Adjacent homologs
+    //
+    // 1,1,2,2,3,3,...
+    //
+    // chromosomeSizes:
+    // [count, 1, 1, 2, 2, 3, 3, ...]
+    // --------------------------------------------------
+
+    if (chromosomeCount >= 2 && approximatelyEqual(chromosomeSizes[1], chromosomeSizes[2]))
+    {
+        return ChromosomeLayout::ADJACENT_HOMOLOGS;
+    }
+
+
+    // --------------------------------------------------
+    // Case 2: Split homologs
+    //
+    // 1,2,3,...,N,1,2,3,...,N
+    //
+    // Compare the first chromosome with the chromosome
+    // halfway through the chromosome list.
+    // --------------------------------------------------
+
+    if (chromosomeCount >= 4 && (chromosomeCount - 2) % 2 == 0)
+    {
+        const int homologousSetSize = (chromosomeCount - 2) / 2;
+
+        const size_t firstHomologIndex = 1;
+
+        const size_t secondHomologIndex = static_cast<size_t>(homologousSetSize + 1);
+
+        if (approximatelyEqual(chromosomeSizes[firstHomologIndex], chromosomeSizes[secondHomologIndex]))
+        {
+            return ChromosomeLayout::SPLIT_HOMOLOGS;
+        }
+    }
+
+
+    // --------------------------------------------------
+    // Case 3: Non-homologous
+    //
+    // 1,2,3,4,...,N
+    // --------------------------------------------------
+
+    return ChromosomeLayout::NON_HOMOLOGOUS;
+
+}
+
 
 
 // ---------------------------------------------------------------------------------------- //

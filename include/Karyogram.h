@@ -33,6 +33,15 @@ struct CentromerePosition			// Map the centromere start and end positions to the
 
 };
 
+
+enum class ChromosomeLayout			// Determine how the user passed the chromosome sizes to modify karyogram plotting logic.
+{
+    NON_HOMOLOGOUS,       // 1,2,3,...,22,Y,X
+    ADJACENT_HOMOLOGS,    // 1,1,2,2,...,22,22,Y,X
+    SPLIT_HOMOLOGS        // 1,2,...,22,1,2,...,22,Y,X
+};
+
+
 // Use Karyogram for all illustrations of chromosome damages
 class Karyogram
 {
@@ -65,4 +74,9 @@ private:
     const CentromerePosition* getHumanCentromere(int chromosomeID);		// Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
 
     void drawLegend(cairo_t* cr);						// Function to draw the karyogram legend.
+
+    ChromosomeLayout determineChromosomeLayout(const std::vector<double>& chromosomeSizes);	// Function that will determine how the user passed the chromosomes.
+
+
+
 };
