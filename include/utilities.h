@@ -1,5 +1,5 @@
-#ifndef SDD_UTILITIES_H
-#define SDD_UTILITIES_H
+#ifndef UTILITIES_H
+#define UTILITIES_H
 
 #include <cstddef>
 #include <string>

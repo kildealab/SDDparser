@@ -3,7 +3,7 @@
 #include <iostream>
 
 #include "Karyogram.h"
-#include "SDDutilities.h"
+#include "utilities.h"
 
 const std::vector<CentromerePosition> humanCentromeres =			// Vector storing the associated chromosome ID centromere positions to 
 {										// draw the centromere location if the human option of '--karyotype' is passed by the user in the command-line
@@ -98,8 +98,9 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
         
     //const int homologousSetSize = (chromosomeCount - 2) / 2;			// Store number of homologs for DSB drawing 
 
-    const double genericCentromereStart = 0.34;					// In case non-human chromosomes specified, draw generic centromere regions
-    const double genericCentromereEnd = 0.36;					// Will be replaced later if human genome is specified with actual centromere positions.
+    // Generic metacentric chromosomes similar to MEDRAS-MC
+    const double genericCentromereStart = 0.49;					// In case non-human chromosomes specified, draw generic centromere regions
+    const double genericCentromereEnd = 0.51;					// Will be replaced later if human genome is specified with actual centromere positions. 
 
     if (chromosomeSizes.size() !=						// Check that the vector contains the expected number of chromosome sizes.
         static_cast<size_t>(chromosomeCount + 1))
@@ -133,6 +134,7 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
 
     const int drawableGroups = hasHomologs ? homologousPairs : chromosomeCount - 2; // Number of chromosome groups that will be drawn before the Y and X
 
+    const int totalColorGroups = drawableGroups + 2;				// Use totalColorGroups to have evenly distrbuted colors across all chromosomes.
 
     double maxBP = 0.0;								// Find largest chromosome, scale all chromosomes with respect to the largest
 
@@ -233,7 +235,7 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
         double groupCenterX = (col * colWidth) + (colWidth / 2.0);
         double posY = startY + (row * rowHeight);
 
-	RGB chromosomeColor = generateChromosomeColor(i);			// Homologs receive same color, non-homologous chromosomes receive their own color.
+	RGB chromosomeColor = generateChromosomeColor(i, totalColorGroups);			// Homologs receive same color, non-homologous chromosomes receive their own color.
 
 
 	// -----------------------------------------------------------------
@@ -566,8 +568,8 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
 
 
     // Set X and Y chromosome Colors
-    RGB yColor = generateChromosomeColor(drawableGroups);
-    RGB xColor = generateChromosomeColor(drawableGroups + 1);
+    RGB yColor = generateChromosomeColor(drawableGroups, totalColorGroups);
+    RGB xColor = generateChromosomeColor(drawableGroups + 1, totalColorGroups);
 
     if (!doubleChromatid)							// Depending on if SDD header 'Cell cycle phase' specified a post-replicated chromosome.
     {
@@ -944,13 +946,16 @@ void Karyogram::drawChromosome(
 }
 
 
-RGB Karyogram::generateChromosomeColor(int chromosomeNumber)
+RGB Karyogram::generateChromosomeColor(int chromosomeNumber, int totalChromosomes)
 {
 
-    // Golden-ratio color hue spacing gives better visual separation between consecutive chromosome colors.
+/*    // Golden-ratio color hue spacing gives better visual separation between consecutive chromosome colors.
     const double goldenRatio = 0.618033988749895;
 
     double hue = std::fmod(chromosomeNumber * goldenRatio, 1.0);
+*/
+
+    const double hue = static_cast<double>(chromosomeNumber) / static_cast<double>(totalChromosomes);
 
     const double saturation = 0.70;
     const double value = 0.90;
@@ -1404,8 +1409,7 @@ void Karyogram::drawLegend(cairo_t* cr, double legendY)
     cairo_close_path(cr);
 
     // Generic chromosome colour
-    RGB chromosomeColor =
-        generateChromosomeColor(0);
+    RGB chromosomeColor = generateChromosomeColor(0, 24);	// total number of chromosomes does not matter for generic chromosome drawing
 
     cairo_set_source_rgb(
         cr,
