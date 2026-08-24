@@ -60,10 +60,12 @@ non-human genomes will be drawn using the generic centromere locations at approx
 3. Double-strand breaks are denoted using black lines spanning slightly more than the width of the chromosome to disitnguish from single-strand breaks.
 4. Single-strand breaks are denoted using white lines on the chromosomes and the line lengths are scaled based on the number of single-strand breaks 
 within a given damage site (i.e. a given SDD data row) (usually between 0-5 SSBs). 
-5. Legend at the top to describe what each symbol signifies in the karyogram.
+5. Summary at the top to describe the dose or fluence in the SDD file, the cell cycle phase, and the number of single- and double-strand breaks.
+6. Legend at the bottom to describe what each symbol signifies in the karyogram.
 
 FURTHER KARYOGRAM PLOTTING WORK:
 1. Add a zoom in and out and a panning option to conserve image quality. 
 2. Be able to read a Standard for DNA repair (SDR) file and plot the structural variation mutations on the Karyogram.
 3. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
+4. Add damage marker to post-replicated chromatid in karyogram
 ... and much more.

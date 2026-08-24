@@ -143,6 +143,7 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
         if (!karyogram.generateKaryogram(				// Ensure Karyogram could be generated, if there are insufficient data in the SDD file.
                 header.chromosome_sizes,
                 header.cell_cycle_phase,
+		header.dose_or_fluence,
 	        parser.getExposures(), 
 		humanGenome,
 	        karyogramPath.string()))

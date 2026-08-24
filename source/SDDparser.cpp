@@ -741,7 +741,7 @@ void SDDparser::printHeaderSummary(std::ostream& output) const {
 	    }
 	}
 
-	output << doseOrFluenceMeaning(header.dose_or_fluence) << "\n"; 	// Dose or fluence summary
+	output << "Dose or fluence specified: " << doseOrFluenceMeaning(header.dose_or_fluence) << "\n"; 	// Dose or fluence summary
 
 
 
@@ -757,7 +757,7 @@ void SDDparser::printHeaderSummary(std::ostream& output) const {
 	". Subsequent field entries are the chromosome sizes in units of Mega base pairs (Mbp),with an average DNA density of " << 
 	header.DNA_density << " Mbp per cubic micrometer.\n";
 
-	output << cellCyclePhaseMeaning(header.cell_cycle_phase) << "\n" ;	// Summarize cell cycle phase
+	output << "Cell Cycle Phase: " << cellCyclePhaseMeaning(header.cell_cycle_phase) << "\n" ;	// Summarize cell cycle phase
 
 	output << "The DNA is structured as: " << header.DNA_structure[0] << " (" <<  // Summarize DNA structure (0, 1, 2, 3, 4, 5) and its meaning
 	dnaStructureMeaning(header.DNA_structure) << ")" << "\n";

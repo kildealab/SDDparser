@@ -176,26 +176,26 @@ inline std::string doseOrFluenceMeaning(const std::vector<double>& doseOrFluence
 {
     if (doseOrFluenceVec.empty())
     {
- 	return "No dose or fluence entries specified\n";
+ 	return "None specified.";
     }
 
     std::string result = "";
 
     if (doseOrFluenceVec[0] == static_cast<double>(0)) 		// If 0 is specified = a single-track irradiation
     {
-        result += "Single-track irradiation specified -- no dose or fluence specifications\n";
+        result += "Single-track irradiation.";
     }
     else if(doseOrFluenceVec[0] == static_cast<double>(1))	// If 1 is specified = a delivered dose
     {
-        result += "Specified a delivered dose of " + std::to_string(doseOrFluenceVec[1]) + " Gy was specified\n";
+        result += "Dose = " + std::to_string(doseOrFluenceVec[1]) + " Gy.";
     }
     else if(doseOrFluenceVec[0] == static_cast<double>(2))	// If 2 is specified = a fluence
     {
-	result += "Specified a fluence of " + std::to_string(doseOrFluenceVec[1]) + "particles per square micrometer\n";    
+	result += "Fluence = " + std::to_string(doseOrFluenceVec[1]) + "particles/um^2.";    
     }
     else 							// If first value is not 0, 1, or 2 return unknown value specified
     {
-	result += "Unknown value specified in 'Dose or fluence' field, the first entry should be either '0', '1', or '2'.";
+	result += "Unknown value specified.";
     }
     return result;
 } 
@@ -289,7 +289,7 @@ inline std::string cellCyclePhaseMeaning(const std::vector<double>& cellCycleVec
 {
     if (cellCycleVec.empty())			// If no value specified, return no data present.
     {
-	return "No Cell cycle header entry specified";
+	return "None specified.";
     }
 
     std::string result = "";
@@ -297,22 +297,22 @@ inline std::string cellCyclePhaseMeaning(const std::vector<double>& cellCycleVec
     switch(static_cast<int>(cellCycleVec[0])) // Look at first integer entry for cell cycle phase
     {
 	case 1: // G0 phase
-	    result += "Cells are " + std::to_string(100*cellCycleVec[1]) + "% through the G0 phase";
+	    result += "G0.";
 		break;
 	case 2: // G1 phase
-	    result += "Cells are " + std::to_string(100*cellCycleVec[1]) + "% through the G1 phase";
+	    result += "G1.";
 		break;
 	case 3: // S phase
-	    result += "Cells are " + std::to_string(100*cellCycleVec[1]) + "% through the S phase";
+	    result += "S.";
 		break;
 	case 4: // G2 phase
-	    result += "Cells are " + std::to_string(100*cellCycleVec[1]) + "% through the G2 phase";
+	    result += "G2.";
 		break;
 	case 5: // M phase
-	    result += "Cells are " + std::to_string(100*cellCycleVec[1]) + "% through the M phase";
+	    result += "M.";
 		break;
 	default: // if other number specified, exit with warning.
-	    result += "Cell cycle phase unknown, if desired, specify: 1 (G0), 2 (G1), 3 (S), 4 (G2), or 5 (M).\n";
+	    result += "Unknown.";
 		break;
     }
 	return result;

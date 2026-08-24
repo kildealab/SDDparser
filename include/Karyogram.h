@@ -50,6 +50,7 @@ public:
     bool generateKaryogram(				// Function that generates the overall Karyogram structure and calls individual functions to draw each chromosome based on sizes.
         const std::vector<double>& chromosomeSizes,	// Use to scale the chromosome heights and convert to number of pixels on the Karyogram.
 	const std::vector<double>& cellCyclePhase, 	// Look at SDD header 'Cell cycle phase' to determine if chromosomes should be replicated or not in the final karyogram.
+	const std::vector<double>& doseOrFluence,				// Look at SDD header for dose or fluence to be summarized in Karyogram.
 	const std::vector<Exposure>& exposures,		// Loop through Exposures object to label chromosome IDs onto the karyogram
 	bool humanGenome,				// Check if the user passed the argument --karyogram human|other. if humanGenome = true, adjust the centromere locations. If humanGenome = false, use generic centromere locations.
         const std::string& outputFilename		// Specify generic output file name combining the input file prefix with the suffix "_karyogram.png"
@@ -73,7 +74,9 @@ private:
 
     const CentromerePosition* getHumanCentromere(int chromosomeID);		// Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
 
-    void drawLegend(cairo_t* cr);						// Function to draw the karyogram legend.
+    void drawLegend(cairo_t* cr, double legendY);						// Function to draw the karyogram legend.
+
+    void drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCyclePhase, const std::vector<Exposure>& exposures, const std::vector<double>& doseOrFluence);
 
     ChromosomeLayout determineChromosomeLayout(const std::vector<double>& chromosomeSizes);	// Function that will determine how the user passed the chromosomes.
 

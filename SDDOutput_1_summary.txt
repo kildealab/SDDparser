@@ -8,7 +8,7 @@ Radiation source: Secondary particles of photoneutrons from a LINAC
 Source type: 2 (Specified one or multiple particles with energy distributions as incident particle source -- Ensure 'Energy distribution' is specified)
 Incident particle fluence fractions: 
 ELECTRONS: 1
-Unknown value specified in 'Dose or fluence' field, the first entry should be either '0', '1', or '2'.
+Dose or fluence specified: Unknown value specified.
 -----------------------      Radiation Target Information      -----------------------
 
 Radiation incident on: Full human cubic shape nuclear DNA model containing ~6.3 Gbp constructed using voxels
@@ -18,8 +18,7 @@ The cell nucleus is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (7.802
 The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (0.000000, 0.000000, 0.000000).
 
 The number of chromosomes specified were: 46. Subsequent field entries are the chromosome sizes in units of Mega base pairs (Mbp),with an average DNA density of 13.3 Mbp per cubic micrometer.
-Cell cycle phase unknown, if desired, specify: 1 (G0), 2 (G1), 3 (S), 4 (G2), or 5 (M).
-
+Cell Cycle Phase: Unknown.
 The DNA is structured as: 0 (DNA structured in a 'Whole Nucleus' arrangement)
 The cell Proliferation status is: 1 (Cell(s) are in a proliferating state)
 

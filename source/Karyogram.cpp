@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "Karyogram.h"
+#include "SDDutilities.h"
 
 const std::vector<CentromerePosition> humanCentromeres =			// Vector storing the associated chromosome ID centromere positions to 
 {										// draw the centromere location if the human option of '--karyotype' is passed by the user in the command-line
@@ -75,6 +76,7 @@ const CentromerePosition* Karyogram::getHumanCentromere(			// Function to return
 bool Karyogram::generateKaryogram(						// Function that generates the overall Karyogram structure
     const std::vector<double>& chromosomeSizes,					// Requires chromosome sizes in the SDD file header for scaling on the image
     const std::vector<double>& cellCyclePhase,					// Requires cell cycle phase in the SDD file header for determining presence of duplicated chromosomes.
+    const std::vector<double>& doseOrFluence,
     const std::vector<Exposure>& exposures,					// Accesses the damage locations associated with each chromosome in a given exposure.
     bool humanGenome,								// Boolean to determine if karyogram should be drawn with human centromere ranges or generic centromere locations for non-human genomes.
     const std::string& outputFilename)						// Outputs the image to the outputFilename.
@@ -156,9 +158,11 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     const int columns = 4;							// Desired number of columns in the karyogram
     const double colWidth = static_cast<double>(imgWidth) / columns;		// Column width also in number of pixels
     const double rowHeight = 250.0;						// Row height in number of pixels
-    const double startY = 100.0;						// Choosing the starting Y position for the first row of chromosomes
+    const double startY = 150.0;						// Choosing the starting Y position for the first row of chromosomes
     const int rows = (drawableGroups + columns - 1) / columns;			// Determine number of rows based on number of chromosomes passed.
-    const int imgHeight = static_cast<int>(startY + rows * rowHeight);		// Adjust image height based on the number of rows, also in pixels.
+    const double legendHeight = 70.0;
+    const double legendBottomMargin = 25.0;
+    const int imgHeight = static_cast<int>(startY + rows * rowHeight + legendHeight + legendBottomMargin);		// Adjust image height based on the number of rows, also in pixels.
     const double maxRenderHeight = 180.0;					// Limit the maximum height of the chromosome, also in pixels
     const double chromosomeWidth = 20.0; 					// Individual chromosomes are 20 pixels wide.
     const double chromatidGap = 1.5;						// The gaps between homologs in a replicated chromosome are 1.5 pixels.
@@ -182,10 +186,17 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     cairo_paint(cr);
 
     // ----------------------------------------------------
-    // Draw Karyogram legend
+    // Draw SDD summary
     // ----------------------------------------------------
-    drawLegend(cr);
 
+    drawSDDsummary(
+    	cr,
+    	cellCyclePhase,
+    	exposures,
+    	doseOrFluence
+    );
+
+    
     // -----------------------------------------------------------
     // Draw chromosomes depending on chromosome size layout given
     // -----------------------------------------------------------
@@ -503,8 +514,8 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
 
     if (humanGenome)									// If user specified a human genome '--karyogram human'
     {
-	int xHumanID = 45;
-	int yHumanID = 46;
+	int xHumanID = 46;
+	int yHumanID = 45;
 
 	// Get the base pair locations of the centromeres for the X and Y chromosomes
         const CentromerePosition* xCentromere = getHumanCentromere(xHumanID);    
@@ -741,6 +752,12 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     cairo_move_to(cr, yGroupCenterX - 4.0, sexChromPosY + yHeight + 25.0);
 
     cairo_show_text(cr, "Y");
+
+    // ----------------------------------------------------
+    // Draw Karyogram legend at bottom
+    // ----------------------------------------------------
+    const double legendY = static_cast<double>(imgHeight) - 100.0;
+    drawLegend(cr, legendY);
 
     // Write the karyogram to the desired output filename "'SDDfileName'_karyogram.png"
     cairo_status_t status = cairo_surface_write_to_png(surface, outputFilename.c_str());
@@ -1061,17 +1078,168 @@ void Karyogram::drawSingleStrandBreakMarker(
     cairo_stroke(cr);
 }
 
+void Karyogram::drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCyclePhase, const std::vector<Exposure>& exposures, const std::vector<double>& doseOrFluence)
+{
+    // --------------------------------------------------
+    // Summary box position and dimensions
+    // --------------------------------------------------
+
+    const double summaryX = 50.0;
+    const double summaryY = 25.0;
+
+    const double summaryWidth = 900.0;
+    const double summaryHeight = 90.0;
+
+    // --------------------------------------------------
+    // Count DSBs and SSBs
+    // --------------------------------------------------
+
+    int numberOfDSBs = 0;
+    int numberOfSSBs = 0;
+
+    for (const auto& exposure : exposures)
+    {
+        for (const auto& damage : exposure.damages)
+        {
+            if (damage.damageType.presenceOfDoubleStrandBreaks == 1)
+            {
+                ++numberOfDSBs;
+            }
+
+            numberOfSSBs += damage.damageType.numSingleBackboneBreaks;
+        }
+    }
+
+    // --------------------------------------------------
+    // Determine cell cycle phase
+    // --------------------------------------------------
+
+    std::string phaseLabel = cellCyclePhaseMeaning(cellCyclePhase);		// Helper function in SDDutilities to interpret cell cycle phase code in SDD header.
+
+    // --------------------------------------------------
+    // Determine Dose or Fluence
+    // --------------------------------------------------
+    std::string doseOrFluenceSummary = doseOrFluenceMeaning(doseOrFluence);
+
+
+    // --------------------------------------------------
+    // Draw summary box
+    // --------------------------------------------------
+
+    cairo_set_source_rgb(
+        cr,
+        0.0,
+        0.0,
+        0.0
+    );
+
+    cairo_set_line_width(cr, 1.5);
+
+    cairo_rectangle(
+        cr,
+        summaryX,
+        summaryY,
+        summaryWidth,
+        summaryHeight
+    );
+
+    cairo_stroke(cr);
+
+    // --------------------------------------------------
+    // Text
+    // --------------------------------------------------
+
+    cairo_set_source_rgb(
+        cr,
+        0.0,
+        0.0,
+        0.0
+    );
+
+    cairo_select_font_face(
+        cr,
+        "Sans",
+        CAIRO_FONT_SLANT_NORMAL,
+        CAIRO_FONT_WEIGHT_NORMAL
+    );
+
+    cairo_set_font_size(cr, 15.0);
+
+    // Two rows of text
+    const double firstRowY = summaryY + 30.0;
+    const double secondRowY = summaryY + 68.0;
+
+    // ------------------------------------------
+    // ROW 1 
+    // ------------------------------------------
+
+    // Dose / fluence
+    cairo_move_to(
+        cr,
+        summaryX + 15.0,
+        firstRowY
+    );
+
+    cairo_show_text(
+        cr,
+        ("Dose/Fluence: " + doseOrFluenceSummary).c_str()
+    );
+
+    // Cell cycle phase
+    cairo_move_to(
+        cr,
+        summaryX + 470.0,
+        firstRowY
+    );
+
+    cairo_show_text(
+        cr,
+        ("Cell Cycle Phase: " +
+         phaseLabel).c_str()
+    );
+
+    // --------------------------------------------------
+    // ROW 2
+    // --------------------------------------------------
+    // SSBs
+    cairo_move_to(
+        cr,
+        summaryX + 15.0,
+        secondRowY
+    );
+
+    cairo_show_text(
+        cr,
+        ("SSBs: " +
+         std::to_string(numberOfSSBs)).c_str()
+    );
+
+    // DSBs
+    cairo_move_to(
+        cr,
+        summaryX + 470.0,
+        secondRowY
+    );
+
+    cairo_show_text(
+        cr,
+        ("DSBs: " +
+         std::to_string(numberOfDSBs)).c_str()
+    );
+}
 
 
 
-void Karyogram::drawLegend(cairo_t* cr)
+
+
+void Karyogram::drawLegend(cairo_t* cr, double legendY)
 {
     // --------------------------------------------------
     // Legend position
     // --------------------------------------------------
 
     const double legendX = 50.0;
-    const double legendY = 45.0;
+//    const double legendY = 45.0; Move legend to the bottom, do not hardcode Y position.
 
     // --------------------------------------------------
     // Legend border
