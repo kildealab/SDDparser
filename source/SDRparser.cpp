@@ -1,4 +1,5 @@
 #include "SDRparser.h"
+#include "utilities.h"
 
 #include <iostream>
 #include <fstream>
@@ -28,8 +29,33 @@ bool SDRparser::parseFile(const std::string& filename)
         return false;
     }
 
-    // Cell parsing will be implemented once we finalize
-    // the SDR section markers and parsing behavior.
+
+    std::string line;
+
+    while (std::getline(file, line))
+    {
+	line = trim(line);
+
+	if (line.empty());
+	{
+	    continue;
+	}
+
+
+	if (line.rfind("***subheader - cell", 0) == 0)
+	{
+	    SDRsubHeader subHeader{};
+
+	    if (!parseCellSubHeader(file, subHeader))
+	    {
+		return false;
+	    }
+
+	    subHeader.push_back(subHeader);
+
+	}
+
+    }
 
     return true;
 }
@@ -40,9 +66,9 @@ const SDRmasterHeader& SDRparser::getMasterHeader() const
     return masterHeader;
 }
 
-const std::vector<SDRcell>& SDRparser::getCells() const
+const std::vector<SDRsubHeader>& SDRparser::getSubHeaders() const
 {
-    return cells;
+    return subHeaders;
 }
 
 
@@ -131,17 +157,92 @@ bool SDRparser::parseCell(std::ifstream& file)
 
 
 
-bool SDRparser::parseCellSubheader(
-    std::ifstream& file,
-    SDRcell& cell)
+bool SDRparser::parseSubHeader(std::ifstream& file, SDRsubHeader& subHeader)
 {
-    // Implement cell subheader parsing here.
-    return true;
+
+    std::string line;
+
+    while (std::getline(file, line))
+    {
+
+	line = trim(line);
+
+	if (line.empty())
+	{
+	    continue;
+	}
+
+	// The subheader ends when the data section begins.
+        if (line.rfind("***data - cell", 0) == 0)
+        {
+            return true;
+        }
+
+	const std::size_t delimiterPos = line.find(':');
+
+	// If delimiter not found, exit with error
+	if (delimiterPos == std::string::npos)
+	{
+	    std::cerr << "ERROR: Invalid SDR subheader line: " << line << "\n";
+	    return false;
+	}
+
+
+	const std::string field = normalizedHeaderkey(line.substr(0, delimiterPos));
+	const std::string value = trim(line.substr(delimiterPos + 1));
+	if (field == "cell id")
+	{
+	    const std::vector<std::string> values = split(value, ',');
+
+	    if (values.size() != 1)
+	    {
+		std::cerr << "ERROR: Invalid Cell ID in SDR subheader.\n";
+		return false;
+	    }
+
+
+	    subHeader.cellID = parseIntList(values)[0];
+	}
+	else if (field == "mutated chromosome sizes")
+	{
+
+	    if (!parseMutatedChromosomeSizes(value, subHeader.mutatedChromosomeSizes))
+	    {
+		return false;
+	    }
+
+	}
+	else if (field == "intact strands id")
+	{
+	    subHeader.intactStrandIDs = parseIntList(split(value, ','));
+	}
+	else if (field == "total dsb count")
+	{
+	    subHeader.totalDSBcount = parseIntList(split(value, ','))[0];
+	}
+	else if (field == "total misrepair count")
+	{
+	    subHeader.totalMisrepairCount = parseIntList(split(value, ','))[0];
+	}
+	else if (field == "medras-mc log")
+	{
+	    subHeader.medrasMClog = parseIntList(split(value, ','));
+	}
+	else
+	{
+	    std::cerr << "Warning: Unknown SDR subheader field: " << field << "\n";
+	}
+
+    }
+
+    std::cerr << "ERROR: SDR data section was not found for cell " << subHeader.cellID << "\n";
+
+    return false;
 }
 
 bool SDRparser::parseCellData(
     std::ifstream& file,
-    SDRcell& cell)
+    SDRsubHeader& subHeader)
 {
     // Implement SDR data parsing here.
     return true;
@@ -156,6 +257,65 @@ bool SDRparser::parseDataRecord(
     // Implement once we wire up the SDR data parser.
     return true;
 }
+
+
+bool SDRparser::parseMutatedChromosomeSizes(const std::string& value, std::map<int, double>& chromosomeSizes)
+{
+    chromosomeSizes.clear();
+
+    std::string contents = trim(value);
+
+    // Remove {} around the mutated chromosome sizes
+    if (contents.size() < 2 || contents.front() != '{' || contents.back != '}')
+    {
+	std::cerr << "ERROR: Invalid Mutated Chromosome Sizes format: " << value << "\n";
+	return false;
+    }
+
+    contents = contents.substr(1, contents.size() - 2);
+    contents = trim(contents);
+
+    if (contents.empty())
+    {
+	return true;
+    }
+
+    // Split the dictionary grouping cell ID and chromosome size
+    const std::vector<std::string> entries = split(contents, ',');
+
+    for (const std::string& entry: entries)
+    {
+	const size_t delimiterPos = entry.find(':');
+
+	if (delimiterPos == std::string::npos)
+	{
+	    std::cerr << "ERROR: Invalid mutated chromosome size entry: " << entry << std::endl;
+	    return false;
+	}
+
+	const std::string chromID = trim(entry.substr(0, delimiterPos);
+	const std::string chromSize = trim(entry.substr(delimiterPos + 1));
+	if (chromID.empty() || chromSize.empty())
+	{
+	    std::cerr << "ERROR: Invalid muated chromosome size entry " << entry << "\n";
+	    return false;
+	}
+
+	const std::vector<int> IDs = parseIntList({chromID});
+	const std::vector<double> sizes = parseDoubleList({chromSize});
+	if (IDs.size() != 1 || sizes.size() != 1)
+	{
+	    std::cerr << "ERROR: Could not parse mutated chromosome size entry: " << entry << "\n";
+	    return false;
+	}
+
+	chromosomeSizes[IDs[0]] = sizes[0];
+    }
+
+    return true;
+
+}
+
 
 bool SDRparser::parseFragment(
     const std::string& text,
@@ -181,9 +341,9 @@ bool SDRparser::writeSummary(
 
     writeMasterHeaderSummary(output);
 
-    for (const SDRcell& cell : cells)
+    for (const SDRsubHeader& subheader : subHeaders)
     {
-        writeCellSummary(output, cell);
+        writeCellSummary(output, subHeader);
     }
 
     return true;
@@ -199,7 +359,7 @@ void SDRparser::writeMasterHeaderSummary(
 
 void SDRparser::writeCellSummary(
     std::ofstream& output,
-    const SDRcell& cell) const
+    const SDRsubHeader& subHeader) const
 {
     // Summary implementation later.
 }

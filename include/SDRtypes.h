@@ -39,7 +39,7 @@ struct SDRmasterHeader
 };
 
 // Stores the information contained in one SDR cell subheader.
-struct SDRcell
+struct SDRsubHeader
 {
     int cellID;
 
@@ -53,10 +53,12 @@ struct SDRcell
     int totalDSBCount;
     int totalMisrepairCount;
 
-    std::vector<int> medrasMCLog;
+    // Raw MEDRAS-MC log
+    std::vector<int> medrasMClog;
 
     // All SDR data records belonging to this cell.
     std::vector<SDRdataRecord> dataRecords;
+
 };
 
 #endif

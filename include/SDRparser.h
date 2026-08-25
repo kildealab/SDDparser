@@ -19,7 +19,7 @@ public:
 
     // Access parsed SDR information.
     const SDRmasterHeader& getMasterHeader() const;
-    const std::vector<SDRCell>& getCells() const;
+    const std::vector<SDRsubHeader>& getSubHeaders() const;
 
     // Generate a summary file.
     bool writeSummary(const std::string& outputFilename) const;
@@ -27,7 +27,7 @@ public:
 private:
 
     SDRmasterHeader masterHeader;
-    std::vector<SDRcell> cells;
+    std::vector<SDRsubHeader> subHeaders;
 
     // Master header parsing.
     bool parseMasterHeader(std::ifstream& file);
@@ -38,14 +38,18 @@ private:
     // Cell subheader parsing.
     bool parseCellSubheader(
         std::ifstream& file,
-        SDRcell& cell
+        SDRsubHeader& subHeader
     );
 
     // Cell data parsing.
     bool parseCellData(
         std::ifstream& file,
-        SDRcell& cell
+        SDRsubHeader& subHeader
     );
+
+
+    bool parseMutatedChromosomeSizes(const std::string& value, std::map<int, double>& chromosomeSizes);
+
 
     // Parse one SDR data record.
     bool parseDataRecord(
@@ -61,9 +65,9 @@ private:
 
     // Summary helpers.
     void writeMasterHeaderSummary(std::ofstream& output) const;
-    void writeCellSummary(
+    void writeSubHeaderSummary(
         std::ofstream& output,
-        const SDRcell& cell
+        const SDRsubHeader& subHeader
     ) const;
 };
 
