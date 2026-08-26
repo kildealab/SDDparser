@@ -3,7 +3,8 @@
 #include <iostream>
 
 #include "Karyogram.h"
-#include "utilities.h"
+#include "generalUtilities.h"
+#include "SDDutilities.h"
 
 const std::vector<CentromerePosition> humanCentromeres =			// Vector storing the associated chromosome ID centromere positions to 
 {										// draw the centromere location if the human option of '--karyotype' is passed by the user in the command-line

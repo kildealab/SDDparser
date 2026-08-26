@@ -1,12 +1,11 @@
-#ifndef SDRPARSER_H
-#define SDRPARSER_H
-
-#include "SDRtypes.h"
+#ifndef SDR_PARSER_H
+#define SDR_PARSER_H
 
 #include <fstream>
 #include <string>
 #include <vector>
 
+#include "SDRtypes.h"
 
 class SDRparser
 {
@@ -14,61 +13,42 @@ public:
 
     SDRparser() = default;
 
-    // Parse an SDR file.
-    bool parseFile(const std::string& filename);
+    bool parseFile(const std::string& filename);				// General parent function to parse entire SDR file.
 
-    // Access parsed SDR information.
-    const SDRmasterHeader& getMasterHeader() const;
-    const std::vector<SDRsubHeader>& getSubHeaders() const;
+    const SDRmasterHeader& getMasterHeader() const;				// Getter function for parseMasterHeader function
+    const std::vector<SDRsubHeader>& getSubHeaders() const;			// Getter function for parseSubHeader function
 
-    // Generate a summary file.
-    bool writeSummary(const std::string& outputFilename) const;
+    bool writeSummary(const std::string& outputFilename) const;			// General parent function to write out the summary of the SDR file.
+
 
 private:
 
     SDRmasterHeader masterHeader;
     std::vector<SDRsubHeader> subHeaders;
 
-    // Master header parsing.
-    bool parseMasterHeader(std::ifstream& file);
-/*
-    // Cell parsing.
-    bool parseCell(std::ifstream& file);
-*/
-    // Cell subheader parsing.
-    bool parseCellSubheader(
-        std::ifstream& file,
-        SDRsubHeader& subHeader
-    );
+    // One-line pushback buffer, so if the function reads too far (next cell Subheader tag) can track the read position for other functions.
+    std:: string pendingLine;
+    bool hasPendingLine = false;
+    bool nextLine(std::ifstream& file, std::string& line);
+    void pushBackLine(const std::string& line);
 
-    // Cell data parsing.
-    bool parseCellData(
-        std::ifstream& file,
-        SDRsubHeader& subHeader
-    );
+    bool parseMasterHeader(std::ifstream& file);				// Master header parsing.
 
+    bool parseSubHeader(std::ifstream& file, SDRsubHeader& subHeader);		// Cell subheader parsing.
 
-    bool parseMutatedChromosomeSizes(const std::string& value, std::map<int, double>& chromosomeSizes);
+    bool parseCellData(std::ifstream& file, SDRsubHeader& subHeader);		// Cell data parsing.
 
+    bool parseMutatedChromosomeSizes(const std::string& value, std::map<int, double>& chromosomeSizes);		// Function to parse cell subheader mutated chromosome sizes entry.
 
-    // Parse one SDR data record.
-    bool parseDataRecord(
-        const std::string& line,
-        SDRdataRecord& record
-    );
+    bool parseDataRecord(const std::string& line, SDRdataRecord& record);	// Parse one SDR data record/entry.
 
-    // Parse one fragment from field 3.
-    bool parseFragment(
-        const std::string& text,
-        SDRfragment& fragment
-    );
+    bool parseFragment(const std::string& text, SDRfragment& fragment);		// Function to help parse SDR data record field 3 fragment information.
 
-    // Summary helpers.
+    // Write summary helper functions.
     void writeMasterHeaderSummary(std::ofstream& output) const;
-    void writeSubHeaderSummary(
-        std::ofstream& output,
-        const SDRsubHeader& subHeader
-    ) const;
+    void writeSubHeaderSummary(std::ofstream& output, const SDRsubHeader& subHeader) const;
+    void writeCellDataSummary(std::ofstream& output, const SDRsubHeader& subHeader) const;
+
 };
 
 #endif

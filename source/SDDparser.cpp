@@ -5,7 +5,8 @@
 #include <algorithm>
 
 #include "SDDparser.h"
-#include "utilities.h"
+#include "generalUtilities.h"
+#include "SDDutilities.h"
 
 // Function to check if SDD file successfully loads, and if header and data blocks were successfully processed.
 bool SDDparser::load(const std::string& filename)

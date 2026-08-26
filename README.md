@@ -2,7 +2,8 @@
 Writing a C++ package capable of parsing the Standard for DNA Damage file header and data fields. 
 
 This package is now capable of summarizing the SDD header fields and the data fields into a single summary file. It can also optionally plot a 
-Karyogram of the double-strand break and single-strand break locations onto the chromosomes the user passes in the SDD file header.
+Karyogram of the double-strand break and single-strand break locations onto the chromosomes the user passes in the SDD file header. Current work
+is being done to accomodate Standard for DNA Repair (SDR) file parsing and karyogram plotting.
 
 HOW TO USE:
 1. To compile the SDDparser program, navigate to the directory where the Makefile is stored (cd /path/to/SDDparserDirectory/)
@@ -37,6 +38,11 @@ also requires SDD data fields 3, 4, and 6, otherwise the chromosome sizes and da
 ****PLEASE ENSURE THE CHROMOSOME IDS IN DATA FIELD 3 CORRESPOND TO THE CORRECT CHROMOSOME SIZE INDEX LISTED IN THE SDD HEADER, 
 OTHERWISE THE KARYOGRAM PLOTTER WILL BE INCORRECT****
 
+8. Functionality has been added to parse an SDR file using the following command './SDDparser -sdr ./path/to/SDRinputFile.txt'. The summary of the SDR header
+and subheader are returned for each cell, as well as a summary of the number of mutations present in the SDR file (so far long deletions, balanced inversion, 
+and balanced translocations). For now, karyogram plotting is not supported for depicting genomic rearrangements from DNA structural variations, but this
+should be implemented soon. 
+
 WHAT IS SUMMARIZED IN THE SDD FILE SUMMARY:
 
 All important header fields are interpreted and summarized in a text format at the beginning of the summary file.
@@ -63,9 +69,16 @@ within a given damage site (i.e. a given SDD data row) (usually between 0-5 SSBs
 5. Summary at the top to describe the dose or fluence in the SDD file, the cell cycle phase, and the number of single- and double-strand breaks.
 6. Legend at the bottom to describe what each symbol signifies in the karyogram.
 
+WHAT IS SUMMARIZED IN THE SDR FILE SUMMARY:
+1. SDR version, author, associated SDD file that produced the SDR file from the MEDRAS-MC output.
+2. Number of chromosomes listed and their respective sizes in mega base pairs.
+3. Per Cell summary of the cell subheader (number of double-strand breaks and misrepairs).
+4. Number of mutations per each type (so far only long deletions, balanced inversions, and balanced translocations are supported). More support
+for more complex structural variations will be implemented. 
+
 FURTHER KARYOGRAM PLOTTING WORK:
 1. Add a zoom in and out and a panning option to conserve image quality. 
 2. Be able to read a Standard for DNA repair (SDR) file and plot the structural variation mutations on the Karyogram.
 3. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
-4. Add damage marker to post-replicated chromatid in karyogram
+4. Depict the increase in number of single-strand and double-strand breaks as a function of dose using the Karyogram for SDD files with different doses listed,
 ... and much more.

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef KARYOGRAM_H
+#define KARYOGRAM_H
 
 #include <cairo/cairo.h>
 
@@ -83,3 +84,5 @@ private:
 
 
 };
+
+#endif

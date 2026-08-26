@@ -1,4 +1,5 @@
-#pragma once
+#ifndef SDD_TYPES_H
+#define SDD_TYPES_H
 
 #include <cstdint>
 #include <string>
@@ -163,3 +164,5 @@ struct DamageLocation		// Stores the chromosome position in base pairs where the
     ChromosomePosition chromosomePosition;
     int numSingleStrandBreaks;
 };
+
+#endif

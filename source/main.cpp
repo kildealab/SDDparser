@@ -3,7 +3,79 @@
 #include <filesystem>
 
 #include "SDDparser.h"
+#include "SDRparser.h"
 #include "Karyogram.h"
+
+
+namespace
+{
+    void printUsage()
+    {
+        std::cout
+            << "SDDparser\n\n"
+            << "Usage:\n"
+            << "  ./SDDparser <SDD file>\n"
+            << "  ./SDDparser <SDD file> --karyogram human|other\n"
+            << "  ./SDDparser -sdr <SDR file>\n"
+            << "  ./SDDparser -sdr <SDR file> --karyogram human|other\n\n"
+            << "Examples:\n"
+            << "  ./SDDparser SDDOutput_1.txt\n"
+            << "  ./SDDparser SDDOutput_1.txt --karyogram human\n"
+            << "  ./SDDparser -sdr SDROutput_1.txt\n"
+            << "  ./SDDparser -sdr SDROutput_1.txt --karyogram human\n";
+    }
+    
+    // Parses an optional "--karyogram human|other" pair starting at
+    // argv[startIndex]. If nothing follows the preceding arguments,
+    // drawKaryogram is left false and this returns true (nothing to do).
+    // Prints an error and returns false on any malformed input.
+    bool parseKaryogramOption(int argc, char* argv[], int startIndex, bool& drawKaryogram, std::string& genomeType)
+    {
+	drawKaryogram = false;
+        genomeType.clear();
+
+        if (argc <= startIndex)
+        {
+            return true;
+        }
+
+        if (std::string(argv[startIndex]) != "--karyogram")
+        {
+            std::cerr << "ERROR: Unknown command-line option: "
+                      << argv[startIndex] << '\n';
+            return false;
+        }
+
+        drawKaryogram = true;
+
+	if (argc <= startIndex + 1)
+        {
+            std::cerr << "ERROR: --karyogram requires "
+                      << "either 'human' or 'other'.\n";
+            return false;
+        }
+
+        genomeType = argv[startIndex + 1];
+
+        if (genomeType != "human" && genomeType != "other")
+        {
+            std::cerr << "ERROR: Genome type must be "
+                      << "'human' or 'other'.\n";
+            return false;
+        }
+
+        if (argc > startIndex + 2)
+        {
+            std::cerr << "ERROR: Too many command-line arguments.\n";
+            return false;
+        }
+
+	return true;
+    }
+}
+
+
+
 
 int main(int argc, char* argv[]) 					// Variables in main() brackets allow for the second command line argument to be the SDD file path or -h|--help for usage help. Third argument is an option for plotting the corresponding Karyogram if desired using "--karyogram". The fourth argument specifies either 'human' genome or 'other' genome.
 {
@@ -14,79 +86,85 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 
     if(argc < 2)							// Must have at least two command-line arguments, the program and the SDD file path.
     {
-	std::cerr << "Usage: ./SDDparser <SDD file> [--karyogram human|other]\n";
+	std::cerr << "Usage: ./SDDparser <SDD file> [--karyogram human|other]\n"
+		   << "       ./SDDparser -sdr <SDR file> [--karyogram human|other]\n";
 	return 1;
     }
 
-    std::string argument = argv[1];					// If second command-line argument is -h or --help, return usage examples.
-    if (argument == "-h" || argument == "--help")
+    std::string firstArg = argv[1];					// If second command-line argument is -h or --help, return usage examples.
+    if (firstArg == "-h" || firstArg == "--help")
     {
-        std::cout
-            << "SDDparser\n\n"
-            << "Usage:\n"
-            << "  ./SDDparser <SDD file>\n"
-            << "  ./SDDparser <SDD file> --karyogram human\n"
-            << "  ./SDDparser <SDD file> --karyogram other\n\n"
-            << "Examples:\n"
-            << "  ./SDDparser SDDOutput_1.txt\n"
-            << "  ./SDDparser SDDOutput_1.txt --karyogram human\n"
-            << "  ./SDDparser SDDOutput_1.txt --karyogram other\n";
+        printUsage();
+        return 0;
+    }
+
+    // --------------------------------------
+    // Check for -sdr file option
+    // --------------------------------------
+
+    if (firstArg == "-sdr")
+    {
+        if (argc < 3)
+        {
+            std::cerr << "ERROR: -sdr requires an SDR file path.\n";
+            return 1;
+        }
+
+        std::string filename = argv[2];
+
+        bool drawKaryogram = false;
+        std::string genomeType;
+
+	if (!parseKaryogramOption(argc, argv, 3, drawKaryogram, genomeType))
+        {
+            return 1;
+        }
+
+        SDRparser parser;
+
+        if (!parser.parseFile(filename))
+        {
+            std::cout << "Failed to load SDR file " << filename << "\n";
+            return 1;
+        }
+
+	std::filesystem::path inputPath(filename);
+        std::filesystem::path summaryPath = inputPath.parent_path() /
+            (inputPath.stem().string() + "_summary.txt");
+
+        if (!parser.writeSummary(summaryPath.string()))
+        {
+            std::cerr << "Failed to create SDR summary file\n";
+            return 1;
+        }
+
+        std::cout << "Summary written to: " << summaryPath << "\n";
+
+        if (drawKaryogram)
+        {
+            std::cerr << "WARNING: --karyogram is not yet supported for "
+                      << "SDR files; skipping karyogram generation.\n";
+        }
 
         return 0;
     }
 
-    std::string filename = argv[1]; 					// SDD file path is the second argument of the command-line
 
     // --------------------------------------
-    // Karyogram options
+    // SDD mode (existing behavior)
     // --------------------------------------
+
+    std::string filename = firstArg;
 
     bool drawKaryogram = false;
-    bool humanGenome = false;
+    std::string genomeType;
 
-
-    std::string genomeType = argv[3];					// The fourth argument is the genomeType = 'human'|'other'
-
-    if (argc >= 3)							// If more at least 3 arguments are passed, must be '--karyogram'
+    if (!parseKaryogramOption(argc, argv, 2, drawKaryogram, genomeType))
     {
-        if (std::string(argv[2]) == "--karyogram")
-        {
-            drawKaryogram = true;
-
-            if (argc < 4)						// If '--karyogram' specified, user must specify either 'human' genome or 'other' genome for centromere plotting.
-            {
-                std::cerr << "ERROR: --karyogram requires "
-                          << "either 'human' or 'other'.\n";
-                return 1;
-            }
-
-            if (genomeType == "human")
-            {
-                humanGenome = true;
-            }
-            else if (genomeType == "other")
-            {
-                humanGenome = false;
-            }
-            else							// If fourth argument not 'human'|'other', return error.
-            {
-                std::cerr << "ERROR: Genome type must be "
-                          << "'human' or 'other'.\n";
-                return 1;
-            }
-	    if (argc > 4)						// Cannot accept more than 4 command-line arguments.
-    	    {
-		std::cerr << "Error: Too many command-line arguments.\n";
-		return 1;
-	    }
-        }
-        else								// Return error if unknown third command-line argument encountered.
-        {
-            std::cerr << "ERROR: Unknown command-line option: "
-                      << argv[2] << '\n';
-            return 1;
-        }
+	return 1;
     }
+
+    bool humanGenome = (genomeType == "human");
 
     // -------------------------------------
     // Load SDD file
@@ -104,7 +182,7 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
     // Create summary file
     // -------------------------------------
 
-    std::filesystem::path inputPath(argv[1]);				// Create Summary Output file to the same path as the input SDD file
+    std::filesystem::path inputPath(filename);				// Create Summary Output file to the same path as the input SDD file
 
     std::filesystem::path summaryPath = inputPath.parent_path() / 	// Create the path to the summary file as the same path as the input SDD file
 	(inputPath.stem().string() + "_summary.txt");
