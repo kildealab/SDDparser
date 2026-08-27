@@ -77,7 +77,8 @@ const CentromerePosition* Karyogram::getHumanCentromere(			// Function to return
 bool Karyogram::generateKaryogram(						// Function that generates the overall Karyogram structure
     const std::vector<double>& chromosomeSizes,					// Requires chromosome sizes in the SDD file header for scaling on the image
     const std::vector<double>& cellCyclePhase,					// Requires cell cycle phase in the SDD file header for determining presence of duplicated chromosomes.
-    const std::vector<double>& doseOrFluence,
+    const std::vector<double>& doseOrFluence,					// Accesses the SDD dose or fluence listed in the header
+    const std::vector<int>& incidentParticles,					// Accesses the SDD incident particles in the header
     const std::vector<Exposure>& exposures,					// Accesses the damage locations associated with each chromosome in a given exposure.
     bool humanGenome,								// Boolean to determine if karyogram should be drawn with human centromere ranges or generic centromere locations for non-human genomes.
     const std::string& outputFilename)						// Outputs the image to the outputFilename.
@@ -161,7 +162,7 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     const int columns = 4;							// Desired number of columns in the karyogram
     const double colWidth = static_cast<double>(imgWidth) / columns;		// Column width also in number of pixels
     const double rowHeight = 250.0;						// Row height in number of pixels
-    const double startY = 150.0;						// Choosing the starting Y position for the first row of chromosomes
+    const double startY = 188.0;						// Choosing the starting Y position for the first row of chromosomes
     const int rows = (drawableGroups + columns - 1) / columns;			// Determine number of rows based on number of chromosomes passed.
     const double legendHeight = 70.0;
     const double legendBottomMargin = 25.0;
@@ -192,12 +193,7 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
     // Draw SDD summary
     // ----------------------------------------------------
 
-    drawSDDsummary(
-    	cr,
-    	cellCyclePhase,
-    	exposures,
-    	doseOrFluence
-    );
+    drawSDDsummary(cr, cellCyclePhase, exposures, doseOrFluence, incidentParticles);
 
     
     // -----------------------------------------------------------
@@ -1084,7 +1080,7 @@ void Karyogram::drawSingleStrandBreakMarker(
     cairo_stroke(cr);
 }
 
-void Karyogram::drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCyclePhase, const std::vector<Exposure>& exposures, const std::vector<double>& doseOrFluence)
+void Karyogram::drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCyclePhase, const std::vector<Exposure>& exposures, const std::vector<double>& doseOrFluence, const std::vector<int>& incidentParticles)
 {
     // --------------------------------------------------
     // Summary box position and dimensions
@@ -1094,7 +1090,7 @@ void Karyogram::drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCycle
     const double summaryY = 25.0;
 
     const double summaryWidth = 900.0;
-    const double summaryHeight = 90.0;
+    const double summaryHeight = 128.0;
 
     // --------------------------------------------------
     // Count DSBs and SSBs
@@ -1116,17 +1112,31 @@ void Karyogram::drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCycle
         }
     }
 
-    // --------------------------------------------------
-    // Determine cell cycle phase
-    // --------------------------------------------------
 
+    // Determine cell cycle phase
     std::string phaseLabel = cellCyclePhaseMeaning(cellCyclePhase);		// Helper function in SDDutilities to interpret cell cycle phase code in SDD header.
 
-    // --------------------------------------------------
+
     // Determine Dose or Fluence
-    // --------------------------------------------------
     std::string doseOrFluenceSummary = doseOrFluenceMeaning(doseOrFluence);
 
+    // Determine incident particle(s)
+    std::string incidentParticlesLabel;
+    if (incidentParticles.empty())
+    {
+	incidentParticlesLabel = "N/A";
+    }
+    else
+    {
+	for (std::size_t i = 0; i < incidentParticles.size(); i++)
+	{
+	    incidentParticlesLabel += incidentParticlesMeaning(incidentParticles[i]);
+	    if (i + 1 < incidentParticles.size())
+	    {
+		incidentParticlesLabel += ", ";
+	    }
+	}
+    }
 
     // --------------------------------------------------
     // Draw summary box
@@ -1171,19 +1181,36 @@ void Karyogram::drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCycle
 
     cairo_set_font_size(cr, 15.0);
 
-    // Two rows of text
+    // Three rows of text
     const double firstRowY = summaryY + 30.0;
     const double secondRowY = summaryY + 68.0;
+    const double thirdRowY = summaryY + 106.0;
 
     // ------------------------------------------
-    // ROW 1 
+    // TOP ROW
     // ------------------------------------------
+
+    // Incident Particle(s)
+    cairo_move_to(
+        cr,
+        summaryX + 15.0,
+        firstRowY
+    );
+
+    cairo_show_text(
+        cr,
+        ("Incident Particle(s): " + incidentParticlesLabel).c_str()
+    );
+
+    // -----------------------------------------
+    // SECOND ROW
+    // -----------------------------------------
 
     // Dose / fluence
     cairo_move_to(
         cr,
         summaryX + 15.0,
-        firstRowY
+        secondRowY
     );
 
     cairo_show_text(
@@ -1195,7 +1222,7 @@ void Karyogram::drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCycle
     cairo_move_to(
         cr,
         summaryX + 470.0,
-        firstRowY
+        secondRowY
     );
 
     cairo_show_text(
@@ -1205,13 +1232,14 @@ void Karyogram::drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCycle
     );
 
     // --------------------------------------------------
-    // ROW 2
+    // THIRD ROW
     // --------------------------------------------------
+
     // SSBs
     cairo_move_to(
         cr,
         summaryX + 15.0,
-        secondRowY
+        thirdRowY
     );
 
     cairo_show_text(
@@ -1224,7 +1252,7 @@ void Karyogram::drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCycle
     cairo_move_to(
         cr,
         summaryX + 470.0,
-        secondRowY
+        thirdRowY
     );
 
     cairo_show_text(

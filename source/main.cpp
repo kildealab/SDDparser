@@ -222,7 +222,8 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
                 header.chromosome_sizes,
                 header.cell_cycle_phase,
 		header.dose_or_fluence,
-	        parser.getExposures(), 
+		header.incident_particles,
+	        parser.getExposures(),
 		humanGenome,
 	        karyogramPath.string()))
          {
