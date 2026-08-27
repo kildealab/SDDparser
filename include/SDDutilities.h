@@ -90,22 +90,36 @@ inline std::string doseOrFluenceMeaning(const std::vector<double>& doseOrFluence
 
     std::string result = "";
 
-    if (doseOrFluenceVec[0] == static_cast<double>(0)) 		// If 0 is specified = a single-track irradiation
+    if (doseOrFluenceVec.size() == 1)						// If only one element specified, assume a dose in Gy
     {
-        result += "Single-track irradiation.";
+	result += "Dose = " + std::to_string(doseOrFluenceVec[0]) + " Gy.";
     }
-    else if(doseOrFluenceVec[0] == static_cast<double>(1))	// If 1 is specified = a delivered dose
+
+    if (doseOrFluenceVec.size() == 2)					// If two elements specified, check whether single-track, dose, or fluence
     {
-        result += "Dose = " + std::to_string(doseOrFluenceVec[1]) + " Gy.";
+    	if (doseOrFluenceVec[0] == static_cast<double>(0)) 		// If first element is 0 = a single-track irradiation
+    	{
+            result += "Single-track irradiation.";
+    	}
+    	else if(doseOrFluenceVec[0] == static_cast<double>(1))		// If first element is 1 = a delivered dose
+        {
+            result += "Dose = " + std::to_string(doseOrFluenceVec[1]) + " Gy.";
+    	}
+    	else if(doseOrFluenceVec[0] == static_cast<double>(2))		// If first element is 2 = a fluence
+    	{
+	    result += "Fluence = " + std::to_string(doseOrFluenceVec[1]) + "particles/um^2.";    
+    	}
+    	else 							// If first value is not 0, 1, or 2 return unknown value specified
+    	{
+	    result += "Unknown value specified.";
+    	}
     }
-    else if(doseOrFluenceVec[0] == static_cast<double>(2))	// If 2 is specified = a fluence
+
+    if (doseOrFluenceVec.size() > 2)
     {
-	result += "Fluence = " + std::to_string(doseOrFluenceVec[1]) + "particles/um^2.";    
+	result += "'Dose or fluence' field received " + std::to_string(doseOrFluenceVec.size()) + ", expected at most 2 values.";
     }
-    else 							// If first value is not 0, 1, or 2 return unknown value specified
-    {
-	result += "Unknown value specified.";
-    }
+
     return result;
 } 
 
@@ -277,6 +291,10 @@ inline std::string dnaStructureMeaning(const std::vector<int>& dnaStructureVec)
 // Proliferation status of a cell can be 0 = quiescent or 1 = proliferating.
 inline std::string proliferationStatusMeaning(const std::vector<std::string>& status)
 {
+    if (status.empty())
+    {
+	return "No proliferation status specified.";
+    }
     if (std::stoi(status[0]) == 0)
     {
 	return "Cell(s) are in a quiescent state";

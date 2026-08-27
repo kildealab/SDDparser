@@ -24,9 +24,13 @@ the karyogram of the associated damages, and you must specify either 'human' for
 locations. The output .png file will be stored in the same directory as the SDD input file.
 
 7. IMPORTANT: The karyogram can now handle the user passing 'Chromosome sizes' in the SDD header in the following three ways (example for human chromosomes) :
-a. Split homolog chromosome sizes layout: 1,2,3,...,22,1,2,3,...,22,Y,X.
-b. Adjacent homolog chromosome sizes layout: 1,1,2,2,3,3,...,22,22,Y,X.
-c. Non-homologous/haploid chromosome sizes layout: 1,2,3,...,22,Y,X.
+
+	a. Split homolog chromosome sizes layout: 1,2,3,...,22,1,2,3,...,22,Y,X.
+
+	b. Adjacent homolog chromosome sizes layout: 1,1,2,2,3,3,...,22,22,Y,X.
+
+	c. Non-homologous/haploid chromosome sizes layout: 1,2,3,...,22,Y,X.
+
 In the SDD chromosome sizes header, please specify Y chromosome size before X. If the user passes two X chromosomes, the second one will be labeled as Y
 and will have an incorrect centromere position in the karyogram. 
 The plotter also works for more than 46 chromosomes, but the '--karyogram other' option must be specified by the user.  
@@ -42,6 +46,16 @@ OTHERWISE THE KARYOGRAM PLOTTER WILL BE INCORRECT****
 and subheader are returned for each cell, as well as a summary of the number of mutations present in the SDR file (so far long deletions, balanced inversion, 
 and balanced translocations). For now, karyogram plotting is not supported for depicting genomic rearrangements from DNA structural variations, but this
 should be implemented soon. 
+
+To check if everything works correctly, run the following command:
+'./SDDparser exampleSDD.txt --karyogram human'
+
+The output to the terminal should be:
+'SDD header parsed successfully.
+Summary written to: "exampleSDD_summary.txt"
+Karyogram generated successfully: "exampleSDD_karyogram_human.png"'
+The exampleSDD_summary.txt file and exampleSDD_karyogram_human.png files
+should resemble the ones shown in the attached files of this repository.
 
 WHAT IS SUMMARIZED IN THE SDD FILE SUMMARY:
 

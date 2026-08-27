@@ -8,7 +8,8 @@ Radiation source: Secondary particles of photoneutrons from a LINAC
 Source type: 2 (Specified one or multiple particles with energy distributions as incident particle source -- Ensure 'Energy distribution' is specified)
 Incident particle fluence fractions: 
 ELECTRONS: 1
-Dose or fluence specified: Unknown value specified.
+Mean particle energy: N/A
+Dose or fluence specified: Dose = 3.000000 Gy.
 -----------------------      Radiation Target Information      -----------------------
 
 Radiation incident on: Full human cubic shape nuclear DNA model containing ~6.3 Gbp constructed using voxels

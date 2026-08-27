@@ -124,132 +124,394 @@ bool SDDparser::parseHeader(std::ifstream& file)
 
         if(key=="sdd version")
         {
-            header.sdd_version = values[0]; 
+            header.sdd_version = values.empty() ? "" : values[0]; 
         }
 
         else if(key=="software")
         {
-            header.software = values[0];
+            header.software = values.empty() ? "" : values[0];
         }
 
         else if(key=="author")
         {
-            header.author = values[0];
+            header.author = values.empty() ? "" : values[0];
         }
 
 	else if(key=="simulation details")
 	{
-	    header.simulation_details = values[0]; 
+	    header.simulation_details = values.empty() ? "" : values[0]; 
 	}
 
 	else if(key=="source")
 	{
-	    header.source = values[0];
+	    header.source = values.empty() ? "" : values[0];
 	}
 
 	else if(key=="source type")
 	{
-	    header.source_type = std::stoi(values[0]);
+	    if (values.empty())
+	    {
+		header.source_type = SDD_INT_FIELD_NOT_MEASURED;
+	    }
+	    else
+	    {
+		try
+		{
+	    	    header.source_type = std::stoi(values[0]);
+		}
+		catch (const std::exception& error)
+		{
+		    std::cerr << "ERROR: Invalid 'Source type' value in SDD header: " << values[0] << " (" << error.what() << ")\n";
+            	    return false;
+		}
+	    }
 	}
 
 	else if(key=="incident particles")
 	{
- 	    header.incident_particles = parseIntList(values); 
+	    if (values.empty())
+	    {
+		header.incident_particles.clear();
+	    }
+	    else
+	    {
+		try
+	    	{
+	            header.incident_particles = parseIntList(values); 
+	    	}
+	    	catch (const std::exception& error)
+	    	{
+		    std::cerr << "ERROR: Invalid 'Incident particles' value in SDD header (" << error.what() << ")\n";
+		    return false;
+	    	}
+	    }
 	}
 
 	else if(key=="mean particle energy")
 	{
-	    header.mean_particle_energy = parseDoubleList(values);
+	    if (values.empty())
+	    {
+	    	header.mean_particle_energy.clear();
+	    }
+	    else
+	    {
+		try
+		{
+		    header.mean_particle_energy = parseDoubleList(values);
+		}
+		catch (const std::exception& error)
+		{
+		    std::cerr << "ERROR: Invalid 'Mean particle energy' value in SDD header (" << error.what() << ")\n";
+		    return false;
+		}
+	    }
 	}
 
 	else if(key=="energy distribution")
 	{
-	    header.energy_distribution = values[0];
+	    header.energy_distribution = values.empty() ? "" : values[0];
 	}
 
 	else if(key=="particle fraction")
 	{
-	    header.particle_fraction = parseDoubleList(values);
+	    if (values.empty())
+	    {
+		header.particle_fraction.clear();
+	    }
+	    else
+	    {
+	    	try
+	    	{
+	    	    header.particle_fraction = parseDoubleList(values);
+	    	}
+	    	catch (const std::exception& error)
+	    	{
+		    std::cerr << "ERROR: Invalid 'Particle fraction' value in SDD header (" << error.what() << ")\n";
+		    return false;
+	    	}
+	    }
 	}
 
         else if(key=="dose or fluence")
         {
-            header.dose_or_fluence = parseDoubleList(values);
+	    if (values.empty())
+	    {
+		header.dose_or_fluence.clear();
+	    }
+	    else
+	    {
+            	try
+		{
+		    header.dose_or_fluence = parseDoubleList(values);
+		}
+		catch (const std::exception& error)
+		{
+		    std::cerr << "ERROR: Invalid 'Dose or fluence' value in SDD header (" << error.what() << ")\n";
+		    return false;
+		}
+	    }
 	}
 
         else if(key=="dose rate")
         {
-            header.dose_rate = std::stod(values[0]);
+	    if (values.empty())
+	    {
+		header.dose_rate = SDD_DOUBLE_FIELD_NOT_MEASURED;
+	    }
+	    else
+	    {
+		try
+		{
+            	    header.dose_rate = std::stod(values[0]);
+		}
+		catch (const std::exception& error)
+		{
+		    std::cerr << "ERROR: Invalid 'Dose rate' value in SDD header (" << error.what() << ")\n";
+		    return false;
+		}
+	    }
         }
 
 	else if(key=="irradiation target")
 	{
-	    header.irradiation_target = values[0];
+	    header.irradiation_target = values.empty() ? "" : values[0];
 	}
 
 	else if(key=="volumes")
 	{
-	    header.volumes = parseDoubleList(values);
+	    if (values.empty())
+	    {
+		header.volumes.clear();
+	    }
+	    else
+	    {
+		try
+		{
+		    header.volumes = parseDoubleList(values);
+		}
+		catch (const std::exception& error)
+		{
+		    std::cerr << "ERROR: Invalid 'Irradiation target' value in SDD header (" << error.what() << ")\n";
+		    return false;
+		}
+	    }
 	}
 
-        else if(key=="chromosome sizes")
+        else if(key=="chromosome sizes")		// REQUIRED ENTRY
         {
-            header.chromosome_sizes = parseDoubleList(values);
+	    if (values.empty())
+	    {
+		std::cerr << "ERROR: 'Chromosome sizes' is a required SDD header field and cannot be left blank.\n";
+		return false;
+	    }
+	    else
+	    {
+	        try
+		{
+		    header.chromosome_sizes = parseDoubleList(values);
+		}
+		catch (const std::exception& error)
+		{
+		    std::cerr << "ERROR: Invalid 'Chromosome sizes' value in SDD header (" << error.what() << ")\n";
+		    return false;
+		}
+	    }
         }
 
 	else if(key=="dna density")
 	{
-            header.DNA_density = std::stod(values[0]);
+	    if (values.empty())
+    	    {
+        	header.DNA_density = SDD_DOUBLE_FIELD_NOT_MEASURED;
+    	    }
+    	    else
+    	    {
+        	try
+        	{
+            	    header.DNA_density = std::stod(values[0]);
+        	}
+        	catch (const std::exception& error)
+        	{
+           	     std::cerr << "ERROR: Invalid 'DNA density' value in SDD header: " << values[0] << " (" << error.what() << ")\n";
+            	     return false;
+        	}
+    	    }
 	}
 
-	else if(key=="cell cycle phase")
+	else if(key=="cell cycle phase")		// REQUIRED
 	{
-	    header.cell_cycle_phase = parseDoubleList(values);
-	}	
+	    if (values.empty())
+    	    {
+        	std::cerr << "ERROR: 'Cell cycle phase' is a required SDD header field and cannot be blank.\n";
+        	return false;
+    	    }
+	    else
+	    {
+    		try
+    		{
+        	    header.cell_cycle_phase = parseDoubleList(values);
+    		}
+    		catch (const std::exception& error)
+    		{
+       	 	    std::cerr << "ERROR: Invalid 'Cell cycle phase' value in SDD header (" << error.what() << ")\n";
+        	    return false;
+    		}
+	    }
+	}
 
 	else if(key=="dna structure")
 	{
-	    header.DNA_structure = parseIntList(values);
+
+	    if (values.empty())
+	    {
+		header.DNA_structure.clear();
+	    }
+
+	    try
+    	    {
+        	header.DNA_structure = parseIntList(values);
+    	    }
+    	    catch (const std::exception& error)
+    	    {
+        	std::cerr << "ERROR: Invalid 'DNA structure' value in SDD header (" << error.what() << ")\n";
+        	return false;
+    	    }
+
 	}
 
 	else if(key=="in vitro / in vivo")
 	{
-	    header.in_vitro_or_in_vivo = std::stoi(values[0]);
+
+	    if (values.empty())
+    	    {
+        	header.in_vitro_or_in_vivo = SDD_INT_FIELD_NOT_MEASURED;
+    	    }
+    	    else
+    	    {
+        	try
+        	{
+            	    header.in_vitro_or_in_vivo = std::stoi(values[0]);
+        	}
+        	catch (const std::exception& error)
+        	{
+            	    std::cerr << "ERROR: Invalid 'In vitro / in vivo' value in SDD header: " << values[0] << " (" << error.what() << ")\n";
+            	    return false;
+        	}
+    	    }
 	}
 
 	else if(key=="proliferation status")
 	{
-	    header.proliferation_status.push_back(values[0]);
+	   if (!values.empty())
+    	   {
+        	header.proliferation_status.push_back(values[0]);
+    	   }
 	}
-	
+
 	else if(key=="microenvironment")
 	{
-	    header.microenvironment = parseDoubleList(values);
+	    if (values.empty())
+	    {
+		header.microenvironment.clear();
+	    }
+	    else
+	    {
+		try
+    		{
+        	    header.microenvironment = parseDoubleList(values);
+    		}
+    		catch (const std::exception& error)
+    		{
+        	    std::cerr << "ERROR: Invalid 'Microenvironment' value in SDD header (" << error.what() << ")\n";
+        	    return false;
+    		}
+	    }
 	}
-	
+
 	else if(key=="damage definition")
 	{
-	    header.damage_definition = parseDoubleList(values);
+	    if (values.empty())
+	    {
+		header.damage_definition.clear();
+	    }
+	    else
+	    {
+		try
+		{
+		    header.damage_definition = parseDoubleList(values);
+		}
+		catch (const std::exception& error)
+		{
+		    std::cerr << "ERROR: Invalid 'Damage definition' value in SDD header (" << error.what() << ")\n";
+		    return false;
+		}
+	    }
 	}
 
 	else if(key=="time")
 	{
-	    header.time = std::stod(values[0]);
+	    if (values.empty())
+    	    {
+        	header.time = SDD_DOUBLE_FIELD_NOT_MEASURED;
+    	    }
+    	    else
+    	    {
+        	try
+        	{
+            	    header.time = std::stod(values[0]);
+        	}
+        	catch (const std::exception& error)
+        	{
+            	    std::cerr << "ERROR: Invalid 'Time' value in SDD header: " << values[0] << " (" << error.what() << ")\n";
+            	    return false;
+        	}
+    	    }
 	}
 
 	else if(key=="damage and primary count")
 	{
-	    header.damage_and_primary_count = parseIntList(values);
+	    if (values.empty())
+	    {
+		header.damage_and_primary_count.clear();
+	    }
+	    else
+	    {
+		try
+		{
+		    header.damage_and_primary_count = parseIntList(values);
+		}
+		catch (const std::exception& error)
+		{
+		    std::cerr << "ERROR: Invalid 'Damage and primary count' value in SDD header (" << error.what() << ")\n";
+		    return false;
+		}
+	    }
 	}
 
-	else if(key=="data entries")
+	else if(key=="data entries")			// REQUIRED TO INTERPRET SDD DATA BLOCK
 	{
-	    header.data_entries = parseIntList(values);
+	    if (values.empty())
+	    {
+		std::cerr << "Data entries must be filled with 14 comma separated values of either 0 or 1.\n";
+		return false;
+	    }
+	    else
+	    {
+		try
+		{
+		    header.data_entries = parseIntList(values);
+		}
+		catch (const std::exception& error)
+		{
+		    std::cerr << "ERROR: Invalid 'Data entries' value in SDD header (" << error.what() << ")\n";
+		    return false;
+		}
+	    }
 	}
 
 	else if(key=="additional information")
 	{
-	    header.additional_information = values[0];
+	    header.additional_information = values.empty() ? "" : values[0];
 	}
 
         else
@@ -723,62 +985,134 @@ void SDDparser::printHeaderSummary(std::ostream& output) const {
 	output << "-----------------------     Incident Radiation Information"	
 	       << "      -----------------------\n\n";
 
-	output << "Radiation source: " << header.source << "\n";		// Source summary - prints the string entry
+	output << "Radiation source: " << (header.source.empty() ? "N/A" : header.source) << "\n";		// Source summary - prints the string entry
 	
-	output << "Source type: " << header.source_type << " ("			// Source Type summary
-	<< sourceTypeMeaning(header.source_type) << ")" << "\n";
-
-	if (header.incident_particles.size() == 0)				// Incident Particles summary
+	output << "Source type: ";
+	if (header.source_type == SDD_INT_FIELD_NOT_MEASURED)
 	{
-	    output << "ERROR: No incident particles specified!\n";
+	    output << "N/A";
+	}
+	else
+	{
+	   output << header.source_type;
+	}
+	output << " (" << sourceTypeMeaning(header.source_type) << ")\n";
+
+	if (header.incident_particles.empty())					// Incident Particles summary
+	{
+	    output << "Incident Particles: N/A\n";
 	}
 	else
 	{
 	    output << "Incident particle fluence fractions: \n";		// Output fluence fraction associated with each listed incident particle
-	    for (size_t i = 0; i < header.incident_particles.size(); i++)
+	    
+	    if (header.particle_fraction.size() != header.incident_particles.size())
 	    {
-	        output << incidentParticlesMeaning(header.incident_particles[i])
-		<< ": " << header.particle_fraction[i] << "\n";
+		output << "WARNING: 'Incident particles' (" << header.incident_particles.size()
+	               << ") and 'Particle fraction' (" << header.particle_fraction.size()
+	               << ") have mismatched lengths; showing only matched entries.\n";
+	    }
+
+	    const std::size_t matchedCount = std::min(header.incident_particles.size(), header.particle_fraction.size());
+
+	    for (std::size_t i = 0; i < matchedCount; i++)
+	    {
+	        output << incidentParticlesMeaning(header.incident_particles[i]) << ": " << header.particle_fraction[i] << "\n";
 	    }
 	}
 
+	output << "Mean particle energy: ";				// Mean particle energy summary
+	if (header.mean_particle_energy.empty())
+	{
+	    output << "N/A";
+	}
+	else
+	{
+	    for (std::size_t i = 0; i < header.mean_particle_energy.size(); i++)
+	    {
+		output << header.mean_particle_energy[i];
+		if (i + 1 < header.mean_particle_energy.size())
+		{
+		    output << ", ";
+		}
+	    }
+	}
+	output << "\n";
+
 	output << "Dose or fluence specified: " << doseOrFluenceMeaning(header.dose_or_fluence) << "\n"; 	// Dose or fluence summary
-
-
 
 	// ------------------ Second section is the target information ---------------------- //
 	output << "-----------------------      Radiation Target Information" <<
 		  "      -----------------------\n\n";
 
-	output << "Radiation incident on: " << header.irradiation_target << "\n";// Irradiation target
+	output << "Radiation incident on: " << (header.irradiation_target.empty() ? "N/A" : header.irradiation_target) << "\n";// Irradiation target
 
 	output << volumesMeaning(header.volumes) << "\n" ;			// Summary of target shapes and volumes
 
 	output << "The number of chromosomes specified were: " << header.chromosome_sizes[0] << // Summarize number of chromosomes and DNA density
-	". Subsequent field entries are the chromosome sizes in units of Mega base pairs (Mbp),with an average DNA density of " << 
-	header.DNA_density << " Mbp per cubic micrometer.\n";
+	". Subsequent field entries are the chromosome sizes in units of Mega base pairs (Mbp),with an average DNA density of ";
+ 	if (header.DNA_density == SDD_DOUBLE_FIELD_NOT_MEASURED)
+	{
+	    output << "N/A";
+	}
+	else
+	{
+	    output << header.DNA_density;
+	}
+	output << " Mbp per cubic micrometer.\n";
 
 	output << "Cell Cycle Phase: " << cellCyclePhaseMeaning(header.cell_cycle_phase) << "\n" ;	// Summarize cell cycle phase
 
-	output << "The DNA is structured as: " << header.DNA_structure[0] << " (" <<  // Summarize DNA structure (0, 1, 2, 3, 4, 5) and its meaning
-	dnaStructureMeaning(header.DNA_structure) << ")" << "\n";
+	output << "The DNA is structured as: ";
+	if (header.DNA_structure.empty())
+	{
+	    output << "N/A";
+	}
+	else
+	{
+	   output << header.DNA_structure[0];
+	}
+	output << " (" << dnaStructureMeaning(header.DNA_structure) << ")\n";
 
-	output << "The cell Proliferation status is: " << header.proliferation_status[0] << " (" <<  // Summarize proliferation status (0 or 1)
-	proliferationStatusMeaning(header.proliferation_status) << ")" << "\n";
-
-
+	output << "The cell Proliferation status is: ";
+	if (header.proliferation_status.empty())
+	{
+	    // proliferationStatusMeaning() indexes status[0] without checking
+	    // it's non-empty, so it must not be called here at all when blank.
+	    output << "N/A\n";
+	}
+	else
+	{
+	    output << header.proliferation_status[0] << " (" << proliferationStatusMeaning(header.proliferation_status) << ")" << "\n";
+	}
 
 	// ------------------- Third section is the DNA damage and exposure information ---------------------- //
 	output << "\n-----------------------      DNA Damage Information" <<
 		  "      -----------------------\n\n";
 
 	output << damageDefinitionMeaning(header.damage_definition) << "\n"; // Summary of the Damage definition and damage and primary count header fields
-	output << "The number of distinct damage lesions scored is " << header.damage_and_primary_count[0] << 
-	", as a result of " << header.damage_and_primary_count[1] << " primary particles simulated.\n";
+	output << "The number of distinct damage lesions scored is ";
+	if (header.damage_and_primary_count.size() < 2)
+	{
+	    output << "N/A";
+	}
+	else
+	{
+	    output << header.damage_and_primary_count[0] << ", as a result of " << header.damage_and_primary_count[1] << " primary particles simulated";
+	}
+	output << ".\n";
+
 
 	output << microenvironmentMeaning(header.microenvironment) << "\n"; 	// Summary of microenvironment (temperature and oxygenation).
-	output << timeMeaning(header.time) << "\n";				// Summary of time to complete radiation source chemistry simulations.
 
+	if (header.time == SDD_DOUBLE_FIELD_NOT_MEASURED)			// timeMeaning() doesn't know about the sentinel and would otherwise
+	{									// report it as an invalid entry, so bypass it entirely when absent.
+	    output << "Time: N/A\n";
+	}
+	else
+	{
+	    output << timeMeaning(header.time) << "\n";
+	}
 	output << dataEntriesMeaning(header.data_entries) << "\n";		// Summary of Data field entries
 }
 

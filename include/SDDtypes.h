@@ -6,6 +6,11 @@
 #include <vector>
 #include <unordered_map>
 
+
+// Use for checking if any optional header fields are absent, to not raise an error, but report as not measured.
+constexpr int SDD_INT_FIELD_NOT_MEASURED = -1;
+constexpr double SDD_DOUBLE_FIELD_NOT_MEASURED = -1.0;
+
 // The SDD header may contain any of the following header fields.
 // If header field provided is not in this list, exit with error.
 struct Header
@@ -15,24 +20,24 @@ struct Header
     std::string author;
     std::string simulation_details; 
     std::string source;	
-    int source_type; 
+    int source_type = SDD_INT_FIELD_NOT_MEASURED; 
     std::vector<int> incident_particles; 
     std::vector<double> mean_particle_energy; 
     std::string energy_distribution; 
     std::vector<double> particle_fraction; 
     std::vector<double> dose_or_fluence; 
-    double dose_rate = 0.0;
+    double dose_rate = SDD_DOUBLE_FIELD_NOT_MEASURED;
     std::string irradiation_target;
     std::vector<double> volumes; 
     std::vector<double> chromosome_sizes;
-    double DNA_density; 
+    double DNA_density = SDD_DOUBLE_FIELD_NOT_MEASURED; 
     std::vector<double> cell_cycle_phase; 
     std::vector<int> DNA_structure; 
-    int in_vitro_or_in_vivo; 
+    int in_vitro_or_in_vivo = SDD_INT_FIELD_NOT_MEASURED; 
     std::vector<std::string> proliferation_status;
     std::vector<double> microenvironment;
     std::vector<double> damage_definition;
-    double time;
+    double time = SDD_DOUBLE_FIELD_NOT_MEASURED;
     std::vector<int> damage_and_primary_count;
     std::vector<int> data_entries;
     std::string additional_information;

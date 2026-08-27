@@ -4,8 +4,12 @@ objects/
 # Ignore the compiled C++ executable
 SDDparser
 
-# Ignore all test files
+# Ignore all test folders and files
 test*
+
+# Ignore SDD data folder to generate karyograms as a function of dose for
+# different incident particles and doses.
+SDDdata/
 
 # Ignore prototype code for zooming and panning karyogram
 chromosome_viewer.cpp
