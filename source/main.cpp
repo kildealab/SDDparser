@@ -120,6 +120,8 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
             return 1;
         }
 
+	bool humanGenome = (genomeType == "human");
+
         SDRparser parser;
 
         if (!parser.parseFile(filename))
@@ -142,8 +144,38 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 
         if (drawKaryogram)
         {
-            std::cerr << "WARNING: --karyogram is not yet supported for "
-                      << "SDR files; skipping karyogram generation.\n";
+	    Karyogram karyogram;
+/*
+	    std::filesystem::path karyogramPath =
+            inputPath.parent_path() /
+            (inputPath.stem().string() + "_karyogram_" + genomeType + ".png");
+*/
+
+	    bool hasFailed = false;
+
+	    for (const SDRsubHeader& subHeader : parser.getSubHeaders())
+	    {
+		std::filesystem::path cellKaryogramPath =
+            		inputPath.parent_path() /
+            		(inputPath.stem().string() + "_cell" + std::to_string(subHeader.cellID) +
+             		"_karyogram_" + genomeType + ".png");
+
+		if (!karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, humanGenome, cellKaryogramPath.string()))
+		{
+		    std::cerr << "Failed to generate karyogram for cell " << subHeader.cellID << ".\n";
+            	    hasFailed = true;
+            	    continue;
+		}
+
+	        std::cout << "Karyogram generated successfully: " << cellKaryogramPath << "\n";
+
+	    }
+
+	    if (hasFailed)
+	    {
+		return 1;
+	    }
+
         }
 
         return 0;

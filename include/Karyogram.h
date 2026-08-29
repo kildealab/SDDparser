@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "SDDtypes.h"
+#include "SDRtypes.h"
 
 struct RGB					// Use to define chromosome colors using Red, Green, and Blue codes.
 {
@@ -42,6 +43,17 @@ enum class ChromosomeLayout			// Determine how the user passed the chromosome si
     SPLIT_HOMOLOGS        // 1,2,...,22,1,2,...,22,Y,X
 };
 
+struct PaintedSegment
+{
+    double startFraction; 			// Position along new strand as fraction of total length
+    double endFraction;
+    RGB color;					// Color of original chromosome this segment came from
+    bool hasCentromere;				// Does the centromere exist in this segment
+    bool isReversed;				// Check for inversions to draw chevron inversion marker.
+    double centromereStartFraction;
+    double centromereEndFraction;
+};
+
 
 // Use Karyogram for all illustrations of chromosome damages
 class Karyogram
@@ -58,31 +70,45 @@ public:
         const std::string& outputFilename		// Specify generic output file name combining the input file prefix with the suffix "_karyogram.png"
     );
 
+    bool generateSDRkaryogram(				// Function to generate the karyogram of the rearrangements in an SDR file
+	const SDRmasterHeader& masterHeader,
+	const SDRsubHeader& subHeader,
+	bool humanGenome,
+	const std::string& outputFilename
+    );
+
 private:
 
     RGB generateChromosomeColor(int chromosomeNumber, int totalChromosomes); 	// Function to generate chromosome colors depending on the number of chromosomes, and to choose colors that are different enough between successive chromosomes. 
+    RGB getColorForOriginalStrand(int oldStrandID, const SDRmasterHeader& masterHeader);			// For SDR tracking of chromosome colors during rearrangements
+
+    std::vector<PaintedSegment> buildPaintedSegments(const SDRdataRecord& record, bool humanGenome, const SDRmasterHeader& masterHeader);
 
     void drawChromosome(cairo_t* cr, double x, double y, double height, double width, RGB color, double centromereStart, double centromereEnd); // The main draw chromosome function, accounting for individual chromosome sizes and centromere ranges and locations.
+    void drawPaintedChromosome(cairo_t* cr, double x, double y, double height, double width, const std::vector<PaintedSegment>& segments);
+    void drawStackedMutations(cairo_t* cr, const std::vector<const SDRdataRecord*>& records, double slotCenterX, double posY, double chromosomeWidth, double maxLengthMbp, double maxRenderHeight, bool humanGenome, const SDRmasterHeader& masterHeader);
 
     std::vector<DamageLocation> getDoubleStrandBreaks(const std::vector<Exposure>& exposures); // Use to obtain the stored double strand break locations in each exposure and determine their coordinates on the Karyogram. 
-
     std::vector<DamageLocation> getSingleStrandBreaks(const std::vector<Exposure>& exposures);
 
     double getDamageFraction(const DamageLocation& damage, double chromosomeSize);		// Convert damage locations in base pairs to a fractional length along the chromosome for easy Karyogram pixel conversion.
 
     void drawDoubleStrandBreakMarker(cairo_t* cr, double x, double y, double chromosomeWidth);				// Function to draw the damage locations at a given x and y coordinate on the Karyogram, the entire width of the drawn chromosome.
-
     void drawSingleStrandBreakMarker(cairo_t* cr, double x, double y, double markerLength);
+    void drawInversionChevron(cairo_t* cr, double centerX, double centerY, double size);
 
     const CentromerePosition* getHumanCentromere(int chromosomeID);		// Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
+    bool getCentromereForOriginalStrand(int oldStrandID, bool humanGenome, const SDRmasterHeader& masterHeader, double&centromereStartBP, double& centromereEndBP);			// Check if original strand has centromere in the given range
+
+    double computeSDRbarHeight(double lengthMbp, double maxLengthMbp, double maxRenderHeight);
+    double computeMaxBarHeight(const std::vector<const SDRdataRecord*>& records, double maxLengthMbp, double maxRenderHeight);
 
     void drawLegend(cairo_t* cr, double legendY);						// Function to draw the karyogram legend at the bottom.
-
     void drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCyclePhase, const std::vector<Exposure>& exposures, const std::vector<double>& doseOrFluence, const std::vector<int>& incidentParticles);						// Function to draw the karyogram summary box at the top.
 
     ChromosomeLayout determineChromosomeLayout(const std::vector<double>& chromosomeSizes);	// Function that will determine how the user passed the chromosomes.
 
-
+    std::vector<const SDRdataRecord*> filterBaselineIfMutated(const std::vector<const SDRdataRecord*>& records, int numOriginalStrands);
 
 };
 

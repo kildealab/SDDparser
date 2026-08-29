@@ -774,6 +774,303 @@ bool Karyogram::generateKaryogram(						// Function that generates the overall K
 }
 
 
+bool Karyogram::generateSDRkaryogram(const SDRmasterHeader& masterHeader, const SDRsubHeader& subHeader, bool humanGenome, const std::string& outputFilename)
+{
+    if (subHeader.dataRecords.empty())
+    {
+        std::cerr << "ERROR: No SDR data records to draw for cell " << subHeader.cellID << ".\n";
+        return false;
+    }
+
+    const std::vector<double>& sizes = masterHeader.intactChromosomeSizes;
+
+    if (sizes.empty())
+    {
+	std::cerr << "ERROR: SDR master header has no chromosome sizes.\n";
+	return false;
+    }
+
+    const int chromosomeCount = static_cast<int>(sizes[0]);
+
+    // Group all data records based on their original strand ID (of their first listed fragment) and thus their chromosome region on the karyogram
+
+    std::map<int, std::vector<const SDRdataRecord*>> recordsByOriginalStrand;
+
+
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+	if (record.fragments.empty())
+	{
+	    continue;
+	}
+	else
+	{
+	    recordsByOriginalStrand[record.fragments[0].oldStrandID].push_back(&record);
+	}
+    }
+
+    // Determining the chromosome layout, based on how chromosome sizes were passed
+
+    const ChromosomeLayout chromosomeLayout = determineChromosomeLayout(sizes);
+    const bool hasHomologs = chromosomeLayout != ChromosomeLayout::NON_HOMOLOGOUS;
+    const int homologousPairs = hasHomologs ? (chromosomeCount - 2) / 2 : 0;
+    const int drawableGroups = hasHomologs ? homologousPairs : chromosomeCount - 2;
+
+    // Determine max strand length to scale chromosome sizes on karyogram
+    double maxLengthMbp = 0.0;
+
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+        double lengthMbp = 0.0;
+
+        for (const SDRfragment& fragment : record.fragments)
+        {
+            lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+        }
+
+        if (lengthMbp > maxLengthMbp)
+        {
+            maxLengthMbp = lengthMbp;
+        }
+    }
+
+    if (maxLengthMbp <= 0.0)
+    {
+        std::cerr << "ERROR: SDR data records have no positive-length fragments.\n";
+        return false;
+    }
+
+
+    // --------------------------------------------------
+    // Karyogram dimensions 
+    // --------------------------------------------------
+
+    const int imgWidth = 1000;
+    const int columns = 4;
+    const double colWidth = static_cast<double>(imgWidth) / columns;
+    const double rowHeight = 250.0;
+    const double startY = 150.0;
+    const int rows = (drawableGroups + columns - 1) / columns;
+    int imgHeight;
+    // Check if X and Y can fit in last row, if not, put in their own row
+    const int sexChromosomeRow = (drawableGroups > 0) ? (drawableGroups - 1) / columns : 0;
+    const int lastRowUsedCols = drawableGroups - sexChromosomeRow * columns;
+    const bool sexChromosomesFitInLastRow = (columns - lastRowUsedCols) >= 2;
+
+    if (sexChromosomesFitInLastRow)
+    {
+	imgHeight = static_cast<int>(startY + rows * rowHeight + 60.0);
+    }
+    else
+    {
+	imgHeight = static_cast<int>(startY + (rows + 1) * rowHeight + 60.0);
+    }
+
+    const double maxRenderHeight = 180.0;
+    const double chromosomeWidth = 20.0;
+    const double homologGap = 18.0;
+
+    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, imgWidth, imgHeight);
+    cairo_t* cr = cairo_create(surface);
+
+    cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    cairo_paint(cr);
+
+    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    cairo_set_font_size(cr, 12.0);
+
+    // --------------------------------------------------
+    // Title
+    // --------------------------------------------------
+
+    cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+    cairo_move_to(cr, 50.0, 40.0);
+    cairo_show_text(cr, ("SDR Chromosome Painting - Cell " + std::to_string(subHeader.cellID)).c_str());
+
+    // --------------------------------------------------
+    // Draw each numbered chromosome slot
+    // --------------------------------------------------
+
+    for (int i = 0; i < drawableGroups; ++i)
+    {
+        int firstOldStrandID = 0;
+        int secondOldStrandID = -1; // -1 = no homolog
+
+        if (chromosomeLayout == ChromosomeLayout::SPLIT_HOMOLOGS)
+        {
+            firstOldStrandID = i;
+            secondOldStrandID = i + homologousPairs;
+        }
+        else if (chromosomeLayout == ChromosomeLayout::ADJACENT_HOMOLOGS)
+        {
+            firstOldStrandID = 2 * i;
+            secondOldStrandID = 2 * i + 1;
+        }
+	else
+        {
+            firstOldStrandID = i;
+        }
+
+        const int col = i % columns;
+        const int row = i / columns;
+
+	const double groupCenterX = (col * colWidth) + (colWidth / 2.0);
+        const double posY = startY + (row * rowHeight);
+
+	double labelHeight = maxRenderHeight;			// Fallback, if slot has nothing to draw.
+
+        if (hasHomologs)
+        {
+            auto firstIt = recordsByOriginalStrand.find(firstOldStrandID);
+            auto secondIt = recordsByOriginalStrand.find(secondOldStrandID);
+
+	    std::vector<const SDRdataRecord*> leftRecords;
+	    std::vector<const SDRdataRecord*> rightRecords;
+
+	    if (firstIt != recordsByOriginalStrand.end())
+	    {
+		leftRecords = filterBaselineIfMutated(firstIt->second, chromosomeCount);
+	    }
+
+	    if (secondIt != recordsByOriginalStrand.end())
+	    {
+		rightRecords = filterBaselineIfMutated(secondIt->second, chromosomeCount);
+	    }
+
+	    const double stackGap = 6.0;
+
+	    const double leftStackWidth = !leftRecords.empty() ? (leftRecords.size() * chromosomeWidth + (leftRecords.size() - 1) * stackGap) : 0.0;
+            const double rightStackWidth = !rightRecords.empty() ? (rightRecords.size() * chromosomeWidth + (rightRecords.size() - 1) * stackGap) : 0.0;
+
+            const double leftSlotCenterX = groupCenterX - leftStackWidth / 2.0 - homologGap / 2.0;
+            const double rightSlotCenterX = groupCenterX + rightStackWidth / 2.0 + homologGap / 2.0;
+
+            if (!leftRecords.empty())
+            {
+                drawStackedMutations(cr, leftRecords, leftSlotCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader);
+            }
+
+            if (!rightRecords.empty())
+            {
+                drawStackedMutations(cr, rightRecords, rightSlotCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader);
+            }
+
+	    if (!leftRecords.empty() || !rightRecords.empty())
+            {
+                labelHeight = std::max(
+                    computeMaxBarHeight(leftRecords, maxLengthMbp, maxRenderHeight),
+                    computeMaxBarHeight(rightRecords, maxLengthMbp, maxRenderHeight)
+                );
+            }
+
+	}
+	else
+        {
+	    auto it = recordsByOriginalStrand.find(firstOldStrandID);
+
+            if (it != recordsByOriginalStrand.end())
+            {
+                const std::vector<const SDRdataRecord*> filtered = filterBaselineIfMutated(it->second, chromosomeCount);
+
+                if (!filtered.empty())
+                {
+                    drawStackedMutations(cr, filtered, groupCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader);
+		    labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight);
+
+                }
+            }
+        }
+
+	// Group label (chromosome number).
+        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, 16.0);
+        std::string label = "Chr " + std::to_string(i + 1);
+        cairo_move_to(cr, groupCenterX - 20.0, posY + labelHeight + 25.0);
+        cairo_show_text(cr, label.c_str());
+
+    }
+
+    // Drawing X and Y groups, placed at the end of last row if there's room, otherwise they're given their own row.
+    if (chromosomeCount >= 2)
+    {
+	double sexChromPosY = startY + rows * rowHeight;
+	int yChromCol;
+	int xChromCol;
+
+	if (sexChromosomesFitInLastRow)
+        {
+            sexChromPosY = startY + sexChromosomeRow * rowHeight;
+            yChromCol = lastRowUsedCols;
+            xChromCol = lastRowUsedCols + 1;
+        }
+        else
+        {
+            sexChromPosY = startY + rows * rowHeight;
+            yChromCol = 0;
+            xChromCol = 1;
+        }
+
+	int yOldStrandID = chromosomeCount - 2;
+	int xOldStrandID = chromosomeCount - 1;
+
+	double yCenterPosX = (yChromCol * colWidth) + (colWidth / 2.0);
+	double xCenterPosX = (xChromCol * colWidth) + (colWidth / 2.0);
+
+	auto yIt = recordsByOriginalStrand.find(yOldStrandID);
+	auto xIt = recordsByOriginalStrand.find(xOldStrandID);
+
+	if (yIt != recordsByOriginalStrand.end())
+        {
+            const std::vector<const SDRdataRecord*> yRecords = filterBaselineIfMutated(yIt->second, chromosomeCount);
+
+	    double yLabelHeight = maxRenderHeight;
+
+            if (!yRecords.empty())
+            {
+                drawStackedMutations(cr, yRecords, yCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader);
+		yLabelHeight = computeMaxBarHeight(yRecords, maxLengthMbp, maxRenderHeight);
+            }
+
+            cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+	    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+            cairo_set_font_size(cr, 16.0);
+            cairo_move_to(cr, yCenterPosX - 10.0, sexChromPosY + yLabelHeight + 25.0);
+            cairo_show_text(cr, "Y");
+        }
+
+        if (xIt != recordsByOriginalStrand.end())
+        {
+            const std::vector<const SDRdataRecord*> xRecords = filterBaselineIfMutated(xIt->second, chromosomeCount);
+
+	    double xLabelHeight = maxRenderHeight;
+
+            if (!xRecords.empty())
+            {
+                drawStackedMutations(cr, xRecords, xCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader);
+		xLabelHeight = computeMaxBarHeight(xRecords, maxLengthMbp, maxRenderHeight);
+            }
+
+            cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+	    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+            cairo_set_font_size(cr, 16.0);
+            cairo_move_to(cr, xCenterPosX - 10.0, sexChromPosY + xLabelHeight + 25.0);
+            cairo_show_text(cr, "X");
+        }
+    }
+
+    cairo_surface_write_to_png(surface, outputFilename.c_str());
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+
+    return true;
+}
+
+
+
+
+
 // ----------------------------------------------------------------------- //
 // --- Helper functions to draw the shapes within the Karyogram itself --- //
 // ----------------------------------------------------------------------- //
@@ -943,6 +1240,370 @@ void Karyogram::drawChromosome(
 }
 
 
+void Karyogram::drawPaintedChromosome(cairo_t* cr, double x, double y, double height, double width, const std::vector<PaintedSegment>& segments)
+{
+    if (segments.empty())
+    {
+	return;
+    }
+
+    const double capRadius = width / 2.0;
+
+    struct CentromereSpan
+    {
+	double centromereTopY;
+ 	double centromereBottomY;
+    };
+
+    std::vector<CentromereSpan> centromereSpans;
+
+    for (const PaintedSegment& segment : segments)
+    {
+	if (segment.hasCentromere)
+	{
+	    CentromereSpan span{};
+	    span.centromereTopY = y + height * segment.centromereStartFraction;
+	    span.centromereBottomY = y + height * segment.centromereEndFraction;
+	    centromereSpans.push_back(span);
+	}
+    }
+
+    std::sort(centromereSpans.begin(), centromereSpans.end(), [](const CentromereSpan& a, const CentromereSpan& b) 
+    {
+	return a.centromereTopY < b.centromereTopY;
+    });
+
+    const double constrictionHeight = 7.0;
+    const double constrictionAmount = 2.0;
+
+    // --------------------------------------
+    // Trace the outer capsule outline - with a constriction notch at each centromere position, if any.
+    // --------------------------------------
+
+
+    const auto traceCapsulePath = [&]()
+    {
+        cairo_new_path(cr);
+
+        cairo_arc(cr, x + capRadius, y + capRadius, capRadius, M_PI, 2 * M_PI);
+
+        for (const CentromereSpan& span : centromereSpans)
+        {
+            const double centromereY = (span.centromereTopY + span.centromereBottomY) / 2.0;
+            const double constrictionTop = centromereY - constrictionHeight / 2.0;
+            const double constrictionBottom = centromereY + constrictionHeight / 2.0;
+
+	    cairo_line_to(cr, x + width, constrictionTop);
+            cairo_line_to(cr, x + width - constrictionAmount, centromereY);
+            cairo_line_to(cr, x + width, constrictionBottom);
+        }
+
+        cairo_line_to(cr, x + width, y + height - capRadius);
+
+        cairo_arc(cr, x + capRadius, y + height - capRadius, capRadius, 0, M_PI);
+
+        for (auto it = centromereSpans.rbegin(); it != centromereSpans.rend(); ++it)
+        {
+            const double centromereY = (it->centromereTopY + it->centromereBottomY) / 2.0;
+            const double constrictionTop = centromereY - constrictionHeight / 2.0;
+            const double constrictionBottom = centromereY + constrictionHeight / 2.0;
+
+            cairo_line_to(cr, x, constrictionBottom);
+            cairo_line_to(cr, x + constrictionAmount, centromereY);
+            cairo_line_to(cr, x, constrictionTop);
+        }
+
+	cairo_close_path(cr);
+    };
+
+    traceCapsulePath(); // build it once, for the clip
+
+    // --------------------------------------
+    // Fill each painted segment, clipped to the capsule shape
+    // --------------------------------------
+
+    cairo_save(cr);
+    cairo_clip_preserve(cr);
+
+    for (const PaintedSegment& segment : segments)
+    {
+        const double segmentTop = y + height * segment.startFraction;
+        const double segmentBottom = y + height * segment.endFraction;
+	const double minSegmentHeightForChevron = 8.0;
+
+        cairo_set_source_rgb(cr, segment.color.r, segment.color.g, segment.color.b);
+        cairo_rectangle(cr, x, segmentTop, width, segmentBottom - segmentTop);
+        cairo_fill(cr);
+
+	if (segment.isReversed && (segmentBottom - segmentTop) >= minSegmentHeightForChevron)
+	{
+	    const double chevronSize = width * 0.5;
+	    const double chevronCenterY = (segmentTop + segmentBottom) / 2.0;
+
+	    drawInversionChevron(cr, x + width / 2.0, chevronCenterY, chevronSize);
+	}
+
+    }
+
+    cairo_restore(cr);
+
+    // --------------------------------------
+    // Segment boundaries and reversed segment markers
+    // --------------------------------------
+
+    cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+    cairo_set_line_width(cr, 1.0);
+
+    for (std::size_t i = 0; i + 1 < segments.size(); i++)
+    {
+	const double boundaryY = y + height * segments[i].endFraction;
+
+	cairo_move_to(cr, x, boundaryY);
+	cairo_line_to(cr, x + width, boundaryY);
+	cairo_stroke(cr);
+    }
+
+    cairo_set_line_width(cr, 2.0);
+
+    for (const PaintedSegment& segment : segments)
+    {
+	if (!segment.isReversed)
+	{
+	    continue;
+	}
+
+	const double segmentTop = y + height * segment.startFraction;
+	const double segmentBottom = y + height * segment.endFraction;
+
+	cairo_move_to(cr, x, segmentTop);
+        cairo_line_to(cr, x + width, segmentTop);
+        cairo_stroke(cr);
+
+        cairo_move_to(cr, x, segmentBottom);
+        cairo_line_to(cr, x + width, segmentBottom);
+        cairo_stroke(cr);
+
+    }
+
+    // --------------------------------------
+    // Chromosome outline
+    // --------------------------------------
+
+    traceCapsulePath(); // rebuild - the fills above consumed the original path
+
+    cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+    cairo_set_line_width(cr, 1.5);
+    cairo_stroke(cr);
+
+
+    // --------------------------------------
+    // Centromere ellipse(s)
+    // --------------------------------------
+
+    const double ellipseWidth = width + 2.0;
+    
+    for (const CentromereSpan& span : centromereSpans)
+    {
+	const double centromereEllipseCenterY = (span.centromereTopY + span.centromereBottomY) / 2.0;
+	const double ellipseHeight = std::max(5.0, span.centromereBottomY - span.centromereTopY);
+
+        cairo_save(cr);
+        cairo_translate(cr, x + width / 2.0, centromereEllipseCenterY);
+        cairo_scale(cr, ellipseWidth / 2.0, ellipseHeight / 2.0);
+        cairo_arc(cr, 0.0, 0.0, 1.0, 0.0, 2.0 * M_PI);
+        cairo_restore(cr);
+
+        cairo_set_source_rgb(cr, 0.6, 0.6, 0.6);
+        cairo_fill(cr);
+    }
+}
+
+
+
+
+
+// Helper to draw rearranged fragments on their original strands, stacked on top or beside in the same chromosome slot.
+void Karyogram::drawStackedMutations(cairo_t* cr, const std::vector<const SDRdataRecord*>& records, double slotCenterX, double posY, double chromosomeWidth, double maxLengthMbp, double maxRenderHeight, bool humanGenome, const SDRmasterHeader& masterHeader)
+{
+    if (records.empty())
+    {
+	return;
+    }
+
+    const double stackGap = 6.0;
+    const std::size_t count = records.size();
+    double totalWidth = count * chromosomeWidth;
+
+    if (count > 0)
+    {
+	totalWidth += (count - 1) * stackGap;
+    }
+
+    double barX = slotCenterX - totalWidth / 2.0;
+
+    for (const SDRdataRecord* record : records)
+    {
+	double lengthMbp = 0.0;
+	for (const SDRfragment& fragment : record->fragments)
+	{
+	    lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+	}
+
+	double barHeight = computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight);
+
+	const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader);
+
+	drawPaintedChromosome(cr, barX, posY, barHeight, chromosomeWidth, segments);
+
+	// Label new segment with new Strand ID
+	cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+        cairo_set_font_size(cr, 10.0);
+        cairo_move_to(cr, barX, posY - 6.0);
+        cairo_show_text(cr, std::to_string(record->newStrandID).c_str());
+
+        barX += chromosomeWidth + stackGap;
+    }
+}
+
+
+// Function to build the painted segment for one new strand after it has been rearranged in the SDR file
+std::vector<PaintedSegment> Karyogram::buildPaintedSegments(const SDRdataRecord& record, bool humanGenome, const SDRmasterHeader& masterHeader)
+{
+    std::vector<PaintedSegment> segments;
+
+    // Determining new strand length
+    double totalLengthMbp = 0.0;
+
+    for (const SDRfragment& fragment : record.fragments)
+    {
+	totalLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+    }
+    if (totalLengthMbp <= 0)
+    {
+	return segments;
+    }
+
+    // Temporary variable to hold locations of the segment breaks
+    double runningPositionMbp = 0.0;
+
+    for (const SDRfragment& fragment : record.fragments)
+    {
+	const double fragmentLengthMbp = std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+
+	PaintedSegment segment{};
+	segment.startFraction = runningPositionMbp / totalLengthMbp;
+	segment.endFraction = (runningPositionMbp + fragmentLengthMbp) / totalLengthMbp;
+	segment.color = getColorForOriginalStrand(fragment.oldStrandID, masterHeader);
+	segment.isReversed = fragment.oldStartPosition > fragment.oldEndPosition;
+	segment.hasCentromere = false;
+
+	if (fragment.hasCentromere && fragmentLengthMbp > 0.0)
+	{
+	    double centromereStartBP = 0.0;
+	    double centromereEndBP = 0.0;
+
+	    if (getCentromereForOriginalStrand(fragment.oldStrandID, humanGenome, masterHeader, centromereStartBP, centromereEndBP))
+    	    {
+        	const double centStartMbp = centromereStartBP / 1000000.0;
+        	const double centEndMbp = centromereEndBP / 1000000.0;
+
+        	const double fragMinMbp = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+        	const double fragMaxMbp = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+
+        	// Clamp the centromere span to the portion actually contained within this fragment.
+        	const double overlapStartMbp = std::max(centStartMbp, fragMinMbp);
+        	const double overlapEndMbp = std::min(centEndMbp, fragMaxMbp);
+
+        	double localFractionStart;
+        	double localFractionEnd;
+
+		if (overlapEndMbp > overlapStartMbp)
+        	{
+            	    if (!segment.isReversed)
+            	    {
+                	localFractionStart = (overlapStartMbp - fragMinMbp) / fragmentLengthMbp;
+                	localFractionEnd = (overlapEndMbp - fragMinMbp) / fragmentLengthMbp;
+            	    }
+             	    else
+            	    {
+                	// Reversed fragment - genomic direction is flipped relative to
+                	// the visual (top-to-bottom) direction of the drawn segment.
+                	localFractionStart = 1.0 - (overlapEndMbp - fragMinMbp) / fragmentLengthMbp;
+                	localFractionEnd = 1.0 - (overlapStartMbp - fragMinMbp) / fragmentLengthMbp;
+            	    }
+        	}
+		else
+        	{
+            	    // hasCentromere is set but our lookup doesn't actually overlap this
+            	    // fragment's range (e.g. table/data mismatch) - fall back to a
+            	    // point at the fragment's midpoint rather than drawing nothing.
+            	    localFractionStart = 0.5;
+            	    localFractionEnd = 0.5;
+        	}
+
+        	segment.hasCentromere = true;
+        	segment.centromereStartFraction = segment.startFraction + localFractionStart * (segment.endFraction - segment.startFraction);
+        	segment.centromereEndFraction = segment.startFraction + localFractionEnd * (segment.endFraction - segment.startFraction);
+	    }
+	}
+
+	segments.push_back(segment);
+	runningPositionMbp += fragmentLengthMbp;
+    }
+
+    return segments;
+}
+
+
+
+// Use for SDR rearrangement drawing on Karyogram
+RGB Karyogram::getColorForOriginalStrand(int oldStrandID, const SDRmasterHeader& masterHeader)
+{
+    const std::vector<double>& sizes = masterHeader.intactChromosomeSizes;
+
+    const int chromosomeCount = sizes.empty() ? 0 : static_cast<int>(sizes[0]);
+
+    if (chromosomeCount < 2)
+    {
+	return generateChromosomeColor(oldStrandID, std::max(1, chromosomeCount));
+    }
+
+    const ChromosomeLayout layout = determineChromosomeLayout(sizes);
+    const bool hasHomologs = layout != ChromosomeLayout::NON_HOMOLOGOUS;
+    const int homologousPairs = hasHomologs ? (chromosomeCount - 2) / 2 : 0;
+    const int drawableGroups = hasHomologs ? homologousPairs : chromosomeCount - 2;
+    const int totalColorGroups = drawableGroups + 2;
+    const int yStrandID = chromosomeCount - 2; // For 0-indexing
+    const int xStrandID = chromosomeCount - 1;
+    
+    int group = oldStrandID;			// Default is non-homologous layout, every strand gets their own color
+    if(oldStrandID == yStrandID)
+    {
+	group = drawableGroups;
+    }
+    else if (oldStrandID == xStrandID)
+    {
+	group = drawableGroups + 1;
+    }
+    else if (layout == ChromosomeLayout::SPLIT_HOMOLOGS && homologousPairs > 0)
+    {
+	group = oldStrandID % homologousPairs;
+    }
+    else if (layout == ChromosomeLayout::ADJACENT_HOMOLOGS && homologousPairs > 0)
+    {
+	group = oldStrandID / 2;
+    }
+
+    if (totalColorGroups <= 0)
+    {
+	return generateChromosomeColor(oldStrandID, std::max(1, chromosomeCount));
+    }
+
+    return generateChromosomeColor(group, totalColorGroups);
+}
+
+
 RGB Karyogram::generateChromosomeColor(int chromosomeNumber, int totalChromosomes)
 {
 
@@ -1007,6 +1668,25 @@ RGB Karyogram::generateChromosomeColor(int chromosomeNumber, int totalChromosome
     return {r, g, b};
 }
 
+
+void Karyogram::drawInversionChevron(cairo_t* cr, double centerX, double centerY, double size)
+{
+    cairo_save(cr);
+
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0); // White, for contrast against any segment color
+    cairo_set_line_width(cr, 1.5);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+
+    cairo_move_to(cr, centerX - size / 2.0, centerY + size / 2.0);
+    cairo_line_to(cr, centerX, centerY - size / 2.0);
+    cairo_line_to(cr, centerX + size / 2.0, centerY + size / 2.0);
+
+    cairo_stroke(cr);
+
+    cairo_restore(cr);
+
+}
 
 
 void Karyogram::drawDoubleStrandBreakMarker(
@@ -1660,6 +2340,8 @@ void Karyogram::drawLegend(cairo_t* cr, double legendY)
     );
 }
 
+
+
 ChromosomeLayout Karyogram::determineChromosomeLayout(
     const std::vector<double>& chromosomeSizes)
 {
@@ -1746,6 +2428,125 @@ ChromosomeLayout Karyogram::determineChromosomeLayout(
 // ---------------------------------------------------------------------------------------- //
 // --------------- Helper functions to convert exposure data to karyogram ----------------- //
 // ---------------------------------------------------------------------------------------- //
+
+// The same height-scaling formula drawStackedMutations uses per bar -
+// pulled out so label positioning can reuse it without duplicating
+// the clamp logic.
+double Karyogram::computeSDRbarHeight(double lengthMbp, double maxLengthMbp, double maxRenderHeight)
+{
+    double barHeight = maxRenderHeight * (lengthMbp / maxLengthMbp);
+
+    if (barHeight < 30.0)
+    {
+        barHeight = 30.0;
+    }
+
+    return barHeight;
+}
+
+// Tallest bar among a slot's (possibly stacked) records - used to
+// position that slot's label just below whatever actually got drawn.
+double Karyogram::computeMaxBarHeight(const std::vector<const SDRdataRecord*>& records, double maxLengthMbp, double maxRenderHeight)
+{
+    double tallest = 0.0;
+
+    for (const SDRdataRecord* record : records)
+    {
+        double lengthMbp = 0.0;
+
+        for (const SDRfragment& fragment : record->fragments)
+        {
+            lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+        }
+
+        const double height = computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight);
+
+        if (height > tallest)
+        {
+            tallest = height;
+        }
+    }
+
+    return tallest;
+}
+
+
+// If a slot contains any genuine mutation-derived record (newStrandID
+// >= numOriginalStrands), drop any leftover baseline/unmutated record
+// for that same original strand - only the resulting mutated strand(s)
+// should be drawn, not the untouched original alongside them.
+std::vector<const SDRdataRecord*> Karyogram::filterBaselineIfMutated(
+    const std::vector<const SDRdataRecord*>& records,
+    int numOriginalStrands)
+{
+    bool hasMutation = false;
+
+    for (const SDRdataRecord* record : records)
+    {
+        if (record->newStrandID >= numOriginalStrands)
+        {
+            hasMutation = true;
+            break;
+        }
+    }
+
+    if (!hasMutation)
+    {
+        return records;
+    }
+
+    std::vector<const SDRdataRecord*> filtered;
+
+    for (const SDRdataRecord* record : records)
+    {
+        if (record->newStrandID < numOriginalStrands)
+        {
+            continue; // drop the baseline entry now that a real mutation exists for this strand
+        }
+
+        filtered.push_back(record);
+    }
+
+    return filtered;
+}
+
+
+// For SDR file, looks up centromere location (in bp) for the original strand ID, return false if no centromere information
+bool Karyogram::getCentromereForOriginalStrand(int oldStrandID, bool humanGenome, const SDRmasterHeader& masterHeader, double& centromereStartBP, double& centromereEndBP)
+{
+    if (humanGenome)
+    {
+	// SDR has 0-indexing for strand IDs, but getHumanCentromere expects 1-indexed for human chromosomes (1-46).
+	const CentromerePosition* centromere = getHumanCentromere(oldStrandID + 1);
+
+	if (centromere == nullptr)
+	{
+	    return false;
+	}
+
+	centromereStartBP = static_cast<double>(centromere->start);
+	centromereEndBP = static_cast<double>(centromere->end);
+
+	return true;
+    }
+    else
+    {
+	const std::size_t sizeIndex = static_cast<std::size_t>(oldStrandID) + 1; // 0th index is number of chromosomes listed
+
+	if (sizeIndex >= masterHeader.intactChromosomeSizes.size())
+	{
+	    return false;
+	}
+
+	const double chromosomeSizeBP = masterHeader.intactChromosomeSizes[sizeIndex] * 1000000.0;	// Convert chromosome size in Mbp to bp
+
+	centromereStartBP = 0.49 * chromosomeSizeBP;
+	centromereEndBP = 0.51 * chromosomeSizeBP;
+
+	return true;
+    }
+}
+
 
 // Function to return the location in base pairs for a double strand break associated with a given chromosome Number and exposure.
 std::vector<DamageLocation> Karyogram::getDoubleStrandBreaks(const std::vector<Exposure>& exposures)
