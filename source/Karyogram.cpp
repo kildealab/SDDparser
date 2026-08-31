@@ -1859,7 +1859,7 @@ void Karyogram::drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCycle
         CAIRO_FONT_WEIGHT_NORMAL
     );
 
-    cairo_set_font_size(cr, 15.0);
+    cairo_set_font_size(cr, 20.0);
 
     // Three rows of text
     const double firstRowY = summaryY + 30.0;

@@ -74,8 +74,10 @@ The data block is summarized under the subsection 'Chromosome Damages', where th
 
 WHAT IS PLOTTED IN THE SDD FILE KARYOGRAM:
 <p align = "center">
-<img src="damages_with_different_doses.gif" alt="Secondary electrons from 6 MeV photons at different doses">
+<img src="damages_with_different_doses.gif" alt="Secondary electrons from 6 MeV photons at different doses"><br>
+<em> Increasing DNA damages as a function of dose resulting from secondary electrons of a primary 6 MeV photon beam.</em>
 </p>
+
 1. All chromosomes passed by the user are plotted with distinct colors for visual clarity. If the user passes in the SDD file a genome that is
 not of human origin (i.e. not 46 chromosomes), the user must specify '--karyogram other'.
 2. Centromeric positions using the '--karyogram human' option are realistic and adjusted based on the chromosome being drawn, whereas 

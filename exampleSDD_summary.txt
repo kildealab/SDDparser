@@ -9,14 +9,14 @@ Source type: 2 (Specified one or multiple particles with energy distributions as
 Incident particle fluence fractions: 
 ELECTRONS: 1
 Mean particle energy: N/A
-Dose or fluence specified: Dose = 3.000000 Gy.
+Dose or fluence specified: Dose = 3.0 Gy.
 -----------------------      Radiation Target Information      -----------------------
 
 Radiation incident on: Full human cubic shape nuclear DNA model containing ~6.3 Gbp constructed using voxels
-The cell is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (15.632000, 15.632000, 15.632000) micrometers.
-The corresponding Euler rotations of the cell are (phi, theta, psi) = (0.000000, 0.000000, 0.000000).
-The cell nucleus is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (7.802000, 7.802000, 7.802000) micrometers.
-The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (0.000000, 0.000000, 0.000000).
+The cell is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (15.632, 15.632, 15.632) micrometers.
+The corresponding Euler rotations of the cell are (phi, theta, psi) = (0.000, 0.000, 0.000).
+The cell nucleus is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (7.802, 7.802, 7.802) micrometers.
+The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (0.000, 0.000, 0.000).
 
 The number of chromosomes specified were: 46. Subsequent field entries are the chromosome sizes in units of Mega base pairs (Mbp),with an average DNA density of 13.3 Mbp per cubic micrometer.
 Cell Cycle Phase: Unknown.
@@ -26,14 +26,14 @@ The cell Proliferation status is: 1 (Cell(s) are in a proliferating state)
 -----------------------      DNA Damage Information      -----------------------
 
 Damaged recorded as a result of direct and indirect (chemistry) effects.
-Backbone lesions that are considered as DSBs are within a distance of 10.000000 bp.
-Base damages a distance of 10.000000 bp beyond the outer backbone damages are stored in the same site.
-The lower energy threshold specified to induce a strand break or base damage is: 17.500000 eV.
+Backbone lesions that are considered as DSBs are within a distance of 10.0 bp.
+Base damages a distance of 10.0 bp beyond the outer backbone damages are stored in the same site.
+The lower energy threshold specified to induce a strand break or base damage is: 17.5 eV.
 
 The number of distinct damage lesions scored is 3477, as a result of 5583 primary particles simulated.
 No microenvironment information submitted. Assumed the temperature is 25 degrees Celsius and normoxic conditions.
 
-Time of: 0.000000 seconds specified, indicating simulations only consider direct physics interactions, no chemical interactions.
+Time of: 0 seconds specified, indicating simulations only consider direct physics interactions, no chemical interactions.
 
 The following data field entries have been specified: Field 1, Field 2, Field 3, Field 4, Field 5, Field 6, Field 7.
 

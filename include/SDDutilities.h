@@ -5,13 +5,62 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <iomanip>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 
 // --------------------------------------------------------------------- //
 // ------ HELPER FUNCTIONS TO INTERPRET SDD HEADER FIELD ENTRIES ------- //
 // --------------------------------------------------------------------- //
+
+// Formats outputed doubles and rounds the number of decimal places.
+inline std::string fixDecimals(double value, int decimalPlaces)
+{
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(decimalPlaces) << value;
+    return stream.str();
+}
+
+// Check number of sigfigs passed to modify the output value correctly
+// without losing too much information.
+inline std::string fixFormat(double value, int sigFigs = 3)
+{
+    const int maxDecimalPlaces = 6; 			// Prevents very small numbers from having too many sigfigs.
+
+    if (value == 0.0)
+    {
+	return fixDecimals(0.0, sigFigs);
+
+    }
+
+    const int numDigits = (std::fabs(value) >= 1.0) ? static_cast<int>(std::floor(std::log10(std::fabs(value)))) + 1 : 0;		// Determine number of sigfigs in decimal number
+    int decimalPlaces;
+
+    if (numDigits >= sigFigs)
+    {
+	decimalPlaces = 1;			// Already has enough sigfigs, show 1 decimal place regardless.
+    }
+    else
+    {
+	const int leadingZeros = (std::fabs(value) < 1.0) ? (-static_cast<int>(std::floor(std::log10(std::fabs(value)))) - 1) : 0;		// Determine number of zeroes before the sigfigs in a decimal number
+	decimalPlaces = leadingZeros + sigFigs;				// Adjust the displayed value based on num sigfigs and leading zeros.
+    }
+
+    if (decimalPlaces > maxDecimalPlaces)
+    {
+	decimalPlaces = maxDecimalPlaces;
+    }
+
+    if (decimalPlaces < 1)
+    {
+	decimalPlaces = 1;
+    }
+
+    return fixDecimals(value, decimalPlaces);
+}
+
 
 // Return meaning of numeric entry in 'Source type' header field
 inline std::string sourceTypeMeaning(int sourceType)
@@ -92,7 +141,7 @@ inline std::string doseOrFluenceMeaning(const std::vector<double>& doseOrFluence
 
     if (doseOrFluenceVec.size() == 1)						// If only one element specified, assume a dose in Gy
     {
-	result += "Dose = " + std::to_string(doseOrFluenceVec[0]) + " Gy.";
+	result += "Dose = " + fixFormat(doseOrFluenceVec[0], 1) + " Gy.";			// Round to 3 decimal places
     }
 
     if (doseOrFluenceVec.size() == 2)					// If two elements specified, check whether single-track, dose, or fluence
@@ -103,11 +152,11 @@ inline std::string doseOrFluenceMeaning(const std::vector<double>& doseOrFluence
     	}
     	else if(doseOrFluenceVec[0] == static_cast<double>(1))		// If first element is 1 = a delivered dose
         {
-            result += "Dose = " + std::to_string(doseOrFluenceVec[1]) + " Gy.";
+            result += "Dose = " + fixFormat(doseOrFluenceVec[1], 1) + " Gy.";
     	}
     	else if(doseOrFluenceVec[0] == static_cast<double>(2))		// If first element is 2 = a fluence
     	{
-	    result += "Fluence = " + std::to_string(doseOrFluenceVec[1]) + "particles/um^2.";    
+	    result += "Fluence = " + fixFormat(doseOrFluenceVec[1], 3) + "particles/um^2.";    
     	}
     	else 							// If first value is not 0, 1, or 2 return unknown value specified
     	{
@@ -117,11 +166,11 @@ inline std::string doseOrFluenceMeaning(const std::vector<double>& doseOrFluence
 
     if (doseOrFluenceVec.size() > 2)
     {
-	result += "'Dose or fluence' field received " + std::to_string(doseOrFluenceVec.size()) + ", expected at most 2 values.";
+	result += "'Dose or fluence' field received " + std::to_string(doseOrFluenceVec.size()) + " values, expected at most 2 values.";
     }
 
     return result;
-} 
+}
 
 
 // Interpreting numerical field in the Volume header field.
@@ -136,16 +185,16 @@ inline std::string volumesMeaning(const std::vector<double>& volumesVec)
 	switch(static_cast<int>(volumesVec[0]))
 	{
 	    case 0: // 0 = cell/nucleus in shape of box, return box dimensions
-	        result += "The cell and cell nucleus are modeled as BOXES with side lengths (X, Y, Z) = (" + std::to_string(2*volumesVec[1]) + ", " + std::to_string(2*volumesVec[2]) + ", " + std::to_string(2*volumesVec[3]) + ") micrometers.\n";
-	        result += "The corresponding Euler rotations of the cell and cell nucleus are (phi, theta, psi) = (" + std::to_string(volumesVec[4]) + ", " + std::to_string(volumesVec[5]) + ", " + std::to_string(volumesVec[6]) + ").\n";
+	        result += "The cell and cell nucleus are modeled as BOXES with side lengths (X, Y, Z) = (" + fixFormat(2*volumesVec[1], 3) + ", " + fixFormat(2*volumesVec[2], 3) + ", " + fixFormat(2*volumesVec[3], 3) + ") micrometers.\n";
+	        result += "The corresponding Euler rotations of the cell and cell nucleus are (phi, theta, psi) = (" + fixFormat(volumesVec[4], 3) + ", " + fixFormat(volumesVec[5], 3) + ", " + fixFormat(volumesVec[6], 3) + ").\n";
 		break;
 	    case 1: // 1 = cell/nucleus in shape of ellipsoid, return ellipsoid dimensions
-		result += "The cell and cell nucleus are modeled as ELLIPSOIDS with axes lengths (X, Y, Z) = (" + std::to_string(2*volumesVec[1]) + ", " + std::to_string(2*volumesVec[2]) + ", " + std::to_string(2*volumesVec[3]) + ") micrometers.\n";
-		result += "The corresponding Euler rotations of the cell and cell nucleus are (phi, theta, psi) = (" + std::to_string(volumesVec[4]) + ", " + std::to_string(volumesVec[5]) + ", " + std::to_string(volumesVec[6]) + ").\n";
+		result += "The cell and cell nucleus are modeled as ELLIPSOIDS with axes lengths (X, Y, Z) = (" + fixFormat(2*volumesVec[1], 3) + ", " + fixFormat(2*volumesVec[2], 3) + ", " + fixFormat(2*volumesVec[3], 3) + ") micrometers.\n";
+		result += "The corresponding Euler rotations of the cell and cell nucleus are (phi, theta, psi) = (" + std::to_string(volumesVec[4]) + ", " + fixFormat(volumesVec[5], 3) + ", " + fixFormat(volumesVec[6], 3) + ").\n";
 		break;
 	    case 2: // 2 = cell/nucleus in shape of cylinder, return cylinder dimensions
-		result += "The cell and cell nucleus are modeled as CYLINDERS with X and Y axes lengths and Z height (X, Y, Z) = (" + std::to_string(2*volumesVec[1]) + ", " + std::to_string(2*volumesVec[2]) + ", " + std::to_string(2*volumesVec[3]) + ") micrometers.\n";
-		result += "The corresponding Euler rotations of the cell and cell nucleus are (phi, theta, psi) = (" + std::to_string(volumesVec[4]) + ", " + std::to_string(volumesVec[5]) + ", " + std::to_string(volumesVec[6]) + ").\n";
+		result += "The cell and cell nucleus are modeled as CYLINDERS with X and Y axes lengths and Z height (X, Y, Z) = (" + fixFormat(2*volumesVec[1], 3) + ", " + fixFormat(2*volumesVec[2], 3) + ", " + fixFormat(2*volumesVec[3], 3) + ") micrometers.\n";
+		result += "The corresponding Euler rotations of the cell and cell nucleus are (phi, theta, psi) = (" + fixFormat(volumesVec[4], 3) + ", " + fixFormat(volumesVec[5], 3) + ", " + fixFormat(volumesVec[6], 3) + ").\n";
 		break;
 	    default: // If not 0, 1, or 2, return error.
 		result += "Invalid 'Volumes' first field entry, please specify either '0' (box), '1' (ellipsoid), '2' (cylinder).";
@@ -160,16 +209,16 @@ inline std::string volumesMeaning(const std::vector<double>& volumesVec)
 	switch(static_cast<int>(volumesVec[0])) //First 7 entries for the cell 
 	{
 	    case 0: // 0 = cell in shape of box
-	        result += "The cell is modeled as a BOX with side lengths (X, Y, Z) = (" + std::to_string(2*volumesVec[1]) + ", " + std::to_string(2*volumesVec[2]) + ", " + std::to_string(2*volumesVec[3]) + ") micrometers.\n";
-	        result += "The corresponding Euler rotations of the cell are (phi, theta, psi) = (" + std::to_string(volumesVec[4]) + ", " + std::to_string(volumesVec[5]) + ", " + std::to_string(volumesVec[6]) + ").\n";
+	        result += "The cell is modeled as a BOX with side lengths (X, Y, Z) = (" + fixFormat(2*volumesVec[1], 3) + ", " + fixFormat(2*volumesVec[2], 3) + ", " + fixFormat(2*volumesVec[3], 3) + ") micrometers.\n";
+	        result += "The corresponding Euler rotations of the cell are (phi, theta, psi) = (" + fixFormat(volumesVec[4], 3) + ", " + fixFormat(volumesVec[5], 3) + ", " + fixFormat(volumesVec[6], 3) + ").\n";
 		break;
 	    case 1: // 1 = cell in shape of ellipsoid
-		result += "The cell is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (" + std::to_string(2*volumesVec[1]) + ", " + std::to_string(2*volumesVec[2]) + ", " + std::to_string(2*volumesVec[3]) + ") micrometers.\n";
-		result += "The corresponding Euler rotations of the cell are (phi, theta, psi) = (" + std::to_string(volumesVec[4]) + ", " + std::to_string(volumesVec[5]) + ", " + std::to_string(volumesVec[6]) + ").\n";
+		result += "The cell is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (" + fixFormat(2*volumesVec[1], 3) + ", " + fixFormat(2*volumesVec[2], 3) + ", " + fixFormat(2*volumesVec[3], 3) + ") micrometers.\n";
+		result += "The corresponding Euler rotations of the cell are (phi, theta, psi) = (" + fixFormat(volumesVec[4], 3) + ", " + fixFormat(volumesVec[5], 3) + ", " + fixFormat(volumesVec[6], 3) + ").\n";
 		break;
 	    case 2: // 2 = cell in shape of cylinder
-		result += "The cell is modeled as a CYLINDER with X and Y axes lengths and Z height (X, Y, Z) = (" + std::to_string(2*volumesVec[1]) + ", " + std::to_string(2*volumesVec[2]) + ", " + std::to_string(2*volumesVec[3]) + ") micrometers.\n";
-		result += "The corresponding Euler rotations of the cell are (phi, theta, psi) = (" + std::to_string(volumesVec[4]) + ", " + std::to_string(volumesVec[5]) + ", " + std::to_string(volumesVec[6]) + ").\n";
+		result += "The cell is modeled as a CYLINDER with X and Y axes lengths and Z height (X, Y, Z) = (" + fixFormat(2*volumesVec[1], 3) + ", " + fixFormat(2*volumesVec[2], 3) + ", " + fixFormat(2*volumesVec[3], 3) + ") micrometers.\n";
+		result += "The corresponding Euler rotations of the cell are (phi, theta, psi) = (" + fixFormat(volumesVec[4], 3) + ", " + fixFormat(volumesVec[5], 3) + ", " + fixFormat(volumesVec[6], 3) + ").\n";
 		break;
 	    default:
 		result += "Invalid 'Volumes' first field entry, please specify either '0' (box), '1' (ellipsoid), '2' (cylinder).";
@@ -180,16 +229,16 @@ inline std::string volumesMeaning(const std::vector<double>& volumesVec)
 	switch(static_cast<int>(volumesVec[7]))
 	{
 	    case 0: // 0 = nucleus in shape of box
-	        result += "The cell nucleus is modeled as a BOX with side lengths (X, Y, Z) = (" + std::to_string(2*volumesVec[8]) + ", " + std::to_string(2*volumesVec[9]) + ", " + std::to_string(2*volumesVec[10]) + ") micrometers.\n";
-	        result += "The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (" + std::to_string(volumesVec[11]) + ", " + std::to_string(volumesVec[12]) + ", " + std::to_string(volumesVec[13]) + ").\n";
+	        result += "The cell nucleus is modeled as a BOX with side lengths (X, Y, Z) = (" + fixFormat(2*volumesVec[8], 3) + ", " + fixFormat(2*volumesVec[9], 3) + ", " + fixFormat(2*volumesVec[10], 3) + ") micrometers.\n";
+	        result += "The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (" + fixFormat(volumesVec[11], 3) + ", " + fixFormat(volumesVec[12], 3) + ", " + fixFormat(volumesVec[13], 3) + ").\n";
 		break;
 	    case 1: // 1 = cell/nucleus in shape of ellipsoid
-		result += "The cell nucleus is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (" + std::to_string(2*volumesVec[8]) + ", " + std::to_string(2*volumesVec[9]) + ", " + std::to_string(2*volumesVec[10]) + ") micrometers.\n";
-		result += "The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (" + std::to_string(volumesVec[11]) + ", " + std::to_string(volumesVec[12]) + ", " + std::to_string(volumesVec[13]) + ").\n";
+		result += "The cell nucleus is modeled as an ELLIPSOID with axes lengths (X, Y, Z) = (" + fixFormat(2*volumesVec[8], 3) + ", " + fixFormat(2*volumesVec[9], 3) + ", " + fixFormat(2*volumesVec[10], 3) + ") micrometers.\n";
+		result += "The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (" + fixFormat(volumesVec[11], 3) + ", " + fixFormat(volumesVec[12], 3) + ", " + fixFormat(volumesVec[13], 3) + ").\n";
 		break;
 	    case 2: // 2 = cell/nucleus in shape of cylinder
-		result += "The cell nucleus is modeled as a CYLINDER with X and Y axes lengths and Z height (X, Y, Z) = (" + std::to_string(2*volumesVec[8]) + ", " + std::to_string(2*volumesVec[9]) + ", " + std::to_string(2*volumesVec[10]) + ") micrometers.\n";
-		result += "The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (" + std::to_string(volumesVec[11]) + ", " + std::to_string(volumesVec[12]) + ", " + std::to_string(volumesVec[13]) + ").\n";
+		result += "The cell nucleus is modeled as a CYLINDER with X and Y axes lengths and Z height (X, Y, Z) = (" + fixFormat(2*volumesVec[8], 3) + ", " + fixFormat(2*volumesVec[9], 3) + ", " + fixFormat(2*volumesVec[10], 3) + ") micrometers.\n";
+		result += "The corresponding Euler rotations of the cell nucleus are (phi, theta, psi) = (" + fixFormat(volumesVec[11], 3) + ", " + fixFormat(volumesVec[12], 3) + ", " + fixFormat(volumesVec[13], 3) + ").\n";
 		break;
 	    default:
 		result += "Invalid 'Volumes' eighth field entry, please specify either '0' (box), '1' (ellipsoid), '2' (cylinder).";
@@ -339,7 +388,7 @@ inline std::string damageDefinitionMeaning(const std::vector<double>& damageDefi
 
     if (static_cast<int>(damageDefinitionVec[1]) == 0) // Check second entry (0 indicates definition is in units of base pairs)
     {
-	result += "Backbone lesions that are considered as DSBs are within a distance of " + std::to_string(damageDefinitionVec[2]) + " bp.\n"; // Append to the string the value in the third entry
+	result += "Backbone lesions that are considered as DSBs are within a distance of " + fixFormat(damageDefinitionVec[2], 0) + " bp.\n"; // Append to the string the value in the third entry
 
 	if (static_cast<int>(damageDefinitionVec[3]) == -1) // Check fourth entry
 	{	
@@ -348,7 +397,7 @@ inline std::string damageDefinitionMeaning(const std::vector<double>& damageDefi
 
     	else if (static_cast<int>(damageDefinitionVec[3]) >= 0)
     	{
-            result += "Base damages a distance of " + std::to_string(damageDefinitionVec[3]) + " bp beyond the outer backbone damages are stored in the same site.\n";
+            result += "Base damages a distance of " + fixFormat(damageDefinitionVec[3], 0) + " bp beyond the outer backbone damages are stored in the same site.\n";
     	}
 
     	else
@@ -360,7 +409,7 @@ inline std::string damageDefinitionMeaning(const std::vector<double>& damageDefi
     else if (static_cast<int>(damageDefinitionVec[1]) == 1) // Check second entry (1 indicates units are in nm)
     {
 
-	result += "Backbone lesions that are considered as DSBs are within a distance of " + std::to_string(damageDefinitionVec[2]) + " nm.\n";
+	result += "Backbone lesions that are considered as DSBs are within a distance of " + fixFormat(damageDefinitionVec[2], 3) + " nm.\n";
 
     	if (static_cast<int>(damageDefinitionVec[3]) == -1)
     	{
@@ -369,7 +418,7 @@ inline std::string damageDefinitionMeaning(const std::vector<double>& damageDefi
 
     	else if (static_cast<int>(damageDefinitionVec[3]) >= 0)
         {
-            result += "Base damages a distance of " + std::to_string(damageDefinitionVec[3]) + " nm beyond the outer backbone damages are stored in the same site.\n";
+            result += "Base damages a distance of " + fixFormat(damageDefinitionVec[3], 3) + " nm beyond the outer backbone damages are stored in the same site.\n";
     	}
 
     	else 
@@ -383,7 +432,7 @@ inline std::string damageDefinitionMeaning(const std::vector<double>& damageDefi
 	result += "Invalid second field entry for Damage definition, please choose either 0 (bp) or 1 (nm).\n";
     }
 
-    result += "The lower energy threshold specified to induce a strand break or base damage is: " + std::to_string(damageDefinitionVec[4]) + " eV.\n"; // Append 5th field entry
+    result += "The lower energy threshold specified to induce a strand break or base damage is: " + fixFormat(damageDefinitionVec[4], 1) + " eV.\n"; // Append 5th field entry
 
     return result;
 }
@@ -398,7 +447,7 @@ inline std::string microenvironmentMeaning(const std::vector<double>& microenvVe
 
     else if (microenvVec.size() == 2) // If 2 fields specified, first is temperature, second is oxygen level
     {
-	return "Microenvironment temperature is: " + std::to_string(microenvVec[0]) + " degrees Celsius. The microenvironment oxygen concentration is: " + std::to_string(microenvVec[1]) + " molarity (M).\n";
+	return "Microenvironment temperature is: " + fixFormat(microenvVec[0], 2) + " degrees Celsius. The microenvironment oxygen concentration is: " + fixFormat(microenvVec[1], 3) + " molarity (M).\n";
     }
 
     else // If incorrect number of entries, indicate.
@@ -412,12 +461,12 @@ inline std::string timeMeaning(double t)
 {
     if (t == 0) // Only direct physical interactions considered
     {
-	return "Time of: " + std::to_string(t) + " seconds specified, indicating simulations only consider direct physics interactions, no chemical interactions.\n";
+	return "Time of: " + fixFormat(t, 0) + " seconds specified, indicating simulations only consider direct physics interactions, no chemical interactions.\n";
     }
 
     else if (t > 0) // Includes chemistry interactions.
     {
-	return "Time of: " + std::to_string(t) + "seconds from the time when the source particle was simulated to the time at which the chemistry simulation ends.\n";
+	return "Time of: " + fixFormat(t, 3) + "seconds from the time when the source particle was simulated to the time at which the chemistry simulation ends.\n";
     }
 
     else
