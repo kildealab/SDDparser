@@ -9,7 +9,8 @@
 #include "SDDutilities.h"
 
 // Function to check if SDD file successfully loads, and if header and data blocks were successfully processed.
-bool SDDparser::load(const std::string& filename)
+bool SDDparser::load(
+    const std::string& filename)		// Takes as input the SDD file path
 {
     std::ifstream file(filename);		// Create input file stream object file using the input filename.
 
@@ -69,7 +70,8 @@ const std::unordered_set<std::string> validSDDHeaderFields =
 };
 
 // Function to store the values associated with the various SDD header fields, to be summarized later in printHeaderSummary
-bool SDDparser::parseHeader(std::ifstream& file)
+bool SDDparser::parseHeader(
+    std::ifstream& file)							// Take as input SDD file
 {
     std::string line;								// Create line variable
 
@@ -100,10 +102,8 @@ bool SDDparser::parseHeader(std::ifstream& file)
 	    continue;
 	}
 
-        std::string original_key = tokens[0]; 					//Header field names before removing whitespaces and capitalizations
+        std::string original_key = tokens[0]; 					// Header field names before removing whitespaces and capitalizations
 	std::string key = normalizeHeaderKey(original_key); 			// Header field names are now lower case and have no leading or trailing whitespaces
-	
-//	std::cout << "Reading header field: [" << original_key << "]\n"; 	// Printing out current SDD header field being read for DEBUGGING
 
 	// Check if SDD header field is in the above list of supported fields
 	if(validSDDHeaderFields.find(key) == validSDDHeaderFields.end())
@@ -526,8 +526,25 @@ bool SDDparser::parseHeader(std::ifstream& file)
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Function to store the different data field entries to be summarized in printExposureSummary
-bool SDDparser::parseDamageEntries(std::ifstream& file)
+bool SDDparser::parseDamageEntries(
+    std::ifstream& file)			// Takes as input SDD file
 {
 
     std::string line;
@@ -924,6 +941,17 @@ bool SDDparser::parseDamageEntries(std::ifstream& file)
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
 // -------------------------------------------------------------------------- //
 // Functions to get header field / exposure fields and function to create 
 // summaries of the header fields and exposure fields
@@ -942,8 +970,22 @@ const std::vector<Exposure>& SDDparser::getExposures() const 			// Getter functi
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // Function to print out the associated chromosome damages in a given exposure, mapping the exposure ID to the chromosome damages from that exposure.
-std::map<int, ChromosomeDamageSummary> SDDparser::summarizeChromosomeDamage(const Exposure& exposure) const
+std::map<int, ChromosomeDamageSummary> SDDparser::summarizeChromosomeDamage(
+    const Exposure& exposure							// Access exposure data entries to summarize number of each damage type
+    ) const
 {
     std::map<int, ChromosomeDamageSummary> summary;				// initializing a summary object mapping the exposure id to the chromosome damages.
 
@@ -976,9 +1018,26 @@ std::map<int, ChromosomeDamageSummary> SDDparser::summarizeChromosomeDamage(cons
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Summary function to summarize the header fields only and output to a file, with suffix '_summary.txt' as specified in main.cpp. 
 // Will be used in the larger printSummary function later with printExposureSummary.
-void SDDparser::printHeaderSummary(std::ostream& output) const {
+void SDDparser::printHeaderSummary(
+    std::ostream& output							// Takes as input the output path for the summary file
+    ) const
+{
 
 
 	// ------------------- First section is the radiation information ---------------------- //
@@ -1117,9 +1176,25 @@ void SDDparser::printHeaderSummary(std::ostream& output) const {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Summary function to summarize the data fields only and output to a file, with suffix '_summary.txt' as specified in main.cpp. 
 // Will be used in the larger printSummary function later with printHeaderSummary.
-void SDDparser::printExposureSummary(std::ostream& output) const {
+void SDDparser::printExposureSummary(
+    std::ostream& output							// Takes as input output file path for summary file
+    ) const
+{
 	output << "----------------------------------------------------------------------------\n";	
 	output << "-----------------------      Chromosome Damages      -----------------------\n";
 	output << "----------------------------------------------------------------------------\n";
@@ -1206,9 +1281,23 @@ void SDDparser::printExposureSummary(std::ostream& output) const {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // Function that outputs to a summary file the header and data field summary. User can have the option of commenting out one or the other if they
 // do not want either the header or the data field summary.
-void SDDparser::printSummary(std::ostream& output) const
+void SDDparser::printSummary(
+    std::ostream& output							// Takes as input output file summary path
+    ) const
 {
     output << "==========================================================================\n";
     output << "=======================      SDD FILE SUMMARY	   =======================\n";

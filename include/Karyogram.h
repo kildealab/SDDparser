@@ -10,49 +10,43 @@
 #include "SDDtypes.h"
 #include "SDRtypes.h"
 
-struct RGB					// Use to define chromosome colors using Red, Green, and Blue codes.
+struct RGB                                      // Use to define chromosome colors using Red, Green, and Blue codes.
 {
     double r;
     double g;
     double b;
 };
 
-struct ChromosomeGeometry			// Store the geometry to draw corresponding chromosome damages at a given x and y coordinate.
-{
-    int chromosomeNumber = 0;
-//    int homologNumber = 0;
-    int chromatidNumber = 0;
-    double x = 0.0;
-    double y = 0.0;
-    double height = 0.0;
-};
 
-struct CentromerePosition			// Map the centromere start and end positions to the corresponding chromosome for the human genome alone.
+struct PaintedSegment
 {
-    std::string chromosome; 			// 1-22, X, Y
-    long long start; 				// Start position in base pairs
-    long long end; 				// End position in base pairs
-
+    double startFraction;                       // Position along new strand as fraction of total length
+    double endFraction;
+    RGB color;                                  // Color of original chromosome this segment came from
+    bool hasCentromere;                         // Does the centromere exist in this segment
+    bool isReversed;                            // Check for inversions to draw chevron inversion marker.
+    double centromereStartFraction;
+    double centromereEndFraction;
 };
 
 
-enum class ChromosomeLayout			// Determine how the user passed the chromosome sizes to modify karyogram plotting logic.
+enum class ChromosomeLayout                     // Determine how the user passed the chromosome sizes to modify karyogram plotting logic.
 {
     NON_HOMOLOGOUS,       // 1,2,3,...,22,Y,X
     ADJACENT_HOMOLOGS,    // 1,1,2,2,...,22,22,Y,X
     SPLIT_HOMOLOGS        // 1,2,...,22,1,2,...,22,Y,X
 };
 
-struct PaintedSegment
+
+struct CentromerePosition                       // Map the centromere start and end positions to the corresponding chromosome for the human genome alone.
 {
-    double startFraction; 			// Position along new strand as fraction of total length
-    double endFraction;
-    RGB color;					// Color of original chromosome this segment came from
-    bool hasCentromere;				// Does the centromere exist in this segment
-    bool isReversed;				// Check for inversions to draw chevron inversion marker.
-    double centromereStartFraction;
-    double centromereEndFraction;
+    std::string chromosome;                     // 1-22, X, Y
+    long long start;                            // Start position in base pairs
+    long long end;                              // End position in base pairs
+
 };
+
+
 
 
 // Use Karyogram for all illustrations of chromosome damages

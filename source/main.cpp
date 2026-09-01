@@ -29,7 +29,12 @@ namespace
     // argv[startIndex]. If nothing follows the preceding arguments,
     // drawKaryogram is left false and this returns true (nothing to do).
     // Prints an error and returns false on any malformed input.
-    bool parseKaryogramOption(int argc, char* argv[], int startIndex, bool& drawKaryogram, std::string& genomeType)
+    bool parseKaryogramOption(
+	int argc, 						// Number of command line arguments
+	char* argv[], 						// The command line argument at a particular index
+	int startIndex, 					// Variable to track the different possible commands
+	bool& drawKaryogram, 					// Check if draw karyogram was desired by the user
+	std::string& genomeType)				// Check if genome specified was human or other
     {
 	drawKaryogram = false;
         genomeType.clear();
@@ -73,6 +78,12 @@ namespace
 	return true;
     }
 }
+
+
+
+
+
+
 
 
 

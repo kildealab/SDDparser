@@ -9,7 +9,8 @@
 #include "SDRutilities.h"
 
 
-bool SDRparser::parseFile(const std::string& filename)					// Main parser function that parses the SDR file
+bool SDRparser::parseFile(								// Main parser function that parses the SDR file
+    const std::string& filename)							// Takes as input SDR file path
 {
     std::ifstream file(filename);
 
@@ -76,6 +77,16 @@ bool SDRparser::parseFile(const std::string& filename)					// Main parser functi
 
 
 
+
+
+
+
+
+
+
+
+
+
 // --------------------------------------------------------- //
 // Getter functions for the master header and subheader to be
 // summarized.
@@ -92,10 +103,21 @@ const std::vector<SDRsubHeader>& SDRparser::getSubHeaders() const
 
 
 
+
+
+
+
+
+
+
+
+
+
 // -------------------------------------------------------- //
 // Parsing functions for individual SDR header, cell subheader and cell data fields
 // -------------------------------------------------------- //
-bool SDRparser::parseMasterHeader(std::ifstream& file)
+bool SDRparser::parseMasterHeader(
+    std::ifstream& file)							// Takes as input the SDR file path
 {
 
  std::string line;
@@ -114,7 +136,7 @@ bool SDRparser::parseMasterHeader(std::ifstream& file)
             continue;
         }
 
-        const std::size_t delimiterPos = line.find(':');			// Split the header line into (field name : field value)
+        const std::size_t delimiterPos = line.find(',');			// Split the header line into (field name, field value)
 
         if (delimiterPos == std::string::npos)					// If delimiter not found exit with error
         {
@@ -123,7 +145,9 @@ bool SDRparser::parseMasterHeader(std::ifstream& file)
         }
 
 	const std::string field = normalizeHeaderKey(line.substr(0, delimiterPos)); // header key is before the ':' delimiter
-        const std::string value = trim(line.substr(delimiterPos + 1));		// header value is after the ':' delimiter
+
+	const std::vector<std::string> valueVec = split(line.substr(delimiterPos + 1), ';');
+        const std::string value = valueVec.empty() ? "" : valueVec[0];		// header value is after the ':' delimiter
 
 	// Associate SDR header keys with their corresponding values
         if (field == "sdr version")
@@ -164,7 +188,20 @@ bool SDRparser::parseMasterHeader(std::ifstream& file)
 
 
 
-bool SDRparser::parseSubHeader(std::ifstream& file, SDRsubHeader& subHeader)
+
+
+
+
+
+
+
+
+
+
+// Function to parse each SDR subheader associated with each cell in a sample
+bool SDRparser::parseSubHeader(
+    std::ifstream& file, 									// Takes as input the SDR input file path
+    SDRsubHeader& subHeader)									// Parses a given cell's subheader section
 {
 
     std::string line;
@@ -184,7 +221,7 @@ bool SDRparser::parseSubHeader(std::ifstream& file, SDRsubHeader& subHeader)
             return true;
         }
 
-	const std::size_t delimiterPos = line.find(':');				// Key : value pairs are separated by ':' delimiter
+	const std::size_t delimiterPos = line.find(',');				// Key , value pairs are separated by ',' delimiter
 
 	if (delimiterPos == std::string::npos)						// If delimiter not found, exit with error
 	{
@@ -193,8 +230,11 @@ bool SDRparser::parseSubHeader(std::ifstream& file, SDRsubHeader& subHeader)
 	}
 
 
-	const std::string field = normalizeHeaderKey(line.substr(0, delimiterPos));	// field is the string before the ':' delimiter
-	const std::string value = trim(line.substr(delimiterPos + 1));			// value is the string after the ':' delimiter
+	const std::string field = normalizeHeaderKey(line.substr(0, delimiterPos));	// field is the string before the delimiter
+
+	const std::vector<std::string> valueVec = split(line.substr(delimiterPos + 1), ';');
+	const std::string value = valueVec.empty() ? "" : valueVec[0];			// value is the string after the delimiter
+
 	if (field == "cell id")
 	{
 	    const std::vector<std::string> values = split(value, ',');			// Split value string by removing ',' delimiter and storing to a vector.
@@ -306,7 +346,17 @@ bool SDRparser::parseSubHeader(std::ifstream& file, SDRsubHeader& subHeader)
 
 
 
-bool SDRparser::parseCellData(std::ifstream& file, SDRsubHeader& subHeader)
+
+
+
+
+
+
+
+// Parse subHeader works in tandem with parseCellData, because each cell has both a subheader and a data block
+bool SDRparser::parseCellData(
+    std::ifstream& file, 								// Takes as input the SDR file path
+    SDRsubHeader& subHeader)								// Parses the subheader associated with each cell in the sample, if subheader exists, data block should too
 {
     std::string line;
 
@@ -349,8 +399,19 @@ bool SDRparser::parseCellData(std::ifstream& file, SDRsubHeader& subHeader)
 }
 
 
+
+
+
+
+
+
+
+
+
 // Function to parse the specific fields of the SDR data records/entries
-bool SDRparser::parseDataRecord(const std::string& line, SDRdataRecord& record)
+bool SDRparser::parseDataRecord(
+    const std::string& line, 								// Takes as input each line within a cell's data block
+    SDRdataRecord& record)								// Data record containing new and old strand IDs, fragment ranges, centromere presence, and fragment shape
 {
 
     // Fields separated by ';'
@@ -436,8 +497,15 @@ bool SDRparser::parseDataRecord(const std::string& line, SDRdataRecord& record)
 
 
 
-// Function to parse SDR subheader 'Mutated Chromosome Sizes' key
-bool SDRparser::parseMutatedChromosomeSizes(const std::string& value, std::map<int, double>& chromosomeSizes)
+
+
+
+
+
+// Helper function to parse SDR subheader 'Mutated Chromosome Sizes' key
+bool SDRparser::parseMutatedChromosomeSizes(
+    const std::string& value, 								// Reads each mutated chromosome value entry in the cell subheader
+    std::map<int, double>& chromosomeSizes)						// Maps the chromosome/strand ID to the mutated chromosome size
 {
     chromosomeSizes.clear();								// Clear any previously stored chromosome sizes
 
@@ -507,8 +575,16 @@ bool SDRparser::parseMutatedChromosomeSizes(const std::string& value, std::map<i
 
 
 
+
+
+
+
+
+
 // Function specifically to parse SDR data field 3 fragments
-bool SDRparser::parseFragment(const std::string& text, SDRfragment& fragment)
+bool SDRparser::parseFragment(
+    const std::string& text, 								// Takes as input the raw field 3 string
+    SDRfragment& fragment)								// Takes as input the fragment object containing old strand ID, fragment start and end positions (Mbp), and if the fragment has centromere
 {
     // Subfields separated by '/'
     // oldStrandID / oldStartPosition / oldEndPosition / hasCentromere
@@ -547,6 +623,18 @@ bool SDRparser::parseFragment(const std::string& text, SDRfragment& fragment)
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // ------------------------------------------------- //
 // Write Summary functions for the master header
 // the cell subheaders, and cell data fields, and
@@ -554,7 +642,8 @@ bool SDRparser::parseFragment(const std::string& text, SDRfragment& fragment)
 // ------------------------------------------------- //
 
 bool SDRparser::writeSummary(
-    const std::string& outputFilename) const
+    const std::string& outputFilename							// Takes as input the output file summary path
+    ) const
 {
     std::ofstream output(outputFilename);
 
@@ -579,8 +668,16 @@ bool SDRparser::writeSummary(
 
 
 
+
+
+
+
+
+
+
+
 void SDRparser::writeMasterHeaderSummary(
-    std::ofstream& output) const
+    std::ofstream& output) const						// Takes as input the output file summary path
 {
     output << "===================================\n";
     output << "SDR MASTER HEADER SUMMARY\n";
@@ -621,7 +718,16 @@ void SDRparser::writeMasterHeaderSummary(
 
 
 
-void SDRparser::writeSubHeaderSummary(std::ofstream& output, const SDRsubHeader& subHeader) const
+
+
+
+
+
+
+void SDRparser::writeSubHeaderSummary(
+    std::ofstream& output, 							// Takes as input the output file summary path
+    const SDRsubHeader& subHeader						// Accesses SDR cell subheader to summarize subheader entries
+    ) const
 {
     output << "-----------------------------------\n";
     output << "CELL " << subHeader.cellID << " SUMMARY\n";
@@ -655,7 +761,16 @@ void SDRparser::writeSubHeaderSummary(std::ofstream& output, const SDRsubHeader&
 
 
 
-void SDRparser::writeCellDataSummary(std::ofstream& output, const SDRsubHeader& subHeader) const
+
+
+
+
+
+
+void SDRparser::writeCellDataSummary(
+    std::ofstream& output, 							// Takes as input the input file summary path
+    const SDRsubHeader& subHeader						// Accepts the SDR subheader to detect mutations and summarize them
+    ) const
 {
 
     // New-strand records numbered below this threshold are baseline restatements of an original chromosome, not rearrangement/mutated outcomes.
@@ -677,11 +792,24 @@ void SDRparser::writeCellDataSummary(std::ofstream& output, const SDRsubHeader& 
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
 // ----------------------------------------------------------- //
 // Pushback helper functions for stream positioning
 // ----------------------------------------------------------- //
 
-bool SDRparser::nextLine(std::ifstream& file, std::string& line)
+bool SDRparser::nextLine(
+    std::ifstream& file, 						// Takes as input input file path
+    std::string& line)							// Takes as input raw line in the input file
 {
     if (hasPendingLine)
     {
@@ -693,7 +821,16 @@ bool SDRparser::nextLine(std::ifstream& file, std::string& line)
     return static_cast<bool>(std::getline(file, line));
 }
 
-void SDRparser::pushBackLine(const std::string& line)
+
+
+
+
+
+
+
+
+void SDRparser::pushBackLine(
+    const std::string& line)						// Takes as input raw line in the input file
 {
     pendingLine = line;
     hasPendingLine = true;

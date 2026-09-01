@@ -99,5 +99,4 @@ FURTHER KARYOGRAM PLOTTING WORK:
 1. Add a zoom in and out and a panning option to conserve image quality. 
 2. Be able to read a Standard for DNA repair (SDR) file and plot the structural variation mutations on the Karyogram.
 3. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
-4. Depict the increase in number of single-strand and double-strand breaks as a function of dose using the Karyogram for SDD files with different doses listed,
 ... and much more.
