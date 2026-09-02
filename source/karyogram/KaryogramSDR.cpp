@@ -862,6 +862,8 @@ std::vector<const SDRdataRecord*> Karyogram::filterBaselineIfMutated(
 // traces back to the home strand only (no foreign/translocated-in
 // material). Anything else - a lone inversion, or multiple mutation
 // types landing on the same chromosome - doesn't match this shape.
+// The excised fragment must be linear for it to be a deletion, otherwise
+// it could be considered an ecDNA mutation
 bool Karyogram::isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID)
 {
     if (records.size() != 2)
@@ -886,7 +888,7 @@ bool Karyogram::isDeletionShape(const std::vector<const SDRdataRecord*>& records
         {
             twoFragmentRecord = record;
         }
-        else if (record->fragments.size() == 1 && oneFragmentRecord == nullptr)
+        else if (record->fragments.size() == 1 && record->linear && oneFragmentRecord == nullptr) 	// Ensure fragment is linear for long deletion
         {
             oneFragmentRecord = record;
         }

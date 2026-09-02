@@ -486,7 +486,7 @@ bool SDRparser::parseDataRecord(
 
     if (isLinearVals.size() != 1 || (isLinearVals[0] != 0 && isLinearVals[0] != 1))	// Field 4 must be of size 1 and can only be a value of either 0 or 1
     {
-	std::cerr << "ERROR: Invalud linear/circular flag in SDR data record Field 4.\n";
+	std::cerr << "ERROR: Invalid linear/circular flag in SDR data record Field 4.\n";
 	return false;
     }
 
@@ -780,12 +780,16 @@ void SDRparser::writeCellDataSummary(
     const std::vector<SDRinversionEvent> inversions = detectInversions(subHeader, numOriginalStrands);
     const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands);
     const std::vector<SDRecDNAevent> ecDNAs = detectECDNA(subHeader, numOriginalStrands);
+    const std::vector<SDRdeletionInversionEvent> delInvs = detectDeletionInversions(subHeader, numOriginalStrands);
+    const std::vector<SDRdeletionTranslocationEvent> delTras = detectDeletionTranslocations(subHeader, numOriginalStrands);
 
     output << "Mutation Summary:\n";
     output << "  Deletions: " << deletions.size() << "\n";
     output << "  Inversions: " << inversions.size() << "\n";
     output << "  Translocations: " << translocations.size() << "\n";
     output << "  ecDNA: " << ecDNAs.size() << "\n";
+    output << "  Deletion-Inversions: " << delInvs.size() << "\n";
+    output << "  Deletion-Translocations: " << delTras.size() << "\n";
 
     // TODO: remaining mutation types, once their detectX()
     // helpers exist in SDRutilities.h.

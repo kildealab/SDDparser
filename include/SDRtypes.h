@@ -66,11 +66,11 @@ constexpr int SDR_FIELD_NOT_MEASURED = -1;
 // Represents a detected deletion event within a single cell
 struct SDRdeletionEvent
 {
-    int oldStrandID;
-    double deletionStart;
-    double deletionEnd;
-    int remainingStrandID;   // new strand retaining the two flanking fragments
-    int excisedStrandID;     // new strand consisting of just the deleted segment
+    int oldStrandID;		// Which chromosome/strand ID the fragments originate from
+    double deletionStart;	// Location (in Mbp from start of p arm) for the beginning of the deletion
+    double deletionEnd;		// Location (in Mbp from start of p arm) for the beginning of the deletion
+    int remainingStrandID;   	// new strand retaining the two flanking fragments
+    int excisedStrandID;     	// new strand consisting of just the deleted segment
 };
 
 
@@ -79,7 +79,7 @@ struct SDRdeletionEvent
 // net gain or loss of material.
 struct SDRinversionEvent
 {
-    int oldStrandID;
+    int oldStrandID;		// Which chromosome/strand ID the fragments originate from
     double inversionStart;
     double inversionEnd;
     int newStrandID;
@@ -92,12 +92,12 @@ struct SDRinversionEvent
 // lost.
 struct SDRtranslocationEvent
 {
-    int oldStrandA;
-    int oldStrandB;
-    double breakpointA;   // position on oldStrandA where the break occurred
-    double breakpointB;   // position on oldStrandB where the break occurred
-    int newStrandID1;
-    int newStrandID2;
+    int oldStrandA;		// Which chromosome/strand ID the fragments originate from for strand A
+    int oldStrandB;		// Which chromosome/strand ID the fragments originate from for strand B
+    double breakpointA;   	// position on oldStrandAid where the break occurred
+    double breakpointB;   	// position on oldStrandBid where the break occurred
+    int newStrandID1;		// ID of the new strand containing fragment rearrangements for strand 1
+    int newStrandID2;		// ID of the new strand containing fragment rearrangenemts for strand 2
 };
 
 
@@ -107,15 +107,51 @@ struct SDRtranslocationEvent
 // 1 for linear fragments.
 struct SDRecDNAevent
 {
-    int oldStrandID;
-    double ecDNAstart;
-    double ecDNAend;
-    int remainingStrandID;
-    int excisedStrandID;
+    int oldStrandID;		// Which chromosome/strand ID the fragments originate from
+    double ecDNAstart;		// position on oldStrandID where the break started (in Mbp from the start of the p arm)
+    double ecDNAend;		// position on oldStrandID where the break ended (in Mbp from the start of the p arm)
+    int remainingStrandID;	// New strand ID of the strand that lost the excised fragment
+    int excisedStrandID;	// New strand ID of the excised strand
 };
 
 
 
 
+// Represents a combined detected deletion and inversion event -
+// One new strand contains three fragments with an inversion and a
+// missing section. Another new strand contains one fragment that is
+// the missing section from the previous new strand.
+struct SDRdeletionInversionEvent
+{
+    int oldStrandID;		// Which chromosome/strand ID the fragments originate from
+    double deletionStart;	// Location of the start of the deletion in Mbp
+    double deletionEnd;		// Location of the end of the deletion in Mbp
+    double inversionStart;	// Location of the start of the inversion in Mbp
+    double inversionEnd;	// Location of the end of the inversion in Mbp
+    int remainingStrandID;	// New strand containing the three fragments, 2 original and one inverted.
+    int excisedStrandID;	// New strand containing the deleted section, one fragment.
+};
+
+
+
+
+
+// Represents a combined detected deletion and translocation event - 
+// Two strands contain two translocated fragments, and another strand
+// contains a deleted segment of one of the original strand IDs, for 
+// a total of three new data records per delTra mutation
+struct SDRdeletionTranslocationEvent
+{
+    int oldStrandA;		// Old strand ID for strand A involved in the translocation
+    int oldStrandB;		// Old strand ID for strand B involved in the translocation
+    int deletedOldStrandID;   	// whichever of oldStrandA/oldStrandB has the gap, the
+    double cleanBreakPos;     	// breakpoint is on the OTHER strand, which split cleanly
+    double deletionStart;	// Location of where the deletion started in Mbp
+    double deletionEnd;		// Location of where the deletion ended in Mbp
+    int newStrandID1;         	// First translocation record ID
+    int newStrandID2;         	// Second translocation record ID
+    int excisedStrandID;      	// The excised strand's ID
+
+};
 
 #endif
