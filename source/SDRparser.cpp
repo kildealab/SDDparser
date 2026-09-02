@@ -779,11 +779,13 @@ void SDRparser::writeCellDataSummary(
     const std::vector<SDRdeletionEvent> deletions = detectDeletions(subHeader, numOriginalStrands);
     const std::vector<SDRinversionEvent> inversions = detectInversions(subHeader, numOriginalStrands);
     const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands);
+    const std::vector<SDRecDNAevent> ecDNAs = detectECDNA(subHeader, numOriginalStrands);
 
     output << "Mutation Summary:\n";
     output << "  Deletions: " << deletions.size() << "\n";
     output << "  Inversions: " << inversions.size() << "\n";
     output << "  Translocations: " << translocations.size() << "\n";
+    output << "  ecDNA: " << ecDNAs.size() << "\n";
 
     // TODO: remaining mutation types, once their detectX()
     // helpers exist in SDRutilities.h.

@@ -101,6 +101,21 @@ struct SDRtranslocationEvent
 };
 
 
+// Represents a detected extrachromosomal DNA fragment -
+// It has the same fragment signature as long deletions, but
+// the isLinear data field 4 is 0 (for circular fragments) rather than
+// 1 for linear fragments.
+struct SDRecDNAevent
+{
+    int oldStrandID;
+    double ecDNAstart;
+    double ecDNAend;
+    int remainingStrandID;
+    int excisedStrandID;
+};
+
+
+
 
 
 #endif

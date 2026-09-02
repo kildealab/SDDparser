@@ -71,6 +71,7 @@ public:
 	const std::string& outputFilename
     );
 
+
 private:
 
     RGB generateChromosomeColor(int chromosomeNumber, int totalChromosomes); 	// Function to generate chromosome colors depending on the number of chromosomes, and to choose colors that are different enough between successive chromosomes. 
@@ -99,10 +100,16 @@ private:
 
     void drawLegend(cairo_t* cr, double legendY);						// Function to draw the karyogram legend at the bottom.
     void drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCyclePhase, const std::vector<Exposure>& exposures, const std::vector<double>& doseOrFluence, const std::vector<int>& incidentParticles);						// Function to draw the karyogram summary box at the top.
+    void drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader, const SDRsubHeader& subHeader);
+    void drawSDRlegend(cairo_t* cr, double legendY);
 
     ChromosomeLayout determineChromosomeLayout(const std::vector<double>& chromosomeSizes);	// Function that will determine how the user passed the chromosomes.
 
     std::vector<const SDRdataRecord*> filterBaselineIfMutated(const std::vector<const SDRdataRecord*>& records, int numOriginalStrands);
+
+    bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
+    SDRdataRecord concatenateRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
+    std::vector<const SDRdataRecord*> clusterRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, std::vector<SDRdataRecord>& mergedStorage);
 
 };
 

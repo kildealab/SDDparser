@@ -14,7 +14,7 @@
 // -------------------------------------------------- //
 
 // INVARIANT: SDRfragment::oldStrandID always refers to one of the
-// original 46 intact chromosome strands (IDs 0-45), never to a
+// original intact chromosomes (46 for humans), never to a
 // newly-created strand ID produced by an earlier rearrangement.
 // This is what allows every detect<Mutation>() function below to group a
 // cell's fragments by oldStrandID and treat that as "all the
@@ -22,8 +22,8 @@
 // rather than needing to trace strand lineage across events.
 
 // Mutated strands are only those with new strand IDs >= numOriginalStrands.
-// EX: for the 46 human chromosomes with strand IDs (0-45), mutated strands
-// begin with new Strand ID >= 46. This will be consistent across SDR files.
+// EX: for the 46 human chromosomes with strand IDs (1-46), mutated strands
+// begin with new Strand ID > 46. This will be consistent across SDR files.
 inline bool isRearrangementCandidate(int newStrandID, int numOriginalStrands)
 {
     return newStrandID >= numOriginalStrands;
@@ -36,6 +36,8 @@ inline bool approxEqual(double a, double b, double tolerance)
 
     return std::fabs(a - b) <= tolerance;
 }
+
+
 
 // --------------------------------------------------------------------------- //
 // Detects LONG DELETION events within a single cell.
@@ -147,6 +149,16 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
 
     return deletions;								// Return deletion information, for now summarize number of deletions with deletion.size() in the writeCellDataSummary function.
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -278,6 +290,14 @@ inline std::vector<SDRinversionEvent> detectInversions(const SDRsubHeader& subHe
 
 
 
+
+
+
+
+
+
+
+
 // A candidate "half" of a balanced translocation: a record with exactly two fragments, referencing two distinct old strand IDs,
 // both fragments in their original (non-reversed) orientation.
 inline bool getTranslocationCandidateFragments(const SDRdataRecord& record, int numOriginalStrands, SDRfragment& fragmentA, SDRfragment& fragmentB)
@@ -317,6 +337,16 @@ inline bool getTranslocationCandidateFragments(const SDRdataRecord& record, int 
     return true;
 }
 
+
+
+
+
+
+
+
+
+
+
 // Checks whether two fragments referencing the same old strand ID meet exactly at a shared boundary within tolerance - i.e. they
 // are the two pieces resulting from a single break in that strand. If so, populates breakpoint with the position of that break.
 inline bool fragmentsShareBreakpoint(const SDRfragment& fragment1, const SDRfragment& fragment2, double& breakpoint)
@@ -347,6 +377,16 @@ inline bool fragmentsShareBreakpoint(const SDRfragment& fragment1, const SDRfrag
 
     return false;
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -427,5 +467,135 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
 
     return translocations;								// In writeCellDataSummary, return the number of translocation events detected in the SDR file
 }
+
+
+
+
+
+
+
+
+
+// ----------------------------------------------------------------- //
+// Detects EXTRACHROMOSOMAL DNA (ecDNA) events within a single cell. //
+// ----------------------------------------------------------------- //
+
+// Identical fragment signature to the long deletion events with the added
+// indicator of data field 4 isLinear = 0 (for circular fragments). one new strand
+// retains the two flanking fragments, another new strand is the
+// excised middle segment - except the excised strand's record must
+// be CIRCULAR (linear = 0) rather than linear. The remaining/flanking
+// strand is still required to be linear.
+
+inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int numOriginalStrands)
+{
+    std::vector<SDRecDNAevent> ecDNAevents;
+
+    // Group every fragment in this cell by the old strand ID it
+    // references, remembering which new-strand record it came from.
+    // Unlike detectDeletions, we can't filter out circular records
+    // up front - the excised piece here is EXPECTED to be circular.
+    std::map<int, std::vector<std::pair<const SDRdataRecord*, SDRfragment>>> groupOldStrand;
+
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+	if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands))
+	{
+	    continue;
+	}
+
+	for (const SDRfragment& fragment : record.fragments)
+	{
+	    groupOldStrand[fragment.oldStrandID].push_back({&record, fragment});
+	}
+
+    }
+
+    for (auto& [oldStrandID, entries] : groupOldStrand)
+    {
+        std::map<int, std::vector<SDRfragment>> groupNewStrand;
+        std::map<int, const SDRdataRecord*> recordByNewStrand;
+
+        for (const auto& [record, fragment] : entries)
+        {
+            groupNewStrand[record->newStrandID].push_back(fragment);
+            recordByNewStrand[record->newStrandID] = record;
+        }
+
+        // An ecDNA event touches exactly two new-strand records: one
+        // linear record with the two flanking fragments, one
+        // CIRCULAR record with the single excised fragment.
+        if (groupNewStrand.size() != 2)
+        {
+            continue;
+        }
+
+	int remainingStrandID = -1;
+        int excisedStrandID = -1;
+        std::vector<SDRfragment>* flankingFragments = nullptr;
+        std::vector<SDRfragment>* excisedFragmentVec = nullptr;
+
+        for (auto& [newStrandID, fragments] : groupNewStrand)
+        {
+            const SDRdataRecord* record = recordByNewStrand[newStrandID];
+
+            if (fragments.size() == 2 && record->linear)
+            {
+                remainingStrandID = newStrandID;
+                flankingFragments = &fragments;
+            }
+            else if (fragments.size() == 1 && !record->linear)
+            {
+                excisedStrandID = newStrandID;
+                excisedFragmentVec = &fragments;
+            }
+        }
+
+
+	if (flankingFragments == nullptr || excisedFragmentVec == nullptr)
+        {
+            continue;
+        }
+
+        std::sort(flankingFragments->begin(), flankingFragments->end(), [](const SDRfragment& a, const SDRfragment& b)
+        {
+            return a.oldStartPosition < b.oldStartPosition;
+        });
+
+        const SDRfragment& lowerFragment = (*flankingFragments)[0];
+        const SDRfragment& upperFragment = (*flankingFragments)[1];
+        const SDRfragment& excisedFragment = (*excisedFragmentVec)[0];
+
+	const double ecDNAtolerance = 0.001;					// tolerance in Mbp difference between contiguous segments <= 250 bp
+
+        const double gapStart = lowerFragment.oldEndPosition;
+        const double gapEnd = upperFragment.oldStartPosition;
+
+	if (gapEnd <= gapStart)
+        {
+            continue;
+        }
+
+        if (!approxEqual(excisedFragment.oldStartPosition, gapStart, ecDNAtolerance) ||
+            !approxEqual(excisedFragment.oldEndPosition, gapEnd, ecDNAtolerance))
+        {
+            continue;
+        }
+
+        SDRecDNAevent event{};
+        event.oldStrandID = oldStrandID;
+        event.ecDNAstart = gapStart;
+        event.ecDNAend = gapEnd;
+        event.remainingStrandID = remainingStrandID;
+        event.excisedStrandID = excisedStrandID;
+
+        ecDNAevents.push_back(event);
+    }
+
+    return ecDNAevents;
+
+}
+
+
 
 #endif
