@@ -92,6 +92,7 @@ private:
     void drawDoubleStrandBreakMarker(cairo_t* cr, double x, double y, double chromosomeWidth);				// Function to draw the damage locations at a given x and y coordinate on the Karyogram, the entire width of the drawn chromosome.
     void drawSingleStrandBreakMarker(cairo_t* cr, double x, double y, double markerLength);
     void drawInversionChevron(cairo_t* cr, double centerX, double centerY, double size);
+    void drawCircularFragment(cairo_t* cr, double centerX, double centerY, double diameter, RGB color);
 
     const CentromerePosition* getHumanCentromere(int chromosomeID);		// Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
     bool getCentromereForOriginalStrand(int oldStrandID, bool humanGenome, const SDRmasterHeader& masterHeader, double&centromereStartBP, double& centromereEndBP);			// Check if original strand has centromere in the given range
@@ -109,6 +110,7 @@ private:
     std::vector<const SDRdataRecord*> filterBaselineIfMutated(const std::vector<const SDRdataRecord*>& records, int numOriginalStrands);
 
     bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
+    bool isECDNAshape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
     SDRdataRecord concatenateRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
     std::vector<const SDRdataRecord*> clusterRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, std::vector<SDRdataRecord>& mergedStorage);
 
