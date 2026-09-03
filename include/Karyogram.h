@@ -78,10 +78,11 @@ private:
     RGB getColorForOriginalStrand(int oldStrandID, const SDRmasterHeader& masterHeader);			// For SDR tracking of chromosome colors during rearrangements
 
     std::vector<PaintedSegment> buildPaintedSegments(const SDRdataRecord& record, bool humanGenome, const SDRmasterHeader& masterHeader);
+    std::vector<PaintedSegment> buildDeletionRemainingSegments(const SDRdataRecord& record, int homeOldStrandID, bool humanGenome, const SDRmasterHeader& masterHeader);
 
     void drawChromosome(cairo_t* cr, double x, double y, double height, double width, RGB color, double centromereStart, double centromereEnd); // The main draw chromosome function, accounting for individual chromosome sizes and centromere ranges and locations.
-    void drawPaintedChromosome(cairo_t* cr, double x, double y, double height, double width, const std::vector<PaintedSegment>& segments);
-    void drawStackedMutations(cairo_t* cr, const std::vector<const SDRdataRecord*>& records, double slotCenterX, double posY, double chromosomeWidth, double maxLengthMbp, double maxRenderHeight, bool humanGenome, const SDRmasterHeader& masterHeader);
+    void drawPaintedChromosome(cairo_t* cr, double x, double y, double height, double width, const std::vector<PaintedSegment>& segments, bool roundTopCap = true, bool roundBottomCap = true);
+    void drawStackedMutations(cairo_t* cr, const std::vector<const SDRdataRecord*>& records, double slotCenterX, double posY, double chromosomeWidth, double maxLengthMbp, double maxRenderHeight, bool humanGenome, const SDRmasterHeader& masterHeader, int homeOldStrandID);
 
     std::vector<DamageLocation> getDoubleStrandBreaks(const std::vector<Exposure>& exposures); // Use to obtain the stored double strand break locations in each exposure and determine their coordinates on the Karyogram. 
     std::vector<DamageLocation> getSingleStrandBreaks(const std::vector<Exposure>& exposures);

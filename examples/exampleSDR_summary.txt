@@ -22,4 +22,6 @@ Mutation Summary:
   Inversions: 1
   Translocations: 1
   ecDNA: 0
+  Deletion-Inversions: 0
+  Deletion-Translocations: 0
 

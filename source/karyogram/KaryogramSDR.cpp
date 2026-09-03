@@ -202,12 +202,12 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 	    // After checking for the presence of long deletions drawn beside the original chromosomes, draw them for the left and right homologs.
             if (!leftRecords.empty())
             {
-                drawStackedMutations(cr, leftRecords, leftSlotCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader);
+                drawStackedMutations(cr, leftRecords, leftSlotCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, firstOldStrandID);
             }
 
             if (!rightRecords.empty())
             {
-                drawStackedMutations(cr, rightRecords, rightSlotCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader);
+                drawStackedMutations(cr, rightRecords, rightSlotCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, secondOldStrandID);
             }
 
 	    // Add a label
@@ -233,7 +233,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
                 if (!filtered.empty())		// If data present, draw the mutation and label it
                 {
-                    drawStackedMutations(cr, filtered, groupCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader);
+                    drawStackedMutations(cr, filtered, groupCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, firstOldStrandID);
                     labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight);
 
                 }
@@ -294,7 +294,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             double yLabelHeight = maxRenderHeight;
             if (!yRecords.empty())
             {
-                drawStackedMutations(cr, yRecords, yCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader);
+                drawStackedMutations(cr, yRecords, yCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, yOldStrandID);
                 yLabelHeight = computeMaxBarHeight(yRecords, maxLengthMbp, maxRenderHeight);
             }
 
@@ -314,7 +314,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
             if (!xRecords.empty())
             {
-                drawStackedMutations(cr, xRecords, xCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader);
+                drawStackedMutations(cr, xRecords, xCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, xOldStrandID);
                 xLabelHeight = computeMaxBarHeight(xRecords, maxLengthMbp, maxRenderHeight);
             }
 
@@ -353,7 +353,9 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     double y, 						// Y position of the painted segment
     double height, 					// Height of the chromosome
     double width, 					// Width of the chromosome
-    const std::vector<PaintedSegment>& segments)	// Painted segment vector to add the aberrant strands on the original chromosomes to depict strcutural variations
+    const std::vector<PaintedSegment>& segments,	// Painted segment vector to add the aberrant strands on the original chromosomes to depict strcutural variations
+    bool roundTopCap,					// Whether the top edge gets a rounded telomere cap or a flat cut edge
+    bool roundBottomCap)				// Whether the bottom edge gets a rounded telomere cap or a flat cut edge
 {
     if (segments.empty())
     {
@@ -402,11 +404,20 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     // along the multiple fragments making up a mutated
     // chromosome
     // -----------------------------------------
+
     const auto traceCapsulePath = [&]()
     {
         cairo_new_path(cr);
 
-        cairo_arc(cr, x + capRadius, y + capRadius, capRadius, M_PI, 2 * M_PI);
+        if (roundTopCap)
+        {
+            cairo_arc(cr, x + capRadius, y + capRadius, capRadius, M_PI, 2 * M_PI);
+        }
+        else
+        {
+            cairo_move_to(cr, x, y);
+            cairo_line_to(cr, x + width, y);
+        }
 
         for (const CentromereSpan& span : centromereSpans)
         {
@@ -419,9 +430,17 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
             cairo_line_to(cr, x + width, constrictionBottom);
         }
 
-        cairo_line_to(cr, x + width, y + height - capRadius);
+        const double bottomRightY = roundBottomCap ? (y + height - capRadius) : (y + height);
+        cairo_line_to(cr, x + width, bottomRightY);
 
-        cairo_arc(cr, x + capRadius, y + height - capRadius, capRadius, 0, M_PI);
+        if (roundBottomCap)
+        {
+            cairo_arc(cr, x + capRadius, y + height - capRadius, capRadius, 0, M_PI);
+        }
+        else
+        {
+            cairo_line_to(cr, x, y + height);
+        }
 
         for (auto it = centromereSpans.rbegin(); it != centromereSpans.rend(); ++it)
         {
@@ -436,6 +455,7 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
 
         cairo_close_path(cr);
     };
+
 
     traceCapsulePath(); // build it once, for the clip
 
@@ -547,6 +567,124 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
 
 
 
+
+
+// Builds painted segments for the "remaining" (2-fragment) half of a
+// long deletion, scaled to the ORIGINAL chromosome's full length
+// rather than this record's own reduced total - so the deleted
+// region shows up as a distinct white gap rather than disappearing.
+std::vector<PaintedSegment> Karyogram::buildDeletionRemainingSegments(
+    const SDRdataRecord& record,
+    int homeOldStrandID,
+    bool humanGenome,
+    const SDRmasterHeader& masterHeader)
+{
+    std::vector<PaintedSegment> segments;
+
+    if (record.fragments.size() != 2)
+    {
+        return segments;
+    }
+
+    const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
+
+    if (sizeIndex >= masterHeader.intactChromosomeSizes.size())
+    {
+        return segments;
+    }
+
+    const double originalSizeMbp = masterHeader.intactChromosomeSizes[sizeIndex];
+
+    if (originalSizeMbp <= 0.0)
+    {
+        return segments;
+    }
+
+    std::vector<SDRfragment> fragments = record.fragments;
+
+    std::sort(fragments.begin(), fragments.end(), [](const SDRfragment& a, const SDRfragment& b)
+    {
+        return std::min(a.oldStartPosition, a.oldEndPosition) < std::min(b.oldStartPosition, b.oldEndPosition);
+    });
+
+    const SDRfragment& lowerFragment = fragments[0];
+    const SDRfragment& upperFragment = fragments[1];
+
+    const RGB homeColor = getColorForOriginalStrand(homeOldStrandID, masterHeader);
+
+    auto addFragmentSegment = [&](const SDRfragment& fragment)
+    {
+        const double lo = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+        const double hi = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+
+        PaintedSegment segment{};
+        segment.startFraction = lo / originalSizeMbp;
+        segment.endFraction = hi / originalSizeMbp;
+        segment.color = homeColor;
+        segment.isReversed = fragment.oldStartPosition > fragment.oldEndPosition;
+        segment.hasCentromere = false;
+
+        if (fragment.hasCentromere)
+        {
+            double centromereStartBP = 0.0;
+            double centromereEndBP = 0.0;
+
+            if (getCentromereForOriginalStrand(homeOldStrandID, humanGenome, masterHeader, centromereStartBP, centromereEndBP))
+            {
+                const double centStartMbp = centromereStartBP / 1000000.0;
+                const double centEndMbp = centromereEndBP / 1000000.0;
+
+                const double overlapLo = std::max(lo, centStartMbp);
+                const double overlapHi = std::min(hi, centEndMbp);
+
+                if (overlapHi > overlapLo)
+                {
+                    segment.hasCentromere = true;
+                    segment.centromereStartFraction = overlapLo / originalSizeMbp;
+                    segment.centromereEndFraction = overlapHi / originalSizeMbp;
+                }
+            }
+        }
+
+        segments.push_back(segment);
+    };
+
+    addFragmentSegment(lowerFragment);
+
+    const double gapStart = std::max(lowerFragment.oldStartPosition, lowerFragment.oldEndPosition);
+    const double gapEnd = std::min(upperFragment.oldStartPosition, upperFragment.oldEndPosition);
+
+    if (gapEnd > gapStart)
+    {
+        PaintedSegment gapSegment{};
+        gapSegment.startFraction = gapStart / originalSizeMbp;
+        gapSegment.endFraction = gapEnd / originalSizeMbp;
+        gapSegment.color = RGB{1.0, 1.0, 1.0};
+        gapSegment.isReversed = false;
+        gapSegment.hasCentromere = false;
+        segments.push_back(gapSegment);
+    }
+
+    addFragmentSegment(upperFragment);
+
+    return segments;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Helper to draw rearranged fragments on their original strands, stacked on top or beside in the same chromosome slot.
 void Karyogram::drawStackedMutations(
     cairo_t* cr,
@@ -557,7 +695,8 @@ void Karyogram::drawStackedMutations(
     double maxLengthMbp, 								// Max length to normalize the heights of all the chromosomes drawn
     double maxRenderHeight, 								// Put a cap on the height of the chromosome heights
     bool humanGenome, 									// Check if user specified a human genome.
-    const SDRmasterHeader& masterHeader)						// Check SDR master header for intact chromosome sizes layout
+    const SDRmasterHeader& masterHeader,						// Check SDR master header for intact chromosome sizes layout
+    int homeOldStrandID)								// The original chromosome this slot belongs to
 {
     if (records.empty())
     {
@@ -574,8 +713,22 @@ void Karyogram::drawStackedMutations(
         totalWidth += (count - 1) * stackGap;
     }
 
+
+    // A long deletion's pair of records gets special treatment: the
+    // remaining piece is drawn at the ORIGINAL chromosome's full
+    // length with a white gap marking the deletion, and the excised
+    // piece gets flat (non-rounded) caps on whichever end isn't a
+    // real chromosome edge.
+    const bool isDeletion = isDeletionShape(records, homeOldStrandID);
+
+    const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
+    
+    const double originalSizeMbp = (sizeIndex < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[sizeIndex] : 0.0;
+
+
     // Determine where to draw the abberrant strands and how large to draw them
     double barX = slotCenterX - totalWidth / 2.0;					// Aberrant strand X position
+
     for (const SDRdataRecord* record : records)
     {
         double lengthMbp = 0.0;								// Convert Mbp lengths to pixel sizes
@@ -584,14 +737,44 @@ void Karyogram::drawStackedMutations(
             lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);// Determine new rearranged strand length
         }
 
-        double barHeight = computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight); // Determine the height of the aberrant strand
-        const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader); // Store all the segments associated with a given data record to be built and drawn
+        if (isDeletion && record->fragments.size() == 2 && originalSizeMbp > 0.0)
+        {
+            const double barHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
+            const std::vector<PaintedSegment> segments = buildDeletionRemainingSegments(*record, homeOldStrandID, humanGenome, masterHeader);
 
-        drawPaintedChromosome(cr, barX, posY, barHeight, chromosomeWidth, segments);	// Draw the chromosome with the rearranged fragments
+            drawPaintedChromosome(cr, barX, posY, barHeight, chromosomeWidth, segments);
+        }
+	else if (isDeletion && record->fragments.size() == 1 && originalSizeMbp > 0.0)
+        {
+
+	    const double delTolerance = 0.001; 						// 0.001 Mbp deletion tolerance = 1000 bp
+            const SDRfragment& fragment = record->fragments[0];
+            const double fragLower = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+            const double fragHigher = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+
+            const bool roundTopCap = approxEqual(fragLower, 0.0, delTolerance);
+            const bool roundBottomCap = approxEqual(fragHigher, originalSizeMbp, delTolerance);
+
+            const double barHeight = computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight);
+            const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader);
+
+            drawPaintedChromosome(cr, barX, posY, barHeight, chromosomeWidth, segments, roundTopCap, roundBottomCap);
+        }
+	else
+        {
+            double barHeight = computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight); // Determine the height of the aberrant strand
+            const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader); // Store all the segments associated with a given data record to be built and drawn
+
+            drawPaintedChromosome(cr, barX, posY, barHeight, chromosomeWidth, segments);	// Draw the chromosome with the rearranged fragments
+        }
 
         barX += chromosomeWidth + stackGap;						// Adjust the position of the aberrant strand fragment x position
     }
+
 }
+
+
+
 
 
 
