@@ -111,6 +111,8 @@ private:
 
     bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
     bool isECDNAshape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
+    bool isDeletionInversionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
+
     SDRdataRecord concatenateRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
     std::vector<const SDRdataRecord*> clusterRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, std::vector<SDRdataRecord>& mergedStorage);
 

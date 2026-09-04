@@ -18,10 +18,10 @@ Total DSB Count: N/A
 Total Misrepair Count: N/A
 
 Mutation Summary:
-  Deletions: 1
+  Deletions: 2
   Inversions: 1
   Translocations: 1
   ecDNA: 1
-  Deletion-Inversions: 0
+  Deletion-Inversions: 1
   Deletion-Translocations: 0
 

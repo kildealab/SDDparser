@@ -43,8 +43,8 @@ inline bool approxEqual(double a, double b, double tolerance)
 // Detects LONG DELETION events within a single cell.
 // --------------------------------------------------------------------------- //
 
-// A long deletion event corresponds to two new data entries, one with a new strand ID and two flanking fragments with the same old strand ID
-// and the other with a new strand ID with the central excised/deleted fragment with the same old strand ID as the other new strand.
+// Modified detectDeletions function to detect multiple deletions within a single strand. A strand with N deletions will contain N + 1 fragments in SDR data field 3, and will have
+// N + 1 data entries, 1 entry being the original strand with all the gaps, and N entries representing each deletion causing the gaps.
 inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHeader, int numOriginalStrands)
 {
 
@@ -77,10 +77,10 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
 
         for (const SDRfragment& fragment : record.fragments)			// Loop through all the fragments in SDR data entry field 3, store at each old strand ID the new strand ID and the corresponding fragment.
         {
-            groupOldStrand[fragment.oldStrandID].push_back(
-                {record.newStrandID, fragment});
+            groupOldStrand[fragment.oldStrandID].push_back({record.newStrandID, fragment});
         }
     }
+
 
     for (auto& [oldStrandID, entries] : groupOldStrand)				// Loop through the list of {oldStrandID, entry} pairs in groupOldStrand vector
     {
@@ -91,7 +91,7 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
             groupNewStrand[newStrandID].push_back(fragment);
         }
 
-        if (groupNewStrand.size() != 2) 					// Simple long deletions result in exactly two new data entries: one with two flanking fragments, and the other with the single excised fragment.
+        if (groupNewStrand.size() < 2)  					// N deletions lead to N + 1 data entries, so if there is 1 deletion, there should be at least two data entries.
         {
             continue;
         }
@@ -106,28 +106,43 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
 
 	// Initialize strand IDs and their corresponding fragments
         int remainingStrandID = -1;
-        int excisedStrandID = -1;
         std::vector<SDRfragment>* flankingFragments = nullptr;
-        std::vector<SDRfragment>* excisedFragmentVec = nullptr;
+	std::vector<std::pair<int, SDRfragment*>> excisedCandidates;
+
+	bool multipleRemainingRecords = false;
 
         for (auto& [newStrandID, fragments] : groupNewStrand)			// Loop through each pair in groupNewStrand vector
         {
-            if (fragments.size() == 2)						// If the entry has two flanking fragments, 
+            if (fragments.size() >= 2)						// If the entry has two flanking fragments, 
             {
-                remainingStrandID = newStrandID;				// Track the newStrandID of the flanking fragments 
-                flankingFragments = &fragments;					// Associate the the flanking fragments to the tracked newStrandID
+		if (flankingFragments != nullptr)
+		{
+		    multipleRemainingRecords = true;
+		    break;
+		}
+
+		remainingStrandID = newStrandID;                                // Track the newStrandID of the flanking fragments
+                flankingFragments = &fragments;
             }
             else if (fragments.size() == 1)					// Fragment size of 1 corresponds to the excised/deleted DNA fragment
             {
-                excisedStrandID = newStrandID;					// Track the excised fragment newStrandID
-                excisedFragmentVec = &fragments;				// Track the corresponding fragment to this newStrandID
+		excisedCandidates.push_back({newStrandID, &fragments[0]});
+
             }
         }
 
-        if (flankingFragments == nullptr || excisedFragmentVec == nullptr)
+	if (multipleRemainingRecords || flankingFragments == nullptr || excisedCandidates.empty())
         {
             continue;
         }
+
+
+	// N deletions produce N+1 surviving fragments and N excised pieces.
+        if (flankingFragments->size() != excisedCandidates.size() + 1)
+        {
+            continue;
+        }
+
 
         // Sort the flanking fragments by start position so we can find the gap between them regardless of file order.
         std::sort(flankingFragments->begin(), flankingFragments->end(),[](const SDRfragment& a, const SDRfragment& b)
@@ -135,36 +150,92 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
                 return a.oldStartPosition < b.oldStartPosition;
             });
 
-        const SDRfragment& lowerFragment = (*flankingFragments)[0];		// Flanking fragment prior to the first double-strand break leading to a deletion
-        const SDRfragment& upperFragment = (*flankingFragments)[1];		// Flanking fragment proceeding the second double-strand break leading to a deletion
-        const SDRfragment& excisedFragment = (*excisedFragmentVec)[0];		// The excised/deleted fragment
 
-        const double gapStart = lowerFragment.oldEndPosition;
-        const double gapEnd = upperFragment.oldStartPosition;
+	struct Gap
+	{
+	    double startPos;
+	    double endPos;
+	};
 
-        if (gapEnd <= gapStart)							// Check if a gap was left from the deletion event (left flanking fragment end position must be less than right flanking fragment start position)
+	std::vector<Gap> gaps;
+
+
+	for (std::size_t i = 0; i + 1 < flankingFragments->size(); i++)
+        {
+            const double gapStart = (*flankingFragments)[i].oldEndPosition;
+            const double gapEnd = (*flankingFragments)[i + 1].oldStartPosition;
+
+            if (gapEnd <= gapStart)                                             // Check if a gap was left from the deletion event
+            {
+                gaps.clear();
+                break;                                                          // Overlapping/non-gap boundary - not a valid deletion shape for this strand.
+            }
+
+            gaps.push_back({gapStart, gapEnd});
+        }
+
+	if (gaps.size() != excisedCandidates.size())                            // Gap count must match the number of excised records.
         {
             continue;
         }
 
-	// Use a tolerance of ~1000 bases for a long deletion event to be tracked, excised fragment start and end locations need not necessarily line up perfectly with the flanking fragments strand ends. 
-        if (!approxEqual(excisedFragment.oldStartPosition, gapStart, delTolerance) || !approxEqual(excisedFragment.oldEndPosition, gapEnd, delTolerance))
+
+	// Match each gap to the excised record whose fragment fills it
+        // exactly (within tolerance), and build one event per match.
+        std::vector<bool> excisedClaimed(excisedCandidates.size(), false);
+        std::vector<SDRdeletionEvent> deletionEvents;
+        bool allGapsMatched = true;
+
+	for (const Gap& gap : gaps)
+        {
+            bool matched = false;
+
+            for (std::size_t i = 0; i < excisedCandidates.size(); ++i)
+            {
+                if (excisedClaimed[i])
+                {
+                    continue;
+                }
+
+                const SDRfragment& excisedFragment = *excisedCandidates[i].second;
+
+                // Use a tolerance of ~1000 bases for a long deletion event to be tracked.
+                if (approxEqual(excisedFragment.oldStartPosition, gap.startPos, delTolerance) &&
+                    approxEqual(excisedFragment.oldEndPosition, gap.endPos, delTolerance))
+                {
+                    excisedClaimed[i] = true;
+                    matched = true;
+
+                    // Store the locations of the deletion and the strands involved for later Karyogram plotting
+                    SDRdeletionEvent event{};
+		    event.oldStrandID = oldStrandID;
+                    event.deletionStart = gap.startPos;
+                    event.deletionEnd = gap.endPos;
+                    event.remainingStrandID = remainingStrandID;
+                    event.excisedStrandID = excisedCandidates[i].first;
+
+                    deletionEvents.push_back(event);
+                    break;
+                }
+            }
+
+            if (!matched)
+            {
+                allGapsMatched = false;
+                break;
+            }
+        }
+
+	if (!allGapsMatched)                                                    // Some gap didn't match any excised record - not a valid deletion shape.
         {
             continue;
         }
 
-	// Store the locations of the deletion and the strands involved for later Karyogram plotting
-        SDRdeletionEvent event{};
-        event.oldStrandID = oldStrandID;
-        event.deletionStart = gapStart;
-        event.deletionEnd = gapEnd;
-        event.remainingStrandID = remainingStrandID;
-        event.excisedStrandID = excisedStrandID;
-
-        deletions.push_back(event);						// Store necessary deletion geometric information in the deletion vector.
+        deletions.insert(deletions.end(), deletionEvents.begin(), deletionEvents.end());
     }
 
-    return deletions;								// Return deletion information, for now summarize number of deletions with deletion.size() in the writeCellDataSummary function.
+    return deletions;  
+
 }
 
 
