@@ -104,12 +104,12 @@ struct SDRtranslocationEvent
 // Represents a detected extrachromosomal DNA fragment -
 // It has the same fragment signature as long deletions, but
 // the isLinear data field 4 is 0 (for circular fragments) rather than
-// 1 for linear fragments.
+// 1 for linear fragments. Can be made up of multiple fragments from the
+// same original strand
 struct SDRecDNAevent
 {
     int oldStrandID;		// Which chromosome/strand ID the fragments originate from
-    double ecDNAstart;		// position on oldStrandID where the break started (in Mbp from the start of the p arm)
-    double ecDNAend;		// position on oldStrandID where the break ended (in Mbp from the start of the p arm)
+    std::vector<std::pair<double, double>> ecDNAsegments; // One or more (start, end) segments making up this ecDNA molecule
     int remainingStrandID;	// New strand ID of the strand that lost the excised fragment
     int excisedStrandID;	// New strand ID of the excised strand
 };

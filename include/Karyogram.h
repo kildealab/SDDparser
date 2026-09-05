@@ -99,6 +99,7 @@ private:
 
     double computeSDRbarHeight(double lengthMbp, double maxLengthMbp, double maxRenderHeight);
     double computeMaxBarHeight(const std::vector<const SDRdataRecord*>& records, double maxLengthMbp, double maxRenderHeight);
+    double computeSlotWidth(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, double chromosomeWidth, double maxLengthMbp, double maxRenderHeight, const SDRmasterHeader& masterHeader, double& outColumn2Width);
 
     void drawLegend(cairo_t* cr, double legendY);						// Function to draw the karyogram legend at the bottom.
     void drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCyclePhase, const std::vector<Exposure>& exposures, const std::vector<double>& doseOrFluence, const std::vector<int>& incidentParticles);						// Function to draw the karyogram summary box at the top.

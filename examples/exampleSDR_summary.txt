@@ -4,7 +4,7 @@ SDR MASTER HEADER SUMMARY
 
 SDR Version: SDRv2.1
 Author: Samy Boutros
-Associated SDD File: None - Test for LongDels BalInvs BalTrans ecDNA
+Associated SDD File: None - Test for LongDels BalInvs BalTrans ecDNA DelInvs MultiDels MultiecDNA
 
 Declared Chromosome Count: 46
 Number Of Chromosome Sizes Listed: 46
@@ -21,7 +21,7 @@ Mutation Summary:
   Deletions: 2
   Inversions: 1
   Translocations: 1
-  ecDNA: 1
+  ecDNA: 3
   Deletion-Inversions: 1
   Deletion-Translocations: 0
 

@@ -569,11 +569,12 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
 // ----------------------------------------------------------------- //
 
 // Identical fragment signature to the long deletion events with the added
-// indicator of data field 4 isLinear = 0 (for circular fragments). one new strand
-// retains the two flanking fragments, another new strand is the
-// excised middle segment - except the excised strand's record must
-// be CIRCULAR (linear = 0) rather than linear. The remaining/flanking
-// strand is still required to be linear.
+// indicator of data field 4 isLinear = 0 (for circular fragments). 
+// Generalized to N independent ecDNA mutations, and for ecDNA made up of
+// multiple deleted fragments from the same original strand. Can have either
+// One remaining strand with N deletions and N+1 fragments, followed by
+// N records of ecDNA depicting the N ecDNA mutations, or followed by one or 
+// multiple records with multiple fragments forming ecDNA.
 
 inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int numOriginalStrands)
 {
@@ -619,36 +620,59 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 	// where &recordNewStrandID is the entire SDR data record to check if the strand is linear or circular
 
 
-        // An ecDNA event touches exactly two new-strand records: one linear record with the two flanking fragments, one
-        // CIRCULAR record with the single excised fragment.
-        if (groupNewStrand.size() != 2)
+        // An ecDNA event touches at least two new-strand records: one linear record with the two or more flanking fragments, one
+        // or more CIRCULAR records with the excised fragment(s).
+        if (groupNewStrand.size() < 2)
         {
             continue;
         }
 
 	int remainingStrandID = -1;						// newStrandID for the strand missing an excised fragment
-        int excisedStrandID = -1;						// newStrandID for the strand made of the circular excised fragment
         std::vector<SDRfragment>* flankingFragments = nullptr;			// Vector containing the pointer to the two fragments missing a central excised segment
-        std::vector<SDRfragment>* excisedFragmentVec = nullptr;			// Vector containing the pointer to the circular excised fragment
+        bool multipleRemainingRecords = false;
+        std::vector<std::pair<int, std::vector<SDRfragment>*>> excisedCandidates; 					// {newStrandID, fragments}
+
 
         for (auto& [newStrandID, fragments] : groupNewStrand)
         {
             const SDRdataRecord* record = recordByNewStrand[newStrandID];	// Assign the SDR data record to a given newStrandID
 
-            if (fragments.size() == 2 && record->linear)			// Necessary format is one entry that is linear with two flanking fragments referencing the same oldStrandID
+            if (fragments.size() >= 2 && record->linear)			// Necessary format is one entry that is linear with two flanking fragments referencing the same oldStrandID
             {
+		if (flankingFragments != nullptr)
+                {
+                    multipleRemainingRecords = true; // More than one candidate "remaining" record - invalid shape.
+                    break;
+                }
+
                 remainingStrandID = newStrandID;
                 flankingFragments = &fragments;
             }
-            else if (fragments.size() == 1 && !record->linear)			// Necessary format is one entry that is non-linear with one singular fragment referencing the same oldStrandID as the record with the two flanking fragments
+            else if (!record->linear)			// Necessary format is one entry that is non-linear with one singular fragment referencing the same oldStrandID as the record with the two flanking fragments
             {
-                excisedStrandID = newStrandID;
-                excisedFragmentVec = &fragments;
+		// Every fragment in an ecDNA (excised) record must be acentric.
+                bool hasCentromereFlag = false;
+
+		for (const SDRfragment& fragment : fragments)
+                {
+                    if (fragment.hasCentromere)
+                    {
+                        hasCentromereFlag = true;
+                        break;
+                    }
+                }
+
+                if (hasCentromereFlag)
+                {
+                    continue; // Disqualified - not added as an excised candidate.
+                }
+
+                excisedCandidates.push_back({newStrandID, &fragments});
             }
         }
 
 
-	if (flankingFragments == nullptr || excisedFragmentVec == nullptr)	// If desired format not detected, skip this record
+	if (multipleRemainingRecords || flankingFragments == nullptr || excisedCandidates.empty())	// If desired format not detected, skip this record
         {
             continue;
         }
@@ -659,49 +683,112 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
             return a.oldStartPosition < b.oldStartPosition;
         });
 
-        const SDRfragment& lowerFragment = (*flankingFragments)[0];		// Fragments with the lower start position
-        const SDRfragment& upperFragment = (*flankingFragments)[1];		// Fragments with the higher start position
-        const SDRfragment& excisedFragment = (*excisedFragmentVec)[0];		// Fragment that was excised and is the ecDNA
-
 	const double ecDNAtolerance = 0.001;					// tolerance in Mbp difference between contiguous segments <= 100 bp
 
-	// Calculate the gap between flanking fragments to make sure the length of the ecDNA excised fragment matches this gap
-        const double gapStart = lowerFragment.oldEndPosition;
-        const double gapEnd = upperFragment.oldStartPosition;
+	struct Gap
+        {
+            double startPos;
+            double endPos;
+        };
 
-	// This line checks if this is an inversion, if so skip this data record
-	if (gapEnd <= gapStart)
+        std::vector<Gap> gaps;
+
+
+	for (std::size_t i = 0; i + 1 < flankingFragments->size(); ++i)
+        {
+            const double gapStart = (*flankingFragments)[i].oldEndPosition;
+            const double gapEnd = (*flankingFragments)[i + 1].oldStartPosition;
+
+            if (gapEnd <= gapStart)
+            {
+                gaps.clear();
+                break; 				// Overlap/inversion shape - invalid.
+            }
+
+            gaps.push_back({gapStart, gapEnd});
+        }
+
+	if (gaps.empty())
         {
             continue;
         }
 
-	// Check if the gap is approximately equal to the ecDNA fragment length, if outside the tolerance of 100 bp, skip this record.
-        if (!approxEqual(excisedFragment.oldStartPosition, gapStart, ecDNAtolerance) ||
-            !approxEqual(excisedFragment.oldEndPosition, gapEnd, ecDNAtolerance))
+	// Total fragments across all excised candidates must match the
+        // total number of gaps - every gap must be filled by exactly one
+        // fragment, and every excised fragment must fill exactly one gap.
+        std::size_t totalExcisedFragments = 0;
+
+	for (const auto& [newStrandID, fragments] : excisedCandidates)
+        {
+            totalExcisedFragments += fragments->size();
+        }
+
+        if (totalExcisedFragments != gaps.size())
         {
             continue;
         }
 
-	if (excisedFragment.hasCentromere)					// ecDNA fragments are acentric (excised fragment should not contain a centromere)
-	{
-	    continue;
-	}
+	std::vector<bool> gapClaimed(gaps.size(), false);
+        std::vector<SDRecDNAevent> strandEvents;
+        bool allMatched = true;
 
+	for (const auto& [newStrandID, fragments] : excisedCandidates)
+        {
+            std::vector<std::pair<double, double>> matchedSegments;
 
-        SDRecDNAevent event{};
-        event.oldStrandID = oldStrandID;
-        event.ecDNAstart = gapStart;
-        event.ecDNAend = gapEnd;
-        event.remainingStrandID = remainingStrandID;
-        event.excisedStrandID = excisedStrandID;
+            for (const SDRfragment& fragment : *fragments)
+            {
+                bool matched = false;
 
-        ecDNAevents.push_back(event);						// Store the ecDNA mutation relevant information
+                for (std::size_t i = 0; i < gaps.size(); ++i)
+                {
+                    if (gapClaimed[i])
+                    {
+                        continue;
+                    }
+
+		    if (approxEqual(fragment.oldStartPosition, gaps[i].startPos, ecDNAtolerance) &&
+                        approxEqual(fragment.oldEndPosition, gaps[i].endPos, ecDNAtolerance))
+                    {
+                        gapClaimed[i] = true;
+                        matched = true;
+                        matchedSegments.push_back({gaps[i].startPos, gaps[i].endPos});
+                        break;
+                    }
+                }
+
+                if (!matched)
+                {
+                    allMatched = false;
+                    break;
+                }
+            }
+
+	    if (!allMatched)
+            {
+                break;
+            }
+
+	    SDRecDNAevent event{};
+            event.oldStrandID = oldStrandID;
+            event.ecDNAsegments = matchedSegments;
+            event.remainingStrandID = remainingStrandID;
+            event.excisedStrandID = newStrandID;
+
+            strandEvents.push_back(event);
+        }
+
+	if (!allMatched)
+        {
+            continue; // Some gap or fragment didn't match cleanly - reject the whole strand's grouping.
+        }
+
+        ecDNAevents.insert(ecDNAevents.end(), strandEvents.begin(), strandEvents.end());
+
     }
 
-    return ecDNAevents;								// In writeCellSummary, return the size of this vector to summarize the number of ecDNA mutations in the SDR file
-
+    return ecDNAevents;
 }
-
 
 
 
