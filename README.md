@@ -119,7 +119,7 @@ clarity.
 and deletion-insertions.
 
 <p align = "center">
-<img src="exampleSDR_cell0_karyogram_human.png" alt="Secondary electrons from 6 MeV photons at different doses"><br>
+<img src="examples/exampleSDR_cell0_karyogram_human.png" alt="Different mutation representations from irradiated DNA"><br>
 <em> Depicting common DNA structural variations that arise from ionizing radiation.</em>
 </p>
 
