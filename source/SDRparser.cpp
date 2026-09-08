@@ -782,14 +782,16 @@ void SDRparser::writeCellDataSummary(
     const std::vector<SDRecDNAevent> ecDNAs = detectECDNA(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionInversionEvent> delInvs = detectDeletionInversions(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionTranslocationEvent> delTras = detectDeletionTranslocations(subHeader, numOriginalStrands);
+    const std::vector<SDRdeletionInsertionEvent> delInsertions = detectDeletionInsertions(subHeader, numOriginalStrands);
 
     output << "Mutation Summary:\n";
-    output << "  Deletions: " << deletions.size() << "\n";
-    output << "  Inversions: " << inversions.size() << "\n";
-    output << "  Translocations: " << translocations.size() << "\n";
-    output << "  ecDNA: " << ecDNAs.size() << "\n";
+    output << "  Long Deletions: " << deletions.size() << "\n";
+    output << "  Balanced Inversions: " << inversions.size() << "\n";
+    output << "  Balanced Translocations: " << translocations.size() << "\n";
+    output << "  Extrachromosomal DNA (ecDNA): " << ecDNAs.size() << "\n";
     output << "  Deletion-Inversions: " << delInvs.size() << "\n";
     output << "  Deletion-Translocations: " << delTras.size() << "\n";
+    output << "  Deletion-Insertions: " << delInsertions.size() << "\n";
 
     // TODO: remaining mutation types, once their detectX()
     // helpers exist in SDRutilities.h.

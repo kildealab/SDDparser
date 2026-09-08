@@ -1,9 +1,11 @@
 # SDDparser
-Writing a C++ package capable of parsing the Standard for DNA Damage file header and data fields. 
+Writing a C++ package capable of parsing the Standard for DNA Damage (SDD) file header and data fields,
+and the Standard for DNA Repair (SDR) header and data fields. 
 
 This package is now capable of summarizing the SDD header fields and the data fields into a single summary file. It can also optionally plot a 
-Karyogram of the double-strand break and single-strand break locations onto the chromosomes the user passes in the SDD file header. Current work
-is being done to accomodate Standard for DNA Repair (SDR) file parsing and karyogram plotting.
+Karyogram of the double-strand break and single-strand break locations onto the chromosomes the user passes in the SDD file header. 
+This package can also accomodate the Standard for DNA Repair file format in the same way as the SDD file, by summarizing the mutations specified
+in the SDR file for each cell, as well as optionally plot the karyogram of the mutations specified in the SDR file.
 
 HOW TO USE:
 1. To compile the SDDparser program, navigate to the directory where the Makefile is stored (cd /path/to/SDDparserDirectory/)
@@ -43,19 +45,29 @@ also requires SDD data fields 3, 4, and 6, otherwise the chromosome sizes and da
 OTHERWISE THE KARYOGRAM PLOTTER WILL BE INCORRECT****
 
 8. Functionality has been added to parse an SDR file using the following command './SDDparser -sdr ./path/to/SDRinputFile.txt'. The summary of the SDR header
-and subheader are returned for each cell, as well as a summary of the number of mutations present in the SDR file (so far long deletions, balanced inversion, 
-and balanced translocations). For now, karyogram plotting is not supported for depicting genomic rearrangements from DNA structural variations, but this
-should be implemented soon. 
+and subheader are returned for each cell, as well as a summary of the number of mutations present in the SDR file. 
 
-To check if everything works correctly, run the following command:
-'./SDDparser exampleSDD.txt --karyogram human'
+To check if everything works correctly, run the following commands:
+1. './SDDparser exampleSDD.txt --karyogram human'
 
 The output to the terminal should be:
 'SDD header parsed successfully.
 Summary written to: "exampleSDD_summary.txt"
 Karyogram generated successfully: "exampleSDD_karyogram_human.png"'
+
 The exampleSDD_summary.txt file and exampleSDD_karyogram_human.png files
-should resemble the ones shown in the attached files of this repository.
+should resemble the ones shown in the attached files of this repository in the
+examples/ folder.
+
+2. './SDDparser -sdr exampleSDR.txt --karyogram human'
+
+The output to the terminal should be:
+'Summary written to: "exampleSDR_summary.txt"
+Karyogram generated successfully: "exampleSDR_cell0_karyogram_human.png"'
+
+The exampleSDR_summary.txt file and exampleSDR_cell0_karyogram_human.png files
+should resemble the ones shown in the attached files of this repository in the 
+examples/ folder.
 
 WHAT IS SUMMARIZED IN THE SDD FILE SUMMARY:
 
@@ -95,8 +107,29 @@ WHAT IS SUMMARIZED IN THE SDR FILE SUMMARY:
 4. Number of mutations per each type (so far only long deletions, balanced inversions, and balanced translocations are supported). More support
 for more complex structural variations will be implemented. 
 
+
+WHAT IS PLOTTED IN THE SDR FILE KARYOGRAM 
+1. Summary at the top, including which cell the Karyogram is plotted for, and the number of each mutation type.
+2. Chromosomes plotted with their associated homologs if specified, and structural rearrangements from the associated mutations. 
+3. The colors are used to depict where the chromosomal rearrangements came from, the white sections indicate where the deletions occurred on the 
+original chromosomes. Extrachromosomal DNA (ecDNA) is drawn as circles with their diameters scaled to the length of the deleted segment for visual
+clarity.
+4. A legend of symbols at the bottom of the karyogram to denote what all the symbols mean, particulary for inversions and ecDNA.
+5. So far, drawing is supported for long deletions, balanced inversions, balanced translocations, ecDNA, deletion-inversions, deletion-translocations,
+and deletion-insertions.
+
+<p align = "center">
+<img src="exampleSDR_cell0_karyogram_human.png" alt="Secondary electrons from 6 MeV photons at different doses"><br>
+<em> Depicting common DNA structural variations that arise from ionizing radiation.</em>
+</p>
+
+
 FURTHER KARYOGRAM PLOTTING WORK:
 1. Add a zoom in and out and a panning option to conserve image quality. 
-2. Be able to read a Standard for DNA repair (SDR) file and plot the structural variation mutations on the Karyogram.
+2. Add SDR detectors for chromoplexy and chromothripsis, and add mutation detection and drawing capabilities for BFB cycle.
 3. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
+4. Be able to generalize to more complex mutations for the SDR file summary and karyogram plotting (i.e. for delInvs and delInsertions).
+5. Convert this command-line program into a linked c++ library to be called by any user who needs its functionality.
+6. So far, SDD file karyograms only plot the total damages over all exposures, not the damages per cell like the SDR file karyogram,
+need to add functionality to plot a karyogram per cell exposure for the SDD files. For now, use SDD files with one cell exposure at a time.
 ... and much more.

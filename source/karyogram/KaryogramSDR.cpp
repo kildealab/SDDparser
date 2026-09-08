@@ -740,6 +740,8 @@ void Karyogram::drawStackedMutations(
     const bool isDeletion = isDeletionShape(records, homeOldStrandID);
     const bool isECDNA = isECDNAshape(records, homeOldStrandID);
     const bool isDeletionInversion = isDeletionInversionShape(records, homeOldStrandID);
+    const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);
+
 
     const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
     const double originalSizeMbp = (sizeIndex < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[sizeIndex] : 0.0;
@@ -748,6 +750,97 @@ void Karyogram::drawStackedMutations(
     const double stackGap = 6.0;
     double column2Width = chromosomeWidth;
     const double totalWidth = computeSlotWidth(records, homeOldStrandID, chromosomeWidth, maxLengthMbp, maxRenderHeight, masterHeader, column2Width);
+
+
+    if (isLoneGap && originalSizeMbp > 0.0)
+    {
+        // Same gap-drawing treatment as a plain deletion's remaining
+        // piece - buildDeletionRemainingSegments() already inserts a
+        // white gap wherever consecutive sorted fragments don't touch,
+        // regardless of whether an excised counterpart exists.
+        const double barHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
+        const double barX = slotCenterX - totalWidth / 2.0;
+        const std::vector<PaintedSegment> segments = buildDeletionRemainingSegments(*records[0], homeOldStrandID, humanGenome, masterHeader);
+
+        drawPaintedChromosome(cr, barX, posY, barHeight, chromosomeWidth, segments);
+        return;
+    }
+
+
+
+    if (isDeletionTranslocationDonorShape(records, homeOldStrandID))
+    {
+        // The recombined molecule carries no gap - the deleted region
+        // simply isn't part of it, which is already correct. It draws
+        // exactly like an ordinary translocation derivative: plain
+        // fragments, scaled to its own actual length, no white-gap or
+        // full-original-length treatment. The excised piece gets the
+        // same flat-cap treatment as any other deletion's excised piece.
+        const SDRdataRecord* recombinedRecord = nullptr;
+        const SDRdataRecord* excisedRecord = nullptr;
+
+        for (const SDRdataRecord* record : records)
+        {
+            bool hasForeign = false;
+
+            for (const SDRfragment& fragment : record->fragments)
+            {
+                if (fragment.oldStrandID != homeOldStrandID)
+                {
+                    hasForeign = true;
+                    break;
+                }
+            }
+
+            if (hasForeign)
+            {
+                recombinedRecord = record;
+            }
+            else
+            {
+                excisedRecord = record;
+            }
+        }
+
+	if (recombinedRecord == nullptr || excisedRecord == nullptr)
+        {
+            return;
+        }
+
+        const double columnX1 = slotCenterX - totalWidth / 2.0;
+        const double columnX2 = columnX1 + chromosomeWidth + stackGap;
+
+        double recombinedLengthMbp = 0.0;
+
+	for (const SDRfragment& fragment : recombinedRecord->fragments)
+        {
+            recombinedLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+        }
+
+	const double recombinedBarHeight = computeSDRbarHeight(recombinedLengthMbp, maxLengthMbp, maxRenderHeight); 
+	const std::vector<PaintedSegment> recombinedSegments = buildPaintedSegments(*recombinedRecord, humanGenome, masterHeader);
+
+	drawPaintedChromosome(cr, columnX1, posY, recombinedBarHeight, chromosomeWidth, recombinedSegments);
+
+        const SDRfragment& excisedFragment = excisedRecord->fragments[0];
+        const double fragLower = std::min(excisedFragment.oldStartPosition, excisedFragment.oldEndPosition);
+        const double fragHigher = std::max(excisedFragment.oldStartPosition, excisedFragment.oldEndPosition);
+        const double excisedLengthMbp = fragHigher - fragLower;
+
+        const double delTolerance = 0.001;
+        const bool roundTopCap = approxEqual(fragLower, 0.0, delTolerance);
+        const bool roundBottomCap = (originalSizeMbp > 0.0) ? approxEqual(fragHigher, originalSizeMbp, delTolerance) : false;
+
+        const double excisedBarHeight = computeSDRbarHeight(excisedLengthMbp, maxLengthMbp, maxRenderHeight);
+        const std::vector<PaintedSegment> excisedSegments = buildPaintedSegments(*excisedRecord, humanGenome, masterHeader);
+
+        drawPaintedChromosome(cr, columnX2, posY, excisedBarHeight, chromosomeWidth, excisedSegments, roundTopCap, roundBottomCap);
+
+        return;
+
+    }
+
+
 
     if ((isDeletion || isDeletionInversion || isECDNA) && originalSizeMbp > 0.0)
     {
@@ -1129,14 +1222,33 @@ double Karyogram::computeSlotWidth(
     const bool isDeletion = isDeletionShape(records, homeOldStrandID);
     const bool isECDNA = isECDNAshape(records, homeOldStrandID);
     const bool isDeletionInversion = isDeletionInversionShape(records, homeOldStrandID);
-    const bool isDeletionLike = isDeletion || isDeletionInversion;
+    const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);
 
     const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
     const double originalSizeMbp = (sizeIndex < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[sizeIndex] : 0.0;
 
     const double stackGap = 6.0;
 
-    if ((isDeletionLike || isECDNA) && originalSizeMbp > 0.0)
+
+    if (isLoneGap && originalSizeMbp > 0.0)
+    {
+        // Only one column - the remaining piece, drawn at full original
+        // length. No excised counterpart lives in this slot to reserve
+        // a second column for.
+        return chromosomeWidth;
+    }
+
+
+    if (isDeletionTranslocationDonorShape(records, homeOldStrandID))
+    {
+        // Two plain columns, both chromosomeWidth-wide - the recombined
+        // piece isn't scaled to full-original-length, so no ecDNA-style
+        // diameter accounting is needed here.
+        return 2 * chromosomeWidth + stackGap;
+    }
+
+
+    if ((isDeletion || isDeletionInversion || isECDNA) && originalSizeMbp > 0.0)
     {
         if (isECDNA)
         {
@@ -1263,6 +1375,159 @@ std::vector<const SDRdataRecord*> Karyogram::filterBaselineIfMutated(
 // Helper functions to determine shape of mutations and
 // how they should be drawn
 // ------------------------------------------------------- //
+
+
+
+
+
+// Recognizes the DONOR side of a deletion-translocation event: two
+// records in one slot - a "recombined" record (fragments from the
+// home strand PLUS exactly one foreign fragment from elsewhere) and
+// a "excised" record (a single home-strand-only fragment). Unlike
+// isDeletionShape(), the recombined record is allowed foreign
+// material, since the swapped-in piece isn't a gap to fill in - it's
+// already correctly part of the recombined molecule as drawn.
+bool Karyogram::isDeletionTranslocationDonorShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID)
+{
+    if (records.size() != 2)
+    {
+        return false;
+    }
+
+    const SDRdataRecord* recombinedRecord = nullptr;
+    const SDRdataRecord* excisedRecord = nullptr;
+
+    for (const SDRdataRecord* record : records)
+    {
+        if (!record->linear)
+        {
+            return false;
+        }
+
+        int homeFragmentCount = 0;
+        int foreignFragmentCount = 0;
+
+        for (const SDRfragment& fragment : record->fragments)
+        {
+            if (isReversedFragment(fragment))
+            {
+                return false;
+            }
+
+            if (fragment.oldStrandID == homeOldStrandID)
+            {
+                ++homeFragmentCount;
+            }
+            else
+            {
+                ++foreignFragmentCount;
+            }
+        }
+
+        if (homeFragmentCount == 1 && foreignFragmentCount == 1 && recombinedRecord == nullptr)
+        {
+            recombinedRecord = record;
+        }
+        else if (homeFragmentCount == 1 && foreignFragmentCount == 0 && excisedRecord == nullptr)
+        {
+            excisedRecord = record;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return recombinedRecord != nullptr && excisedRecord != nullptr;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Recognizes the DONOR side of a deletion-insertion event when it's
+// drawn alone in its slot: a single home-strand-only record with 2+
+// fragments and at least one real gap between them. The material
+// that left this strand shows up as a foreign fragment inside a
+// completely different slot's record (the recipient), so there's no
+// matching excised record here to pair with - this shape has to be
+// recognized from a single record alone.
+bool Karyogram::isLoneGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID)
+{
+    if (records.size() != 1)
+    {
+        return false;
+    }
+
+    const SDRdataRecord* record = records[0];
+
+    if (!record->linear)
+    {
+        return false;
+    }
+
+    if (record->fragments.size() < 2)
+    {
+        return false;
+    }
+
+    for (const SDRfragment& fragment : record->fragments)
+    {
+        if (fragment.oldStrandID != homeOldStrandID)
+        {
+            return false;
+        }
+
+        if (isReversedFragment(fragment))
+        {
+            return false; // Not this shape - an inversion, not a deletion-insertion donor.
+        }
+    }
+
+    std::vector<SDRfragment> sortedFragments = record->fragments;
+
+    std::sort(sortedFragments.begin(), sortedFragments.end(), [](const SDRfragment& a, const SDRfragment& b)
+    {
+        return std::min(a.oldStartPosition, a.oldEndPosition) < std::min(b.oldStartPosition, b.oldEndPosition);
+    });
+
+    const double tolerance = 0.001;
+    bool hasGap = false;
+
+    for (std::size_t i = 0; i + 1 < sortedFragments.size(); ++i)
+    {
+        const double higherPosStrandA = std::max(sortedFragments[i].oldStartPosition, sortedFragments[i].oldEndPosition);
+        const double lowerPosStrandB = std::min(sortedFragments[i + 1].oldStartPosition, sortedFragments[i + 1].oldEndPosition);
+
+        if (lowerPosStrandB < higherPosStrandA && !approxEqual(higherPosStrandA, lowerPosStrandB, tolerance))
+        {
+            return false; // Genuine overlap - not a valid shape.
+        }
+
+        if (lowerPosStrandB > higherPosStrandA && !approxEqual(higherPosStrandA, lowerPosStrandB, tolerance))
+        {
+            hasGap = true;
+        }
+    }
+
+    return hasGap;
+}
+
+
+
+
+
 
 
 
@@ -1811,7 +2076,7 @@ std::vector<const SDRdataRecord*> Karyogram::clusterRecordsForDrawing(
 
 
     if (isDeletionShape(records, homeOldStrandID) || isECDNAshape(records, homeOldStrandID)
-	|| isDeletionInversionShape(records, homeOldStrandID))
+	|| isDeletionInversionShape(records, homeOldStrandID) || isDeletionTranslocationDonorShape(records, homeOldStrandID))
     {
         return records;
     }
@@ -1845,6 +2110,8 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands);
     const std::vector<SDRecDNAevent> ecDNA = detectECDNA(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionInversionEvent> deletionInversion = detectDeletionInversions(subHeader, numOriginalStrands);
+    const std::vector<SDRdeletionTranslocationEvent> deletionTranslocation = detectDeletionTranslocations(subHeader, numOriginalStrands);
+    const std::vector<SDRdeletionInsertionEvent> deletionInsertion = detectDeletionInsertions(subHeader, numOriginalStrands);
 
     const double summaryX = 50.0;
     const double summaryY = 25.0;
@@ -1867,21 +2134,26 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     cairo_move_to(cr, summaryX + 15.0, firstRowY);
     cairo_show_text(cr, ("Cell ID: " + std::to_string(subHeader.cellID)).c_str());
 
-    cairo_move_to(cr, summaryX + 15.0, secondRowY);
+    cairo_move_to(cr, summaryX + 277.5, firstRowY);
     cairo_show_text(cr, ("Long Deletions: " + std::to_string(deletions.size())).c_str());
 
-    cairo_move_to(cr, summaryX + 277.5, secondRowY);
+    cairo_move_to(cr, summaryX + 570.0, firstRowY);
     cairo_show_text(cr, ("Balanced Inversions: " + std::to_string(inversions.size())).c_str());
 
-    cairo_move_to(cr, summaryX + 570.0, secondRowY);
+    cairo_move_to(cr, summaryX + 15.0, secondRowY);
     cairo_show_text(cr, ("Balanced Translocations: " + std::to_string(translocations.size())).c_str());
 
-    cairo_move_to(cr, summaryX + 15.0, thirdRowY);
+    cairo_move_to(cr, summaryX + 277.5, secondRowY);
     cairo_show_text(cr, ("ecDNA: " + std::to_string(ecDNA.size())).c_str());
 
-    cairo_move_to(cr, summaryX + 277.5, thirdRowY);
-    cairo_show_text(cr, ("Deletion-Inversion: " + std::to_string(deletionInversion.size())).c_str());
+    cairo_move_to(cr, summaryX + 570.0, secondRowY);
+    cairo_show_text(cr, ("Deletion-Inversions: " + std::to_string(deletionInversion.size())).c_str());
 
+    cairo_move_to(cr, summaryX + 15.0, thirdRowY);
+    cairo_show_text(cr, ("Deletion-Translocations: " + std::to_string(deletionTranslocation.size())).c_str());
+
+    cairo_move_to(cr, summaryX + 277.5, thirdRowY);
+    cairo_show_text(cr, ("Deletion-Insertions: " + std::to_string(deletionInsertion.size())).c_str());
 
 }
 

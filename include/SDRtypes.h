@@ -154,4 +154,23 @@ struct SDRdeletionTranslocationEvent
 
 };
 
+
+
+
+// One strand contains three fragments, including one foreign fragment,
+// and the other strand contains two fragments with a missing segment
+// in the middle, so two new records for Del-Ins
+struct SDRdeletionInsertionEvent
+{
+    int donorOldStrandID;            // Old strand that lost material
+    int recipientOldStrandID;        // Old strand that received the inserted material
+    double segmentStart;             // Start position (on donorOldStrandID) of the deleted/inserted segment
+    double segmentEnd;               // End position (on donorOldStrandID) of the deleted/inserted segment
+    double insertionPoint;           // Position (on recipientOldStrandID) where the segment was inserted
+    int donorRemainingNewStrandID;   // newStrandID of the donor's post-deletion "remaining" record
+    int recipientNewStrandID;        // newStrandID of the recipient's record containing the insertion
+};
+
+
+
 #endif
