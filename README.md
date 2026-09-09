@@ -4,8 +4,8 @@ and the Standard for DNA Repair (SDR) header and data fields.
 
 This package is now capable of summarizing the SDD header fields and the data fields into a single summary file. It can also optionally plot a 
 Karyogram of the double-strand break and single-strand break locations onto the chromosomes the user passes in the SDD file header. 
-This package can also accomodate the Standard for DNA Repair file format in the same way as the SDD file, by summarizing the mutations specified
-in the SDR file for each cell, as well as optionally plot the karyogram of the mutations specified in the SDR file.
+This package can also accomodate the SDR file format in the same way as the SDD file, by summarizing the mutations specified
+in the SDR file for each cell, as well as optionally plotting the karyogram of the mutations specified in the SDR file.
 
 HOW TO USE:
 1. To compile the SDDparser program, navigate to the directory where the Makefile is stored (cd /path/to/SDDparserDirectory/)
@@ -25,7 +25,8 @@ type in the command-line './SDDparser /path/to/SDDinputFile.txt --karyogram huma
 the karyogram of the associated damages, and you must specify either 'human' for human genome centromere positions or 'other' for generic centromere
 locations. The output .png file will be stored in the same directory as the SDD input file.
 
-7. IMPORTANT: The karyogram can now handle the user passing 'Chromosome sizes' in the SDD header in the following three ways (example for human chromosomes) :
+7. IMPORTANT: The karyogram can now handle the user passing 'Chromosome sizes' in the SDD and SDR header in the following three ways 
+(example for human chromosomes) :
 
 	a. Split homolog chromosome sizes layout: 1,2,3,...,22,1,2,3,...,22,Y,X.
 
@@ -47,8 +48,12 @@ OTHERWISE THE KARYOGRAM PLOTTER WILL BE INCORRECT****
 8. Functionality has been added to parse an SDR file using the following command './SDDparser -sdr ./path/to/SDRinputFile.txt'. The summary of the SDR header
 and subheader are returned for each cell, as well as a summary of the number of mutations present in the SDR file. 
 
+9. The user can also now optionally plot a karyogram of the mutations described in an SDR file using the following command:
+'/path/to/SDDparser -sdr path/to/SDRinputFile.txt --karyogram human|other'. 
+
 To check if everything works correctly, run the following commands:
-1. './SDDparser exampleSDD.txt --karyogram human'
+
+a) './SDDparser exampleSDD.txt --karyogram human'
 
 The output to the terminal should be:
 'SDD header parsed successfully.
@@ -59,7 +64,7 @@ The exampleSDD_summary.txt file and exampleSDD_karyogram_human.png files
 should resemble the ones shown in the attached files of this repository in the
 examples/ folder.
 
-2. './SDDparser -sdr exampleSDR.txt --karyogram human'
+b) './SDDparser -sdr exampleSDR.txt --karyogram human'
 
 The output to the terminal should be:
 'Summary written to: "exampleSDR_summary.txt"
@@ -69,8 +74,8 @@ The exampleSDR_summary.txt file and exampleSDR_cell0_karyogram_human.png files
 should resemble the ones shown in the attached files of this repository in the 
 examples/ folder.
 
-WHAT IS SUMMARIZED IN THE SDD FILE SUMMARY:
 
+WHAT IS SUMMARIZED IN THE SDD FILE SUMMARY:
 All important header fields are interpreted and summarized in a text format at the beginning of the summary file.
 The header summary is separated into 3 main subsections:
 1. Incident Radiation Information - describes the type of radiation particle simulated.
@@ -104,9 +109,7 @@ WHAT IS SUMMARIZED IN THE SDR FILE SUMMARY:
 1. SDR version, author, associated SDD file that produced the SDR file from the MEDRAS-MC output.
 2. Number of chromosomes listed and their respective sizes in mega base pairs.
 3. Per Cell summary of the cell subheader (number of double-strand breaks and misrepairs).
-4. Number of mutations per each type (so far only long deletions, balanced inversions, and balanced translocations are supported). More support
-for more complex structural variations will be implemented. 
-
+4. Number of mutations per each type.
 
 WHAT IS PLOTTED IN THE SDR FILE KARYOGRAM 
 1. Summary at the top, including which cell the Karyogram is plotted for, and the number of each mutation type.
@@ -126,10 +129,7 @@ and deletion-insertions.
 
 FURTHER KARYOGRAM PLOTTING WORK:
 1. Add a zoom in and out and a panning option to conserve image quality. 
-2. Add SDR detectors for chromoplexy and chromothripsis, and add mutation detection and drawing capabilities for BFB cycle.
+2. Add SDR detectors for chromothripsis, and add mutation detection and drawing capabilities for BFB cycle.
 3. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
-4. Be able to generalize to more complex mutations for the SDR file summary and karyogram plotting (i.e. for delInvs and delInsertions).
 5. Convert this command-line program into a linked c++ library to be called by any user who needs its functionality.
-6. So far, SDD file karyograms only plot the total damages over all exposures, not the damages per cell like the SDR file karyogram,
-need to add functionality to plot a karyogram per cell exposure for the SDD files. For now, use SDD files with one cell exposure at a time.
 ... and much more.

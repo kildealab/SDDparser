@@ -783,6 +783,7 @@ void SDRparser::writeCellDataSummary(
     const std::vector<SDRdeletionInversionEvent> delInvs = detectDeletionInversions(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionTranslocationEvent> delTras = detectDeletionTranslocations(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionInsertionEvent> delInsertions = detectDeletionInsertions(subHeader, numOriginalStrands);
+    const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
 
     output << "Mutation Summary:\n";
     output << "  Long Deletions: " << deletions.size() << "\n";
@@ -792,6 +793,7 @@ void SDRparser::writeCellDataSummary(
     output << "  Deletion-Inversions: " << delInvs.size() << "\n";
     output << "  Deletion-Translocations: " << delTras.size() << "\n";
     output << "  Deletion-Insertions: " << delInsertions.size() << "\n";
+    output << "  Chromoplexy: " << chromoplexy.size() << "\n";
 
     // TODO: remaining mutation types, once their detectX()
     // helpers exist in SDRutilities.h.

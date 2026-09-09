@@ -6,6 +6,7 @@
 #include <map>
 #include <utility>
 #include <vector>
+#include <set>
 
 #include "SDRtypes.h"
 
@@ -1638,6 +1639,153 @@ inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDR
 
 
 
+
+
+
+
+
+
+
+// ------------------------------------------------------------------------------------ //
+// Function to detect CHROMOPLEXY events in SDR file
+// ------------------------------------------------------------------------------------ //
+
+// Builds a graph where each old strand ID is a node. For every rearranged record, every
+// PAIR of distinct old strand IDs referenced by its fragments gets an edge - regardless
+// of whether that record matches any specific named mutation shape (translocation,
+// deletion-translocation, etc.). Any connected component spanning 3 or more distinct
+// strands is reported as one chromoplexy event. minContributingRecords optionally
+// requires a minimum amount of evidence beyond bare connectivity (e.g. requiring more
+// records than the bare minimum needed to connect the strands in a simple chain) -
+// pass 0 to accept any qualifying component regardless of record count.
+inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& subHeader, int numOriginalStrands)
+{
+    std::vector<SDRchromoplexyEvent> chromoplexyEvents;
+
+    const std::vector<SDRdeletionEvent> deletions = detectDeletions(subHeader, numOriginalStrands);
+
+
+    // Initial State: Every chromosome is isolated in its own group (parent[x] = x).
+    // Mutation 1 (Chromosome 1 and 2 swap material): You call unite(1, 2). Chromosome 1 and 2 are now linked. parent[1] becomes 2.
+    // Mutation 2 (Chromosome 2 and 3 swap material): You call unite(2, 3). Now, Chromosome 1, 2, and 3 are all part of the same group led by 3.
+    // If you later ask findRoot(1), the code will climb up (1 -> 2 -> 3), optimize the path, and return 3.
+
+    // Groups chromosomes based on their shared mutations
+    std::map<int, int> parent;
+
+    auto findRoot = [&](int x) -> int		// x are the individual chromosomes
+    {
+        if (!parent.count(x))			// If chromosome x was found in the parent collection or not, if not initialize x as the parent
+        {
+            parent[x] = x;
+        }
+
+        while (parent[x] != x)			// Find root element
+        {
+            parent[x] = parent[parent[x]];	// path compression
+            x = parent[x];			// Move pointer to newly assigned parent
+        }
+
+        return x;				// Return the root representative of the set of chromosomes
+    };
+
+
+    // Merge two chromosome mutation groups into a single combined group
+    auto unite = [&](int a, int b)
+    {
+        const int rootA = findRoot(a);
+        const int rootB = findRoot(b);
+
+        if (rootA != rootB)			// Check if a and b belong to different groups
+        {
+            parent[rootA] = rootB;		// Unite the separate groups if a and b are not joined already
+        }
+    };
+
+
+    // For every rearranged record, track which distinct old strand IDs
+    // it references - and union every pair found together.
+    std::vector<std::pair<int, std::set<int>>> recordStrandSets; // {newStrandID, distinct old strand IDs}
+
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+        if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands))
+        {
+            continue;
+        }
+
+	std::set<int> strandsInRecord;
+
+        for (const SDRfragment& fragment : record.fragments)
+        {
+            strandsInRecord.insert(fragment.oldStrandID);
+        }
+
+        if (strandsInRecord.size() < 2)
+        {
+            continue; // Purely intra-strand record - contributes no edges.
+        }
+
+        recordStrandSets.push_back({record.newStrandID, strandsInRecord});
+
+        std::vector<int> strandVec(strandsInRecord.begin(), strandsInRecord.end());
+
+	for (std::size_t a = 0; a < strandVec.size(); ++a)
+        {
+            for (std::size_t b = a + 1; b < strandVec.size(); ++b)
+            {
+                unite(strandVec[a], strandVec[b]);
+            }
+        }
+    }
+
+    std::map<int, std::set<int>> componentsByRoot;
+
+    for (auto& [strandID, strandParent] : parent)
+    {
+        componentsByRoot[findRoot(strandID)].insert(strandID);
+    }
+
+    for (auto& [root, strandSet] : componentsByRoot)
+    {
+        if (strandSet.size() < 3)
+        {
+            continue;
+        }
+
+        std::vector<int> contributingIDs;
+
+        for (auto& [newStrandID, strands] : recordStrandSets)
+        {
+            for (int s : strands)
+            {
+                if (strandSet.count(s))
+                {
+                    contributingIDs.push_back(newStrandID);
+                    break;
+                }
+            }
+        }
+
+
+        SDRchromoplexyEvent event{};
+        event.involvedStrandIDs = std::vector<int>(strandSet.begin(), strandSet.end());
+        event.contributingNewStrandIDs = contributingIDs;
+
+        for (const SDRdeletionEvent& deletionEvent : deletions)
+        {
+            if (strandSet.count(deletionEvent.oldStrandID))
+            {
+                event.strandsWithAccompanyingDeletions.push_back(deletionEvent.oldStrandID);
+            }
+        }
+
+        chromoplexyEvents.push_back(event);
+    }
+
+    return chromoplexyEvents;
+
+}
 
 
 

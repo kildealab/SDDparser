@@ -110,9 +110,12 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
     }
 
     // --------------------------------------
-    // Check for -sdr file option
+    // SDR MODE
     // --------------------------------------
 
+    // --------------------------------------
+    // SDR summary file
+    // --------------------------------------
     if (firstArg == "-sdr")
     {
         if (argc < 3)
@@ -153,14 +156,12 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 
         std::cout << "Summary written to: " << summaryPath << "\n";
 
+	// --------------------------------------------- //
+	// SDR karyogram drawing
+	// --------------------------------------------- //
         if (drawKaryogram)
         {
 	    Karyogram karyogram;
-/*
-	    std::filesystem::path karyogramPath =
-            inputPath.parent_path() /
-            (inputPath.stem().string() + "_karyogram_" + genomeType + ".png");
-*/
 
 	    bool hasFailed = false;
 
@@ -194,7 +195,7 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 
 
     // --------------------------------------
-    // SDD mode (existing behavior)
+    // SDD MODE
     // --------------------------------------
 
     std::string filename = firstArg;
@@ -247,7 +248,7 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
     std::cout << "Summary written to: " << summaryPath << "\n";		// Let user know summary file was created successfully
 
     // ---------------------------------------------
-    // Karyogram drawing
+    // SDD karyogram drawing
     // ---------------------------------------------
 
     if (drawKaryogram)							// Check if user passed '--karyogram', meaning drawKaryogram == true. 
@@ -256,28 +257,46 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 
         Karyogram karyogram;						// Instantiate the Karyogram object called karyogram.
 
-	std::filesystem::path karyogramPath =				// Create karyogram output filename using the input filename and generic suffix "_karyogram.png"
-        inputPath.parent_path() /
-        (inputPath.stem().string() + "_karyogram_" +  genomeType + ".png");
+    	bool hasFailed = false;						// default check is false is karyogram drawn correctly.
 
+    	for (const Exposure& exposure : parser.getExposures())		// Draw a karyogram for each individual cell exposure in a given SDD file
+    	{
+    	    // Create a vector containing only this exposure.
+    	    std::vector<Exposure> singleExposure;
+    	    singleExposure.push_back(exposure);
 
-        if (!karyogram.generateKaryogram(				// Ensure Karyogram could be generated, if there are insufficient data in the SDD file.
-                header.chromosome_sizes,
-                header.cell_cycle_phase,
-		header.dose_or_fluence,
-		header.incident_particles,
-	        parser.getExposures(),
-		humanGenome,
-	        karyogramPath.string()))
-         {
-            std::cerr << "Failed to generate karyogram.\n";
-            return 1;
-        }
+    	    // Create a separate output filename for this cell.
+    	    std::filesystem::path karyogramPath = inputPath.parent_path() /
+            (inputPath.stem().string() + "_cell" + 
+	    std::to_string(exposure.exposureID) + "_karyogram_" + 
+	    genomeType + ".png");
 
-        std::cout << "Karyogram generated successfully: " << karyogramPath << "\n"; // If SDD has sufficient data, exit with success message and generate the karyogram image.
+    	    if (!karyogram.generateKaryogram(				// Check if generateKaryogram correctly runs
+            	header.chromosome_sizes,
+            	header.cell_cycle_phase,
+            	header.dose_or_fluence,
+            	header.incident_particles,
+            	singleExposure,
+            	humanGenome,
+            	karyogramPath.string()))
+    	    {
+            	std::cerr << "Failed to generate karyogram for cell "
+                  << exposure.exposureID << ".\n";
+
+            	hasFailed = true;
+            	continue;
+    	    }
+
+            std::cout << "Karyogram generated successfully: "
+                  << karyogramPath << "\n";
+    	}
+
+    	if (hasFailed)
+    	{
+    	    return 1;
+    	}
+
     }
-
-
     return 0;
 }
 

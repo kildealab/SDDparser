@@ -25,4 +25,5 @@ Mutation Summary:
   Deletion-Inversions: 1
   Deletion-Translocations: 1
   Deletion-Insertions: 1
+  Chromoplexy: 1
 

@@ -2113,6 +2113,7 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     const std::vector<SDRdeletionInversionEvent> deletionInversion = detectDeletionInversions(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionTranslocationEvent> deletionTranslocation = detectDeletionTranslocations(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionInsertionEvent> deletionInsertion = detectDeletionInsertions(subHeader, numOriginalStrands);
+    const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
 
     const double summaryX = 50.0;
     const double summaryY = 25.0;
@@ -2155,6 +2156,10 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
 
     cairo_move_to(cr, summaryX + 277.5, thirdRowY);
     cairo_show_text(cr, ("Deletion-Insertions: " + std::to_string(deletionInsertion.size())).c_str());
+
+    cairo_move_to(cr, summaryX + 570.0, thirdRowY);
+    cairo_show_text(cr, ("Chromoplexy: " + std::to_string(chromoplexy.size())).c_str());
+
 
 }
 

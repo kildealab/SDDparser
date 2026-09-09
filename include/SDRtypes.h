@@ -54,12 +54,14 @@ struct SDRsubHeader
 
 };
 
+
 // Use for checking if total DSB count, total Misrepair count, or MEDRAS-MC log are blank, if so pass warning, not error.
 constexpr int SDR_FIELD_NOT_MEASURED = -1;
 
 
+
 // ------------------------------------------------ //
-// Mutation types for summarizing in text file     
+// Mutation types for summarizing in text file
 // ------------------------------------------------ //
 
 
@@ -170,6 +172,25 @@ struct SDRdeletionInsertionEvent
     int donorRemainingNewStrandID;   // newStrandID of the donor's post-deletion "remaining" record
     int recipientNewStrandID;        // newStrandID of the recipient's record containing the insertion
 };
+
+
+
+
+
+
+// Represents a detected chromoplexy event: a connected cluster of 3+
+// original strands linked by inter-strand rearrangements (balanced
+// translocations, deletion-translocations, deletion-insertions).
+// Plain intra-strand deletions on component strands are reported as
+// accompanying context, not required for classification.
+struct SDRchromoplexyEvent
+{
+    std::vector<int> involvedStrandIDs;               // The 3+ old strand IDs in this connected component, sorted
+    std::vector<int> contributingNewStrandIDs;        // newStrandIDs of every record that connected two or more of these strands
+    std::vector<int> strandsWithAccompanyingDeletions;// Component strands that also show a plain long deletion (context only)
+};
+
+
 
 
 
