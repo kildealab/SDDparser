@@ -89,15 +89,15 @@ struct SDRinversionEvent
 // Represents a detected balanced translocation: two
 // original strands were each split once, and the resulting pieces
 // were swapped between two new strands, with no material gained or
-// lost.
+// lost. --> Generalized to handle swapping of central fragments.
 struct SDRtranslocationEvent
 {
-    int oldStrandA;		// Which chromosome/strand ID the fragments originate from for strand A
-    int oldStrandB;		// Which chromosome/strand ID the fragments originate from for strand B
-    double breakpointA;   	// position on oldStrandAid where the break occurred
-    double breakpointB;   	// position on oldStrandBid where the break occurred
-    int newStrandID1;		// ID of the new strand containing fragment rearrangements for strand 1
-    int newStrandID2;		// ID of the new strand containing fragment rearrangenemts for strand 2
+    int oldStrandA;				// Which chromosome/strand ID the fragments originate from for strand A
+    int oldStrandB;				// Which chromosome/strand ID the fragments originate from for strand B
+    std::vector<double> breakpointsA;   	// position on oldStrandAid where the breaks occurred
+    std::vector<double> breakpointsB;   	// position on oldStrandBid where the breaks occurred
+    int newStrandID1;				// ID of the new strand containing fragment rearrangements for strand 1
+    int newStrandID2;				// ID of the new strand containing fragment rearrangenemts for strand 2
 };
 
 

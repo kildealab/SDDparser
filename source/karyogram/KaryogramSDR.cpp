@@ -45,7 +45,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         }
         else
         {
-            recordsByOriginalStrand[record.fragments[0].oldStrandID].push_back(&record);
+	    // Grouping drawings to home strand which is whichever strand has the centromere, not the first fragment in the list, unless no centromere in the record, then falls back to first fragment in the list.
+            recordsByOriginalStrand[determineHomeStrandID(record)].push_back(&record);
         }
     }
 
@@ -2107,7 +2108,7 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
 
     const std::vector<SDRdeletionEvent> deletions = detectDeletions(subHeader, numOriginalStrands);
     const std::vector<SDRinversionEvent> inversions = detectInversions(subHeader, numOriginalStrands);
-    const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands);
+    const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRecDNAevent> ecDNA = detectECDNA(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionInversionEvent> deletionInversion = detectDeletionInversions(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionTranslocationEvent> deletionTranslocation = detectDeletionTranslocations(subHeader, numOriginalStrands);
@@ -2279,7 +2280,7 @@ void Karyogram::drawSDRlegend(cairo_t* cr, double legendY)
 
     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     cairo_move_to(cr, inversionX + 15.0, textBaseline);
-    cairo_show_text(cr, "Balanced Inversion");
+    cairo_show_text(cr, "Reversed Segment");
 
 
     // --------------------------------------------------

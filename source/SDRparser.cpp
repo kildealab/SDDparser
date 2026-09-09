@@ -778,7 +778,7 @@ void SDRparser::writeCellDataSummary(
 
     const std::vector<SDRdeletionEvent> deletions = detectDeletions(subHeader, numOriginalStrands);
     const std::vector<SDRinversionEvent> inversions = detectInversions(subHeader, numOriginalStrands);
-    const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands);
+    const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRecDNAevent> ecDNAs = detectECDNA(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionInversionEvent> delInvs = detectDeletionInversions(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionTranslocationEvent> delTras = detectDeletionTranslocations(subHeader, numOriginalStrands);

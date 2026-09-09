@@ -21,6 +21,55 @@
 // rearrangement activity affecting a given original chromosome",
 // rather than needing to trace strand lineage across events.
 
+
+
+// Determines which original strand a record "belongs to" for karyogram
+// slot placement. A record with exactly one centromere-bearing
+// fragment unambiguously belongs to that fragment's strand - this is
+// the correct rule for any BALANCED rearrangement, since by
+// definition each derivative keeps exactly one parent's centromere.
+//
+// FUTURE WORK: a record with zero (acentric) or two+ (dicentric)
+// centromere-bearing fragments currently falls back to the old
+// first-fragment rule, placing it in exactly one slot. True dicentric
+// support would need this record to be placed in MULTIPLE slots at
+// once (one per centromere it carries) - that requires changing
+// recordsByOriginalStrand's grouping itself (a record can currently
+// only live under one key), not just this function. Left as a single
+// deliberate fallback here so that future change has one clear call
+// site to revisit, rather than being scattered.
+inline int determineHomeStrandID(const SDRdataRecord& record)
+{
+    int centromereStrandID = -1;
+    int centromereCount = 0;
+
+    for (const SDRfragment& fragment : record.fragments)
+    {
+        if (fragment.hasCentromere)
+        {
+            centromereStrandID = fragment.oldStrandID;
+            ++centromereCount;
+        }
+    }
+
+    if (centromereCount == 1)
+    {
+        return centromereStrandID;
+    }
+
+    // Zero or 2+ centromeres - ambiguous under today's single-slot
+    // model. Fall back to the original strand-ordering convention.
+    return record.fragments.empty() ? -1 : record.fragments[0].oldStrandID;
+}
+
+
+
+
+
+
+
+
+
 // Mutated strands are only those with new strand IDs >= numOriginalStrands.
 // EX: for the 46 human chromosomes with strand IDs (1-46), mutated strands
 // begin with new Strand ID > 46. This will be consistent across SDR files.
@@ -500,78 +549,191 @@ inline bool fragmentsShareBreakpoint(const SDRfragment& fragment1, const SDRfrag
 // Function to detect BALANCED TRANSLOCATION entries in SDR file
 // ------------------------------------------------------------------------------------ //
 
-// Looks for a pair of new-strand records that, between them, reference exactly the same two old strand IDs (one fragment per
-// old strand ID per record), where each old strand's two fragments meet cleanly at a single breakpoint within tolerance.
-inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands)
+
+// Generalized to detect translocations anywhere on a chromosome (not just at its ends),
+// and to correctly handle an exchanged piece that re-attaches in reversed orientation
+// (which looks locally like an inversion but isn't one, since it spans two strands).
+// Pools every fragment referencing a given old strand across BOTH candidate records,
+// normalizes each to [min, max] (so reversed fragments sort correctly).
+inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
 {
     std::vector<SDRtranslocationEvent> translocations;					// Translocations vector to store translocation events
 
     const std::vector<SDRdataRecord>& records = subHeader.dataRecords;			// Records vector to store the SDR data records/entries
 
-    for (std::size_t i = 0; i < records.size(); ++i)					// Loop through the SDR data record/entries.
-    {
-        SDRfragment fragmentA1{};
-        SDRfragment fragmentB1{};
+    const double balTraTolerance = 0.00001;
 
-        if (!getTranslocationCandidateFragments(records[i], numOriginalStrands, fragmentA1, fragmentB1)) // Check if the fragments in the data record are balanced translocation candidates using the helper function getTranslocationCandidateFragments
+
+    auto getRecordStrandFragments = [&](const SDRdataRecord& record, std::map<int, std::vector<SDRfragment>>& groupStrand) -> bool
+    {
+        if (!record.linear)
+        {
+            return false;
+        }
+
+        if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands))
+        {
+            return false;
+        }
+
+        for (const SDRfragment& fragment : record.fragments)
+        {
+            groupStrand[fragment.oldStrandID].push_back(fragment);
+        }
+
+        return !groupStrand.empty();
+    };
+
+
+
+    // Checks that the pooled fragments for one strand, normalized to
+    // [min,max] and sorted, tile [0, fullSize] exactly with no gaps or
+    // overlaps. On success, breakpointsOut holds every internal
+    // boundary between consecutive fragments.
+    auto checkFullTiling = [&](std::vector<SDRfragment> pooled, int strandID, std::vector<double>& breakpointsOut) -> bool
+    {
+        const std::size_t sizeIndex = static_cast<std::size_t>(strandID);
+
+        if (sizeIndex >= masterHeader.intactChromosomeSizes.size())
+        {
+            return false;
+        }
+
+        const double fullSize = masterHeader.intactChromosomeSizes[sizeIndex];
+
+        if (fullSize <= 0.0)
+        {
+            return false;
+	}
+
+
+	struct NormalizedFragment
+        {
+            double low;
+            double high;
+        };
+
+        std::vector<NormalizedFragment> normalized;
+        normalized.reserve(pooled.size());
+
+	for (const SDRfragment& fragment : pooled)
+        {
+            normalized.push_back({
+                std::min(fragment.oldStartPosition, fragment.oldEndPosition),
+                std::max(fragment.oldStartPosition, fragment.oldEndPosition)
+            });
+        }
+
+        std::sort(normalized.begin(), normalized.end(), [](const NormalizedFragment& a, const NormalizedFragment& b)
+        {
+            return a.low < b.low;
+        });
+
+        if (!approxEqual(normalized.front().low, 0.0, balTraTolerance))
+        {
+            return false;
+        }
+
+	if (!approxEqual(normalized.back().high, fullSize, balTraTolerance))
+        {
+            return false;
+        }
+
+        breakpointsOut.clear();
+
+        for (std::size_t k = 0; k + 1 < normalized.size(); ++k)
+        {
+            if (!approxEqual(normalized[k].high, normalized[k + 1].low, balTraTolerance))
+            {
+                return false;
+            }
+
+            breakpointsOut.push_back(normalized[k].high);
+        }
+
+        return true;
+    };
+
+
+    for (std::size_t i = 0; i < records.size(); ++i)
+    {
+        std::map<int, std::vector<SDRfragment>> iByStrand;
+
+        if (!getRecordStrandFragments(records[i], iByStrand))
         {
             continue;
         }
 
-        for (std::size_t j = i + 1; j < records.size(); ++j)				// Check the fragments in the data record directly after the current data record/entry to check for candidate translocation fragment.
+        if (iByStrand.size() != 2)
         {
-            SDRfragment fragmentA2{};
-            SDRfragment fragmentB2{};
+            continue;
+        }
 
-            if (!getTranslocationCandidateFragments(records[j], numOriginalStrands, fragmentA2, fragmentB2)) // Check if the fragments in the next following data record row are potential balanced translocation candidates.
+	for (std::size_t j = i + 1; j < records.size(); ++j)
+        {
+            std::map<int, std::vector<SDRfragment>> jByStrand;
+
+            if (!getRecordStrandFragments(records[j], jByStrand))
             {
                 continue;
             }
 
-            // If both SDR data records i and j are translocation candidates, match up which fragment in record j shares an 
-	    // old strand ID with which fragment in record i.
-            SDRfragment matchA{};
-            SDRfragment matchB{};
-
-            if (fragmentA2.oldStrandID == fragmentA1.oldStrandID && fragmentB2.oldStrandID == fragmentB1.oldStrandID)
-            {
-                matchA = fragmentA2;
-                matchB = fragmentB2;
-            }
-            else if (fragmentA2.oldStrandID == fragmentB1.oldStrandID && fragmentB2.oldStrandID == fragmentA1.oldStrandID)
-            {
-                matchA = fragmentB2;
-                matchB = fragmentA2;
-            }
-            else									// If old strand IDs do not match, not a balanced translocation, move on to next entry.
+            if (jByStrand.size() != 2)
             {
                 continue;
             }
 
-	    // Track balanced translocation breakpoint locations in each data record
-            double breakpointA = 0.0;
-            double breakpointB = 0.0;
+            std::vector<int> iStrands;
 
-	    // If the breakpoints do not match up within tolerance (10 bases), they are not considered balanced translocations.
-            if (!fragmentsShareBreakpoint(fragmentA1, matchA, breakpointA) || !fragmentsShareBreakpoint(fragmentB1, matchB, breakpointB))
+
+	    for (auto& [strandID, fragments] : iByStrand)
+            {
+                iStrands.push_back(strandID);
+            }
+
+            std::vector<int> jStrands;
+
+            for (auto& [strandID, fragments] : jByStrand)
+            {
+                jStrands.push_back(strandID);
+            }
+
+            if (iStrands != jStrands)
             {
                 continue;
             }
 
-	    // All checks have passes, record the translocation event for future karyogram plotting
-            SDRtranslocationEvent event{};
-            event.oldStrandA = fragmentA1.oldStrandID;
-            event.oldStrandB = fragmentB1.oldStrandID;
-            event.breakpointA = breakpointA;
-            event.breakpointB = breakpointB;
+	    const int strandA = iStrands[0];
+            const int strandB = iStrands[1];
+
+            std::vector<SDRfragment> pooledA = iByStrand[strandA];
+            pooledA.insert(pooledA.end(), jByStrand[strandA].begin(), jByStrand[strandA].end());
+
+            std::vector<SDRfragment> pooledB = iByStrand[strandB];
+            pooledB.insert(pooledB.end(), jByStrand[strandB].begin(), jByStrand[strandB].end());
+
+            std::vector<double> breakpointsA;
+            std::vector<double> breakpointsB;
+
+            if (!checkFullTiling(pooledA, strandA, breakpointsA) || !checkFullTiling(pooledB, strandB, breakpointsB))
+            {
+                continue;
+            }
+
+
+	    SDRtranslocationEvent event{};
+            event.oldStrandA = strandA;
+            event.oldStrandB = strandB;
+            event.breakpointsA = breakpointsA;
+            event.breakpointsB = breakpointsB;
             event.newStrandID1 = records[i].newStrandID;
             event.newStrandID2 = records[j].newStrandID;
 
-            translocations.push_back(event);						// Store the balanced translocation event in the translocations vector
-        }
+            translocations.push_back(event);
+	}
     }
 
-    return translocations;								// In writeCellDataSummary, return the number of translocation events detected in the SDR file
+    return translocations;
 }
 
 
