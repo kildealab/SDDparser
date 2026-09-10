@@ -1654,10 +1654,7 @@ inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDR
 // PAIR of distinct old strand IDs referenced by its fragments gets an edge - regardless
 // of whether that record matches any specific named mutation shape (translocation,
 // deletion-translocation, etc.). Any connected component spanning 3 or more distinct
-// strands is reported as one chromoplexy event. minContributingRecords optionally
-// requires a minimum amount of evidence beyond bare connectivity (e.g. requiring more
-// records than the bare minimum needed to connect the strands in a simple chain) -
-// pass 0 to accept any qualifying component regardless of record count.
+// strands is reported as one chromoplexy event.
 inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& subHeader, int numOriginalStrands)
 {
     std::vector<SDRchromoplexyEvent> chromoplexyEvents;
@@ -1786,6 +1783,199 @@ inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& su
     return chromoplexyEvents;
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ------------------------------------------------------------------------------------ //
+// Function to detect CHROMOTHRIPSIS events in SDR file
+// ------------------------------------------------------------------------------------ //
+
+// Same underlying strand-connectivity graph as detectChromoplexy()/ built from raw
+// fragment data, so clustering doesn't depend on any named mutation shape. 
+// Components of size 3+ are skipped (chromoplexy's
+// territory). For components of size 1 or 2, every individual detector is run once, and
+// an event counts toward the cluster only if EVERY strand it touches falls within the
+// cluster - intra-strand events (deletion, inversion, ecDNA, deletion-inversion) need
+// just their one strand in the cluster; inter-strand events (translocation,
+// deletion-translocation, deletion-insertion) need both of their strands in the cluster.
+inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, int minMutationCount = 10)
+{
+    std::vector<SDRchromothripsisEvent> chromothripsisEvents;
+
+    // Build the strand-connectivity graph from raw fragment data
+    std::map<int, int> parent;
+
+    auto findRoot = [&](int x) -> int
+    {
+        if (!parent.count(x))
+        {
+            parent[x] = x;
+        }
+
+        while (parent[x] != x)
+        {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+
+        return x;
+    };
+
+    auto unite = [&](int a, int b)
+    {
+        const int rootA = findRoot(a);
+        const int rootB = findRoot(b);
+
+        if (rootA != rootB)
+        {
+            parent[rootA] = rootB;
+        }
+    };
+
+
+
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+        if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands))
+        {
+            continue;
+        }
+
+        std::set<int> strandsInRecord;
+
+        for (const SDRfragment& fragment : record.fragments)
+        {
+            strandsInRecord.insert(fragment.oldStrandID);
+        }
+
+        for (int strandID : strandsInRecord)
+        {
+            findRoot(strandID); // Register the node even if this record touches only one strand.
+        }
+
+        if (strandsInRecord.size() < 2)
+        {
+            continue;
+        }
+
+        std::vector<int> strandVec(strandsInRecord.begin(), strandsInRecord.end());
+
+        for (std::size_t a = 0; a < strandVec.size(); ++a)
+        {
+            for (std::size_t b = a + 1; b < strandVec.size(); ++b)
+            {
+                unite(strandVec[a], strandVec[b]);
+            }
+        }
+    }
+
+    std::map<int, std::set<int>> componentsByRoot;
+
+    for (auto& [strandID, strandParent] : parent)
+    {
+        componentsByRoot[findRoot(strandID)].insert(strandID);
+    }
+
+    // Run every detector to sum all the mutation types (not chromoplexy)
+    const std::vector<SDRdeletionEvent> deletions = detectDeletions(subHeader, numOriginalStrands);
+    const std::vector<SDRinversionEvent> inversions = detectInversions(subHeader, numOriginalStrands);
+    const std::vector<SDRecDNAevent> ecDNAs = detectECDNA(subHeader, numOriginalStrands);
+    const std::vector<SDRdeletionInversionEvent> deletionInversions = detectDeletionInversions(subHeader, numOriginalStrands);
+    const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands, masterHeader);
+    const std::vector<SDRdeletionTranslocationEvent> deletionTranslocations = detectDeletionTranslocations(subHeader, numOriginalStrands);
+    const std::vector<SDRdeletionInsertionEvent> deletionInsertions = detectDeletionInsertions(subHeader, numOriginalStrands);
+
+    for (auto& [root, strandSet] : componentsByRoot)
+    {
+        if (strandSet.size() > 2)	// 3+ strands - chromoplexy's territory, not chromothripsis.
+        {
+            continue;
+        }
+
+        SDRchromothripsisEvent event{};
+        event.involvedStrandIDs = std::vector<int>(strandSet.begin(), strandSet.end());
+
+        for (const SDRdeletionEvent& deletion : deletions)
+        {
+            if (strandSet.count(deletion.oldStrandID))
+            {
+                ++event.deletionCount;
+            }
+        }
+
+        for (const SDRinversionEvent& inversion : inversions)
+        {
+            if (strandSet.count(inversion.oldStrandID))
+            {
+                ++event.inversionCount;
+            }
+        }
+
+        for (const SDRecDNAevent& ecDNA : ecDNAs)
+        {
+            if (strandSet.count(ecDNA.oldStrandID))
+            {
+                ++event.ecDNAcount;
+            }
+        }
+
+        for (const SDRdeletionInversionEvent& delInv : deletionInversions)
+        {
+            if (strandSet.count(delInv.oldStrandID))
+            {
+                ++event.deletionInversionCount;
+            }
+        }
+
+        for (const SDRtranslocationEvent& translocation : translocations)
+        {
+            if (strandSet.count(translocation.oldStrandA) && strandSet.count(translocation.oldStrandB))
+            {
+                ++event.translocationCount;
+            }
+        }
+
+        for (const SDRdeletionTranslocationEvent& delTra : deletionTranslocations)
+        {
+            if (strandSet.count(delTra.oldStrandA) && strandSet.count(delTra.oldStrandB))
+            {
+                ++event.deletionTranslocationCount;
+            }
+        }
+
+        for (const SDRdeletionInsertionEvent& delIns : deletionInsertions)
+        {
+            if (strandSet.count(delIns.donorOldStrandID) && strandSet.count(delIns.recipientOldStrandID))
+            {
+                ++event.deletionInsertionCount;
+            }
+        }
+
+        event.totalMutationCount = event.deletionCount + event.inversionCount + event.ecDNAcount
+            + event.deletionInversionCount + event.translocationCount + event.deletionTranslocationCount
+            + event.deletionInsertionCount;
+
+        if (event.totalMutationCount < minMutationCount)
+        {
+            continue;
+        }
+
+        chromothripsisEvents.push_back(event);
+    }
+
+    return chromothripsisEvents;
+}
+
 
 
 

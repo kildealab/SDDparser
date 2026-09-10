@@ -26,4 +26,5 @@ Mutation Summary:
   Deletion-Translocations: 1
   Deletion-Insertions: 1
   Chromoplexy: 1
+  Chromothripsis: 0
 

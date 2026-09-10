@@ -125,6 +125,9 @@ private:
     SDRdataRecord concatenateRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
     std::vector<const SDRdataRecord*> clusterRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, std::vector<SDRdataRecord>& mergedStorage);
 
+    // If intact chromosome strands are not listed in SDR data record, synthesize them using the intact chromosome sizes.
+    std::vector<const SDRdataRecord*> synthesizeIntactRecordIfMissing(int oldStrandID, int cellID, const SDRmasterHeader& masterHeader, std::vector<SDRdataRecord>& intactRecordStorage);
+
 };
 
 #endif

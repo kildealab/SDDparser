@@ -194,4 +194,24 @@ struct SDRchromoplexyEvent
 
 
 
+
+
+
+// Represents a detected chromothripsis event: a cluster of 1 or 2
+// original strands with an unusually high number of DETECTED mutation
+// events (10 for now) touching them.
+struct SDRchromothripsisEvent
+{
+    std::vector<int> involvedStrandIDs;    	// The 1-2 old strand IDs in this cluster
+    int totalMutationCount;			// > 10 = chromothripsis
+    int deletionCount;
+    int inversionCount;
+    int ecDNAcount;
+    int deletionInversionCount;
+    int translocationCount;
+    int deletionTranslocationCount;
+    int deletionInsertionCount;
+};
+
+
 #endif

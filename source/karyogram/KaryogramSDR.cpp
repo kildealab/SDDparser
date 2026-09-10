@@ -61,6 +61,12 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     const int drawableGroups = hasHomologs ? homologousPairs : chromosomeCount - 2;	// Determines the number of chromosome groups to draw in the karyogram, the X and Y chromosomes are excluded and will be drawn at the end.
 
 
+    // Storage for synthesized baseline records, for original strands
+    // that have NO data records at all in the file.
+    std::vector<SDRdataRecord> intactRecordStorage;
+    intactRecordStorage.reserve(static_cast<std::size_t>(chromosomeCount));
+
+
     // Determine max strand length to scale chromosome sizes on karyogram
     double maxLengthMbp = 0.0;
 
@@ -181,14 +187,22 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             std::vector<const SDRdataRecord*> leftRecords;			// Left homolog
             std::vector<const SDRdataRecord*> rightRecords;			// Right homolog
 
-            if (firstIt != recordsByOriginalStrand.end())
+	    if (firstIt != recordsByOriginalStrand.end())
             {
-                leftRecords = clusterRecordsForDrawing(filterBaselineIfMutated(firstIt->second, chromosomeCount), firstOldStrandID, mergedRecordStorage);	// If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
+                leftRecords = clusterRecordsForDrawing(filterBaselineIfMutated(firstIt->second, chromosomeCount), firstOldStrandID, mergedRecordStorage);  // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
+            }
+            else
+            {
+                leftRecords = synthesizeIntactRecordIfMissing(firstOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
             }
 
             if (secondIt != recordsByOriginalStrand.end())
             {
-                rightRecords = clusterRecordsForDrawing(filterBaselineIfMutated(secondIt->second, chromosomeCount), secondOldStrandID, mergedRecordStorage);	// If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
+                rightRecords = clusterRecordsForDrawing(filterBaselineIfMutated(secondIt->second, chromosomeCount), secondOldStrandID, mergedRecordStorage);       // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
+            }
+            else
+            {
+                rightRecords = synthesizeIntactRecordIfMissing(secondOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
             }
 
 
@@ -240,7 +254,18 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
                 }
             }
+	    else
+            {
+                const std::vector<const SDRdataRecord*> filtered = synthesizeIntactRecordIfMissing(firstOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
+
+                if (!filtered.empty())
+                {
+                    drawStackedMutations(cr, filtered, groupCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, firstOldStrandID);
+                    labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight);
+                }
+            }
         }
+
 
         // Group label (chromosome number).
         cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
@@ -288,10 +313,13 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 	// Ignore intact strand data records for mutated strand drawing
         auto yIt = recordsByOriginalStrand.find(yOldStrandID);
         auto xIt = recordsByOriginalStrand.find(xOldStrandID);
-        if (yIt != recordsByOriginalStrand.end())
+
+        if (yIt != recordsByOriginalStrand.end() || true)
         {
-	    // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
-            const std::vector<const SDRdataRecord*> yRecords = clusterRecordsForDrawing(filterBaselineIfMutated(yIt->second, chromosomeCount), yOldStrandID, mergedRecordStorage);
+            // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
+            const std::vector<const SDRdataRecord*> yRecords = (yIt != recordsByOriginalStrand.end())
+                ? clusterRecordsForDrawing(filterBaselineIfMutated(yIt->second, chromosomeCount), yOldStrandID, mergedRecordStorage)
+                : synthesizeIntactRecordIfMissing(yOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
 
             double yLabelHeight = maxRenderHeight;
             if (!yRecords.empty())
@@ -307,10 +335,12 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             cairo_show_text(cr, "Y");
         }
 
-        if (xIt != recordsByOriginalStrand.end())
+	if (xIt != recordsByOriginalStrand.end() || true)
         {
-	    // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
-            const std::vector<const SDRdataRecord*> xRecords = clusterRecordsForDrawing(filterBaselineIfMutated(xIt->second, chromosomeCount), xOldStrandID, mergedRecordStorage);
+            // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
+            const std::vector<const SDRdataRecord*> xRecords = (xIt != recordsByOriginalStrand.end())
+                ? clusterRecordsForDrawing(filterBaselineIfMutated(xIt->second, chromosomeCount), xOldStrandID, mergedRecordStorage)
+                : synthesizeIntactRecordIfMissing(xOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
 
             double xLabelHeight = maxRenderHeight;
 
@@ -326,6 +356,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             cairo_move_to(cr, xCenterPosX - 10.0, sexChromPosY + xLabelHeight + 25.0);
             cairo_show_text(cr, "X");
         }
+
     }
 
     // ---------------------------------------------
@@ -1320,6 +1351,53 @@ double Karyogram::computeSlotWidth(
 
 
 
+// Synthesizes a plain, unmutated baseline record for an original
+// strand that has NO data records at all in the SDR file - e.g. a
+// file that only lists mutated strands, omitting trivial "nothing
+// happened here" entries for every untouched chromosome. Without
+// this, such a strand's slot would be left completely blank on the
+// karyogram instead of showing a correctly-sized intact chromosome.
+std::vector<const SDRdataRecord*> Karyogram::synthesizeIntactRecordIfMissing(
+    int oldStrandID,
+    int cellID,
+    const SDRmasterHeader& masterHeader,
+    std::vector<SDRdataRecord>& intactRecordStorage)
+{
+    const std::size_t sizeIndex = static_cast<std::size_t>(oldStrandID);
+    const double sizeMbp = (sizeIndex < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[sizeIndex] : 0.0;
+
+    if (sizeMbp <= 0.0)
+    {
+        return {};
+    }
+
+    SDRdataRecord record{};
+    record.cellID = cellID;
+    record.newStrandID = oldStrandID; // Matches the file's own baseline convention (newStrandID == oldStrandID when unmutated)
+    record.linear = true;
+
+    SDRfragment fragment{};
+    fragment.oldStrandID = oldStrandID;
+    fragment.oldStartPosition = 0.0;
+    fragment.oldEndPosition = sizeMbp;
+    fragment.hasCentromere = true; // Matches real baseline records, which always flag the whole chromosome as centromere-bearing
+
+    record.fragments.push_back(fragment);
+
+    intactRecordStorage.push_back(record);
+
+    return { &intactRecordStorage.back() };
+}
+
+
+
+
+
+
+
+
+
+
 
 // If a slot contains any genuine mutation-derived record (newStrandID
 // >= numOriginalStrands), drop any leftover baseline/unmutated record
@@ -2113,12 +2191,13 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     const std::vector<SDRdeletionInversionEvent> deletionInversion = detectDeletionInversions(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionTranslocationEvent> deletionTranslocation = detectDeletionTranslocations(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionInsertionEvent> deletionInsertion = detectDeletionInsertions(subHeader, numOriginalStrands);
-    const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
+    const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands);
+    const std::vector<SDRchromothripsisEvent> chromothripsis = detectChromothripsis(subHeader, numOriginalStrands, masterHeader);
 
     const double summaryX = 50.0;
     const double summaryY = 25.0;
     const double summaryWidth = 900.0;
-    const double summaryHeight = 130.0;
+    const double summaryHeight = 155.0;
 
     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     cairo_set_line_width(cr, 1.5);
@@ -2132,6 +2211,7 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     const double firstRowY = summaryY + 30.0;
     const double secondRowY = summaryY + 68.0;
     const double thirdRowY = summaryY + 106.0;
+    const double fourthRowY = summaryY + 144.0;
 
     cairo_move_to(cr, summaryX + 15.0, firstRowY);
     cairo_show_text(cr, ("Cell ID: " + std::to_string(subHeader.cellID)).c_str());
@@ -2160,6 +2240,8 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     cairo_move_to(cr, summaryX + 570.0, thirdRowY);
     cairo_show_text(cr, ("Chromoplexy: " + std::to_string(chromoplexy.size())).c_str());
 
+    cairo_move_to(cr, summaryX + 15.0, fourthRowY);
+    cairo_show_text(cr, ("Chromothripsis: " + std::to_string(chromothripsis.size())).c_str());
 
 }
 
