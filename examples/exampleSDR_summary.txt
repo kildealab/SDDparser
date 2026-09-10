@@ -4,7 +4,7 @@ SDR MASTER HEADER SUMMARY
 
 SDR Version: SDRv2.1
 Author: Samy Boutros
-Associated SDD File: None - Test for LongDels BalInvs BalTrans ecDNA DelInvs MultiDels MultiecDNA DelTrans DelIns
+Associated SDD File: None - Example for LongDels BalInvs BalTrans ecDNA DelInvs MultiDels MultiecDNA DelTrans DelIns Chromoplexy Chromothripsis
 
 Declared Chromosome Count: 46
 Number Of Chromosome Sizes Listed: 46
@@ -26,5 +26,5 @@ Mutation Summary:
   Deletion-Translocations: 1
   Deletion-Insertions: 1
   Chromoplexy: 1
-  Chromothripsis: 0
+  Chromothripsis: 2
 

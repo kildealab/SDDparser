@@ -380,6 +380,12 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
 
 
+
+
+
+
+
+
 void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on the karyogram , including the new fragments the chromosome is composed of
     cairo_t* cr,
     double x, 						// X position of the painted segment
@@ -388,7 +394,8 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     double width, 					// Width of the chromosome
     const std::vector<PaintedSegment>& segments,	// Painted segment vector to add the aberrant strands on the original chromosomes to depict strcutural variations
     bool roundTopCap,					// Whether the top edge gets a rounded telomere cap or a flat cut edge
-    bool roundBottomCap)				// Whether the bottom edge gets a rounded telomere cap or a flat cut edge
+    bool roundBottomCap,				// Whether the bottom edge gets a rounded telomere cap or a flat cut edge
+    bool drawOutline)					// Whether the shape should have a black outline, default to true
 {
     if (segments.empty())
     {
@@ -498,15 +505,16 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     {
         const double segmentTop = y + height * segment.startFraction;
         const double segmentBottom = y + height * segment.endFraction;
-        const double minSegmentHeightForChevron = 8.0;
+//        const double minSegmentHeightForChevron = 8.0;
 
         cairo_set_source_rgb(cr, segment.color.r, segment.color.g, segment.color.b);
         cairo_rectangle(cr, x, segmentTop, width, segmentBottom - segmentTop);
         cairo_fill(cr);
 
-        if (segment.isReversed && (segmentBottom - segmentTop) >= minSegmentHeightForChevron)        // Check for balanced inversion
+        if (segment.isReversed) //&& (segmentBottom - segmentTop) >= minSegmentHeightForChevron)        // Check for balanced inversion
         {
-            const double chevronSize = width * 0.5;
+            const double segmentHeight = segmentBottom - segmentTop;
+            const double chevronSize = std::min(width * 0.5, segmentHeight);
             const double chevronCenterY = (segmentTop + segmentBottom) / 2.0;
 
             drawInversionChevron(cr, x + width / 2.0, chevronCenterY, chevronSize);                  // Inversion marker to depict balanced inversions
@@ -520,17 +528,30 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     // --------------------------------------
     // Segment boundaries and reversed segment markers
     // --------------------------------------
+    const auto isWhiteColor = [](const RGB& color)
+    {
+        const double tolerance = 0.001;
+        return std::fabs(color.r - 1.0) < tolerance && std::fabs(color.g - 1.0) < tolerance && std::fabs(color.b - 1.0) < tolerance;
+    };
+
     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     cairo_set_line_width(cr, 1.0);
 
     for (std::size_t i = 0; i + 1 < segments.size(); i++)
     {
+        if (isWhiteColor(segments[i].color) || isWhiteColor(segments[i + 1].color))
+        {
+            continue; // Skip boundary lines touching a white (deletion gap) segment - a thin gap with black lines on both edges reads as solid black instead of white.
+        }
+
         const double boundaryY = y + height * segments[i].endFraction;
 
         cairo_move_to(cr, x, boundaryY);
         cairo_line_to(cr, x + width, boundaryY);
         cairo_stroke(cr);
     }
+
+
 
     cairo_set_line_width(cr, 2.0);
 
@@ -558,12 +579,14 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     // --------------------------------------
     // Chromosome outline
     // --------------------------------------
+    if (drawOutline)
+    {
+        traceCapsulePath(); // rebuild - the fills above consumed the original path
 
-    traceCapsulePath(); // rebuild - the fills above consumed the original path
-
-    cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-    cairo_set_line_width(cr, 1.5);
-    cairo_stroke(cr);
+        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_set_line_width(cr, 1.5);
+        cairo_stroke(cr);
+    }
 
 
     // --------------------------------------
@@ -585,23 +608,6 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
         cairo_set_source_rgb(cr, 0.6, 0.6, 0.6);
         cairo_fill(cr);
     }
-
-
-        for (const CentromereSpan& span : centromereSpans)
-    {
-        const double centromereEllipseCenterY = (span.centromereTopY + span.centromereBottomY) / 2.0;
-        const double ellipseHeight = std::max(5.0, span.centromereBottomY - span.centromereTopY);
-
-        cairo_save(cr);
-        cairo_translate(cr, x + width / 2.0, centromereEllipseCenterY);
-        cairo_scale(cr, ellipseWidth / 2.0, ellipseHeight / 2.0);
-        cairo_arc(cr, 0.0, 0.0, 1.0, 0.0, 2.0 * M_PI);
-        cairo_restore(cr);
-
-        cairo_set_source_rgb(cr, 0.6, 0.6, 0.6);
-        cairo_fill(cr);
-    }
-
 
 }
 
@@ -866,7 +872,7 @@ void Karyogram::drawStackedMutations(
         const double excisedBarHeight = computeSDRbarHeight(excisedLengthMbp, maxLengthMbp, maxRenderHeight);
         const std::vector<PaintedSegment> excisedSegments = buildPaintedSegments(*excisedRecord, humanGenome, masterHeader);
 
-        drawPaintedChromosome(cr, columnX2, posY, excisedBarHeight, chromosomeWidth, excisedSegments, roundTopCap, roundBottomCap);
+        drawPaintedChromosome(cr, columnX2, posY, excisedBarHeight, chromosomeWidth, excisedSegments, roundTopCap, roundBottomCap, false);
 
         return;
 
@@ -936,7 +942,7 @@ void Karyogram::drawStackedMutations(
                 const double centerY = excisedY + diameter / 2.0;
                 const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
 
-                drawCircularFragment(cr, excisedColumnCenterX, centerY, diameter, color);
+                drawCircularFragment(cr, excisedColumnCenterX, centerY, diameter, color, false);
 
                 excisedY += diameter + verticalGap;
 	    }
@@ -955,7 +961,7 @@ void Karyogram::drawStackedMutations(
 
             	const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader);
 
-            	drawPaintedChromosome(cr, excisedBarX, excisedY, excisedBarHeight, chromosomeWidth, segments, roundTopCap, roundBottomCap);
+            	drawPaintedChromosome(cr, excisedBarX, excisedY, excisedBarHeight, chromosomeWidth, segments, roundTopCap, roundBottomCap, false);
 
             	excisedY += excisedBarHeight + verticalGap;
 	    }
@@ -964,16 +970,180 @@ void Karyogram::drawStackedMutations(
     }
 
     // --------------------------------------------------
+    // Multiple records, none matching a named shape - shattered/
+    // collapsed-concatenation case (chromothripsis-style). One base
+    // record (most fragments) drawn plainly, every other piece sized
+    // exactly to its own length (no floor) and stacked vertically,
+    // wrapping into additional columns rather than growing past
+    // maxRenderHeight into the next karyogram row.
+    // --------------------------------------------------
+
+    if (records.size() > 1)
+    {
+        const SDRdataRecord* baseRecord = nullptr;
+        std::vector<const SDRdataRecord*> otherRecords;
+
+        for (const SDRdataRecord* record : records)
+        {
+            if (baseRecord == nullptr || record->fragments.size() > baseRecord->fragments.size())
+            {
+                if (baseRecord != nullptr)
+                {
+                    otherRecords.push_back(baseRecord);
+                }
+
+                baseRecord = record;
+            }
+            else
+            {
+                otherRecords.push_back(record);
+            }
+        }
+
+        const double baseX = slotCenterX - totalWidth / 2.0;
+
+        if (baseRecord != nullptr)
+        {
+	    bool baseIsSingleStrand = true;
+
+            for (const SDRfragment& fragment : baseRecord->fragments)
+            {
+                if (fragment.oldStrandID != homeOldStrandID)
+                {
+                    baseIsSingleStrand = false;
+                    break;
+                }
+            }
+
+            std::vector<PaintedSegment> baseSegments;
+            double baseLengthMbp = 0.0;
+
+	    if (baseIsSingleStrand && baseRecord->fragments.size() >= 2)
+            {
+                // Pure single-strand case - reuse the same function
+                // plain multi-deletion already uses, position-sorted
+                // and robust to file-listing order.
+                baseSegments = buildDeletionRemainingSegments(*baseRecord, homeOldStrandID, humanGenome, masterHeader);
+
+                // buildDeletionRemainingSegments scales by the chromosome's
+                // full original size, not just the fragment+gap sum -
+                // match that here so the bar height stays consistent.
+                if (sizeIndex < masterHeader.intactChromosomeSizes.size())
+                {
+                    baseLengthMbp = masterHeader.intactChromosomeSizes[sizeIndex];
+                }
+            }
+
+	    else
+            {
+                // Mixed-strand case (material exchanged between two
+                // chromosomes) - fragment positions live in different
+                // coordinate systems, so buildDeletionRemainingSegments'
+                // sorting assumption doesn't hold. Walks fragments in
+                // file order instead, inserting white gaps only between
+                // immediately-adjacent HOME-strand fragments.
+                baseSegments = buildMixedStrandSegmentsWithGaps(*baseRecord, homeOldStrandID, humanGenome, masterHeader, baseLengthMbp);
+            }
+
+            const double baseHeight = computeSDRbarHeight(baseLengthMbp, maxLengthMbp, maxRenderHeight);
+
+            drawPaintedChromosome(cr, baseX, posY, baseHeight, chromosomeWidth, baseSegments);
+        }
+
+        const double verticalGap = 6.0;
+        const double delTolerance = 0.001;
+        std::vector<double> pieceHeights;
+        computeExcisedColumnLayout(otherRecords, maxLengthMbp, maxRenderHeight, maxRenderHeight, verticalGap, pieceHeights);
+
+        double columnX = baseX + chromosomeWidth + stackGap;
+        double columnY = posY;
+
+
+	for (std::size_t i = 0; i < otherRecords.size(); ++i)
+        {
+            const SDRdataRecord* record = otherRecords[i];
+            const double pieceHeight = pieceHeights[i];
+
+            if (i > 0)
+            {
+                const double previousHeight = pieceHeights[i - 1];
+
+                if ((columnY - posY) + previousHeight + verticalGap + pieceHeight > maxRenderHeight)
+                {
+                    columnX += chromosomeWidth + stackGap;
+                    columnY = posY;
+                }
+                else
+                {
+                    columnY += previousHeight + verticalGap;
+                }
+            }
+
+            // A piece that is PURELY home-strand material represents a
+            // simple deleted/excised segment (nothing exchanged with
+            // another chromosome) - gets the same "no outline"
+            // treatment as a plain deletion's excised piece. A piece
+            // carrying foreign material represents an exchange, not a
+            // deletion, so it keeps its outline.
+            bool isPureHomeStrand = true;
+
+            for (const SDRfragment& fragment : record->fragments)
+            {
+                if (fragment.oldStrandID != homeOldStrandID)
+                {
+                    isPureHomeStrand = false;
+                    break;
+                }
+            }
+
+            const bool drawOutline = !isPureHomeStrand;
+
+            if (!record->linear)
+            {
+                // Circular (ecDNA-like) piece - draw as a circle, same
+                // diameter convention as the plain ecDNA branch (scaled
+                // directly to fragment length, capped at 3x chromosomeWidth).
+                const double diameter = std::min(pieceHeight, chromosomeWidth * 3.0);
+                const double centerY = columnY + diameter / 2.0;
+                const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
+
+                drawCircularFragment(cr, columnX + chromosomeWidth / 2.0, centerY, diameter, color, drawOutline);
+            }
+            else
+            {
+                bool roundTopCap = false;
+                bool roundBottomCap = false;
+
+                if (record->fragments.size() == 1 && originalSizeMbp > 0.0)
+                {
+                    const SDRfragment& fragment = record->fragments[0];
+                    const double fragLower = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+                    const double fragHigher = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+
+                    roundTopCap = approxEqual(fragLower, 0.0, delTolerance);
+                    roundBottomCap = approxEqual(fragHigher, originalSizeMbp, delTolerance);
+                }
+
+                const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader);
+
+                drawPaintedChromosome(cr, columnX, columnY, pieceHeight, chromosomeWidth, segments, roundTopCap, roundBottomCap, drawOutline);
+            }
+        }
+
+        return;
+    }
+
+
+    // --------------------------------------------------
     // Everything else keeps the existing one-column-per-record horizontal layout.
     // --------------------------------------------------
 
-
     // Determine where to draw the abberrant strands and how large to draw them
-    double barX = slotCenterX - totalWidth / 2.0;					// Aberrant strand X position
+    double barX = slotCenterX - totalWidth / 2.0;                          // Aberrant strand X position
 
     for (const SDRdataRecord* record : records)
     {
-        double lengthMbp = 0.0;								// Convert Mbp lengths to pixel sizes
+        double lengthMbp = 0.0;                                            // Convert Mbp lengths to pixel sizes
         for (const SDRfragment& fragment : record->fragments)
         {
             lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);// Determine new rearranged strand length
@@ -982,9 +1152,10 @@ void Karyogram::drawStackedMutations(
         double barHeight = computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight); // Determine the height of the aberrant strand
         const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader); // Store all the segments associated with a given data record to be built and drawn
 
-        drawPaintedChromosome(cr, barX, posY, barHeight, chromosomeWidth, segments);	// Draw the chromosome with the rearranged fragments
-        barX += chromosomeWidth + stackGap;						// Adjust the position of the aberrant strand fragment x position
+        drawPaintedChromosome(cr, barX, posY, barHeight, chromosomeWidth, segments);        // Draw the chromosome with the rearranged fragments
+        barX += chromosomeWidth + stackGap;                                // Adjust the position of the aberrant strand fragment x position
     }
+
 }
 
 
@@ -1101,6 +1272,184 @@ std::vector<PaintedSegment> Karyogram::buildPaintedSegments(
 
 
 
+
+
+
+// Builds painted segments for a base record that may mix home-strand
+// fragments with foreign (exchanged) ones - walks fragments in FILE
+// ORDER (not sorted by position, since foreign fragments live in a
+// different chromosome's coordinate system entirely). A white gap is
+// inserted ONLY between two immediately-adjacent HOME-strand fragments
+// that don't touch - real lost material. No gap is ever inserted
+// around a foreign fragment, since that material is still physically
+// present on the molecule, just relocated from elsewhere. Also
+// allows the pure single-strand case (every fragment home) with the
+// same logic, since every adjacent pair is then a home-home check.
+std::vector<PaintedSegment> Karyogram::buildMixedStrandSegmentsWithGaps(
+    const SDRdataRecord& record,
+    int homeOldStrandID,
+    bool humanGenome,
+    const SDRmasterHeader& masterHeader,
+    double& outTotalLengthMbp)
+{
+    std::vector<PaintedSegment> segments;
+    outTotalLengthMbp = 0.0;
+
+    if (record.fragments.empty())
+    {
+        return segments;
+    }
+
+    const double tolerance = 0.001;
+
+    struct PlannedPiece
+    {
+        bool isGap;
+        const SDRfragment* fragment; // valid if !isGap
+        double lengthMbp;
+    };
+
+    std::vector<PlannedPiece> plan;
+    double totalLengthMbp = 0.0;
+
+    for (std::size_t i = 0; i < record.fragments.size(); ++i)
+    {
+        const SDRfragment& fragment = record.fragments[i];
+        const double fragLengthMbp = std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+
+        if (i > 0)
+        {
+            const SDRfragment& previous = record.fragments[i - 1];
+
+            if (fragment.oldStrandID == homeOldStrandID && previous.oldStrandID == homeOldStrandID)
+            {
+                const double prevLo = std::min(previous.oldStartPosition, previous.oldEndPosition);
+                const double prevHi = std::max(previous.oldStartPosition, previous.oldEndPosition);
+                const double curLo = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+                const double curHi = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+
+                double gapStart = 0.0;
+                double gapEnd = 0.0;
+                bool hasGap = false;
+
+                if (prevHi <= curLo && !approxEqual(prevHi, curLo, tolerance))
+                {
+                    gapStart = prevHi;
+                    gapEnd = curLo;
+                    hasGap = true;
+                }
+                else if (curHi <= prevLo && !approxEqual(curHi, prevLo, tolerance))
+                {
+                    gapStart = curHi;
+                    gapEnd = prevLo;
+                    hasGap = true;
+                }
+
+                if (hasGap)
+                {
+                    const double gapLengthMbp = gapEnd - gapStart;
+                    plan.push_back({true, nullptr, gapLengthMbp});
+                    totalLengthMbp += gapLengthMbp;
+                }
+            }
+        }
+
+        plan.push_back({false, &fragment, fragLengthMbp});
+        totalLengthMbp += fragLengthMbp;
+    }
+
+    if (totalLengthMbp <= 0.0)
+    {
+        return segments;
+    }
+
+    outTotalLengthMbp = totalLengthMbp;
+
+    double runningPositionMbp = 0.0;
+
+    for (const PlannedPiece& piece : plan)
+    {
+        if (piece.isGap)
+        {
+            PaintedSegment gapSegment{};
+            gapSegment.startFraction = runningPositionMbp / totalLengthMbp;
+            gapSegment.endFraction = (runningPositionMbp + piece.lengthMbp) / totalLengthMbp;
+            gapSegment.color = RGB{1.0, 1.0, 1.0};
+            gapSegment.isReversed = false;
+            gapSegment.hasCentromere = false;
+            segments.push_back(gapSegment);
+
+            runningPositionMbp += piece.lengthMbp;
+            continue;
+        }
+
+        const SDRfragment& fragment = *piece.fragment;
+        const double fragmentLengthMbp = piece.lengthMbp;
+
+        PaintedSegment segment{};
+        segment.startFraction = runningPositionMbp / totalLengthMbp;
+        segment.endFraction = (runningPositionMbp + fragmentLengthMbp) / totalLengthMbp;
+        segment.color = getColorForOriginalStrand(fragment.oldStrandID, masterHeader);
+        segment.isReversed = fragment.oldStartPosition > fragment.oldEndPosition;
+        segment.hasCentromere = false;
+
+        if (fragment.hasCentromere && fragmentLengthMbp > 0.0)
+        {
+            double centromereStartBP = 0.0;
+            double centromereEndBP = 0.0;
+
+            if (getCentromereForOriginalStrand(fragment.oldStrandID, humanGenome, masterHeader, centromereStartBP, centromereEndBP))
+            {
+                const double centromereStartMbp = centromereStartBP / 1000000.0;
+                const double centromereEndMbp = centromereEndBP / 1000000.0;
+
+                const double fragMinMbp = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+                const double fragMaxMbp = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+                const double overlapStartMbp = std::max(centromereStartMbp, fragMinMbp);
+                const double overlapEndMbp = std::min(centromereEndMbp, fragMaxMbp);
+
+                if (overlapEndMbp > overlapStartMbp)
+                {
+                    double localFractionStart;
+                    double localFractionEnd;
+
+                    if (!segment.isReversed)
+                    {
+                        localFractionStart = (overlapStartMbp - fragMinMbp) / fragmentLengthMbp;
+                        localFractionEnd = (overlapEndMbp - fragMinMbp) / fragmentLengthMbp;
+                    }
+                    else
+                    {
+                        localFractionStart = 1.0 - (overlapEndMbp - fragMinMbp) / fragmentLengthMbp;
+                        localFractionEnd = 1.0 - (overlapStartMbp - fragMinMbp) / fragmentLengthMbp;
+                    }
+
+                    segment.hasCentromere = true;
+                    segment.centromereStartFraction = segment.startFraction + localFractionStart * (segment.endFraction - segment.startFraction);
+                    segment.centromereEndFraction = segment.startFraction + localFractionEnd * (segment.endFraction - segment.startFraction);
+                }
+            }
+        }
+
+        segments.push_back(segment);
+        runningPositionMbp += fragmentLengthMbp;
+    }
+
+    return segments;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 void Karyogram::drawInversionChevron(					// Function to draw a marker to denote a balanced inversion occurred, at the center of the inverted fragment
     cairo_t* cr,
     double centerX, 							// X position of the marker in pixels
@@ -1137,7 +1486,13 @@ void Karyogram::drawInversionChevron(					// Function to draw a marker to denote
 
 // Draws an ecDNA fragment as a filled circle rather than a bar -
 // visually distinct from every other (linear) piece on the karyogram.
-void Karyogram::drawCircularFragment(cairo_t* cr, double centerX, double centerY, double diameter, RGB color)
+void Karyogram::drawCircularFragment(
+    cairo_t* cr, 
+    double centerX, 
+    double centerY, 
+    double diameter, 
+    RGB color, 
+    bool drawOutline)
 {
     const double radius = diameter / 2.0;
 
@@ -1147,10 +1502,87 @@ void Karyogram::drawCircularFragment(cairo_t* cr, double centerX, double centerY
     cairo_set_source_rgb(cr, color.r, color.g, color.b);
     cairo_fill_preserve(cr);
 
-    cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-    cairo_set_line_width(cr, 1.5);
-    cairo_stroke(cr);
+    if (drawOutline)
+    {
+        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_set_line_width(cr, 1.5);
+        cairo_stroke(cr);
+    }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Computes per-excised-piece heights (no floor, unlike computeSDRbarHeight)
+// and how many vertical-stack columns are needed so no column exceeds
+// maxColumnHeight. Shared between computeSlotWidth() (spacing) and
+// drawStackedMutations() (actual drawing) so both always agree on layout.
+int Karyogram::computeExcisedColumnLayout(
+    const std::vector<const SDRdataRecord*>& excisedRecords,
+    double maxLengthMbp,
+    double maxRenderHeight,
+    double maxColumnHeight,
+    double verticalGap,
+    std::vector<double>& outHeights)
+{
+    outHeights.clear();
+    outHeights.reserve(excisedRecords.size());
+
+    for (const SDRdataRecord* record : excisedRecords)
+    {
+        double lengthMbp = 0.0;
+
+        for (const SDRfragment& fragment : record->fragments)
+        {
+            lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+        }
+
+        const double height = (maxLengthMbp > 0.0) ? (maxRenderHeight * (lengthMbp / maxLengthMbp)) : 0.0;
+        outHeights.push_back(height);
+    }
+
+    if (outHeights.empty())
+    {
+        return 0;
+    }
+
+    int columns = 1;
+    double columnUsedHeight = 0.0;
+    bool columnHasContent = false;
+
+    for (double pieceHeight : outHeights)
+    {
+        const double additionalHeight = columnHasContent ? (verticalGap + pieceHeight) : pieceHeight;
+
+        if (columnHasContent && (columnUsedHeight + additionalHeight) > maxColumnHeight)
+        {
+            ++columns;
+            columnUsedHeight = 0.0;
+            columnHasContent = false;
+        }
+
+        columnUsedHeight += columnHasContent ? (verticalGap + pieceHeight) : pieceHeight;
+        columnHasContent = true;
+    }
+
+    return columns;
+}
+
+
+
+
+
+
 
 
 
@@ -1329,6 +1761,42 @@ double Karyogram::computeSlotWidth(
         return chromosomeWidth + stackGap + outColumn2Width;
     }
 
+
+    // Multiple records, none matching a named shape - this is the
+    // shattered/collapsed-concatenation case (chromothripsis-style):
+    // one base record (most fragments) plus N unrelated leftover
+    // pieces, none of which decompose into a recognized shape.
+    if (records.size() > 1)
+    {
+        const SDRdataRecord* baseRecord = nullptr;
+        std::vector<const SDRdataRecord*> otherRecords;
+
+        for (const SDRdataRecord* record : records)
+        {
+            if (baseRecord == nullptr || record->fragments.size() > baseRecord->fragments.size())
+            {
+                if (baseRecord != nullptr)
+                {
+                    otherRecords.push_back(baseRecord);
+                }
+
+                baseRecord = record;
+            }
+            else
+            {
+                otherRecords.push_back(record);
+            }
+        }
+
+        const double verticalGap = 6.0;
+        std::vector<double> pieceHeights;
+        const int numColumns = computeExcisedColumnLayout(otherRecords, maxLengthMbp, maxRenderHeight, maxRenderHeight, verticalGap, pieceHeights);
+
+        outColumn2Width = chromosomeWidth; // Each stacked column is one chromosomeWidth wide.
+
+        return chromosomeWidth + stackGap + static_cast<double>(numColumns) * chromosomeWidth + static_cast<double>(std::max(0, numColumns - 1)) * stackGap;
+    }
+
     const std::size_t count = records.size();
     double totalWidth = count * chromosomeWidth;
 
@@ -1338,6 +1806,7 @@ double Karyogram::computeSlotWidth(
     }
 
     return totalWidth;
+
 }
 
 
@@ -2143,7 +2612,7 @@ SDRdataRecord Karyogram::concatenateRecordsForDrawing(const std::vector<const SD
 // Decides, per home-chromosome slot, whether its records should stay
 // as separate stacked bars (the deletion shape) or be concatenated
 // into one combined bar (everything else with 2+ records).
-std::vector<const SDRdataRecord*> Karyogram::clusterRecordsForDrawing(
+/*std::vector<const SDRdataRecord*> Karyogram::clusterRecordsForDrawing(
     const std::vector<const SDRdataRecord*>& records,
     int homeOldStrandID,
     std::vector<SDRdataRecord>& mergedStorage)
@@ -2164,8 +2633,54 @@ std::vector<const SDRdataRecord*> Karyogram::clusterRecordsForDrawing(
     mergedStorage.push_back(concatenateRecordsForDrawing(records, homeOldStrandID));
 
     return { &mergedStorage.back() };
-}
+}*/
 
+
+std::vector<const SDRdataRecord*> Karyogram::clusterRecordsForDrawing(
+    const std::vector<const SDRdataRecord*>& records,
+    int homeOldStrandID,
+    std::vector<SDRdataRecord>& mergedStorage)
+{
+    if (records.size() <= 1)
+    {
+        return records;
+    }
+
+    if (isDeletionShape(records, homeOldStrandID) || isECDNAshape(records, homeOldStrandID)
+        || isDeletionInversionShape(records, homeOldStrandID) || isDeletionTranslocationDonorShape(records, homeOldStrandID))
+    {
+        return records;
+    }
+
+    SDRdataRecord merged = concatenateRecordsForDrawing(records, homeOldStrandID);
+
+    double mergedLengthMbp = 0.0;
+
+    for (const SDRfragment& fragment : merged.fragments)
+    {
+        mergedLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+    }
+
+    double firstRecordLengthMbp = 0.0;
+
+    for (const SDRfragment& fragment : records.front()->fragments)
+    {
+        firstRecordLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+    }
+
+    // If concatenation collapsed to (near) nothing relative to the base
+    // record it started from, the merge assumptions this function was
+    // built for don't hold for this group - fall back to drawing every
+    // record separately instead of returning a degenerate result.
+    if (firstRecordLengthMbp > 0.0 && (mergedLengthMbp / firstRecordLengthMbp) < 0.1)
+    {
+        return records;
+    }
+
+    mergedStorage.push_back(merged);
+
+    return { &mergedStorage.back() };
+}
 
 
 
@@ -2192,7 +2707,7 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     const std::vector<SDRdeletionTranslocationEvent> deletionTranslocation = detectDeletionTranslocations(subHeader, numOriginalStrands);
     const std::vector<SDRdeletionInsertionEvent> deletionInsertion = detectDeletionInsertions(subHeader, numOriginalStrands);
     const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands);
-    const std::vector<SDRchromothripsisEvent> chromothripsis = detectChromothripsis(subHeader, numOriginalStrands, masterHeader);
+    const std::vector<SDRchromothripsisEvent> chromothripsis = detectChromothripsis(subHeader, numOriginalStrands);
 
     const double summaryX = 50.0;
     const double summaryY = 25.0;

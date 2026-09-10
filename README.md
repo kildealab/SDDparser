@@ -1,26 +1,27 @@
 # SDDparser
 Writing a C++ package capable of parsing the Standard for DNA Damage (SDD) file header and data fields,
-and the Standard for DNA Repair (SDR) header and data fields. 
+and the Standard for DNA Repair (SDR) header and data fields, plotting the associated damages and mutations on a karyogram. 
 
 This package is now capable of summarizing the SDD header fields and the data fields into a single summary file. It can also optionally plot a 
-Karyogram of the double-strand break and single-strand break locations onto the chromosomes the user passes in the SDD file header. 
+karyogram of the double-strand break and single-strand break locations onto the chromosomes the user passes in the SDD file header. 
 This package can also accomodate the SDR file format in the same way as the SDD file, by summarizing the mutations specified
 in the SDR file for each cell, as well as optionally plotting the karyogram of the mutations specified in the SDR file.
 
 HOW TO USE:
-1. To compile the SDDparser program, navigate to the directory where the Makefile is stored (cd /path/to/SDDparserDirectory/)
+1. To compile the SDDparser program, navigate to the directory where the Makefile is stored: 'cd /path/to/SDDparserDirectory/'.
 
 2. Ensure g++ is installed on your computer by checking "g++ --version". The terminal should return the version number and license.
 
 3. Ensure you have installed the libcairo2-dev library for plotting the associated Karyogram to the SDD file.
 
-3. Simply type 'make' into your terminal to compile the program 'SDDparser'.
+3. Simply type 'make' into your terminal to compile the program 'SDDparser'. No warnings or errors should appear. 
 
-4. To run the SDDparser, type in the command line './SDDparser /path/to/SDDinputFile.txt', where SDDinputFile.txt is the SDD file you want to parse. 
+4. To run the SDDparser and generate a summary, type in the command line './SDDparser /path/to/SDDinputFile.txt', where SDDinputFile.txt 
+is the SDD file you want to parse. 
 
 5. The SDD file summary will be stored in a file labeled 'SDDinputFile_summary.txt' in the same directory as the SDDinputFile.
 
-6. If you decide to plot the Karyogram of the SDD file illustrating the locations of the double-strand breaks on each of the chromosomes, 
+6. If you decide to plot the Karyogram of the SDD file illustrating the locations of the single- and double-strand breaks on each of the chromosomes, 
 type in the command-line './SDDparser /path/to/SDDinputFile.txt --karyogram human|other'. '--karyogram' indicates you want to draw
 the karyogram of the associated damages, and you must specify either 'human' for human genome centromere positions or 'other' for generic centromere
 locations. The output .png file will be stored in the same directory as the SDD input file.
@@ -36,7 +37,7 @@ locations. The output .png file will be stored in the same directory as the SDD 
 
 In the SDD chromosome sizes header, please specify Y chromosome size before X. If the user passes two X chromosomes, the second one will be labeled as Y
 and will have an incorrect centromere position in the karyogram. 
-The plotter also works for more than 46 chromosomes, but the '--karyogram other' option must be specified by the user.  
+The plotter also works for more than 46 chromosomes, but the '--karyogram other' option must be specified by the user if that is the case.
 If the user desires, the cell cycle phase can also be specified in the SDD header, and the karyogram plotter will account for if the cell cycle phase 
 is pre-replication (G0 or G1 phase) or post-replication (S, G2, M phase). If the user passes '0' (unspecified) as the cell cycle phase, the plotter 
 will assume the cells are in a pre-replication phase. In addition to the chromosome number and sizes passed in the SDD header, the karyogram plotter 
@@ -45,13 +46,14 @@ also requires SDD data fields 3, 4, and 6, otherwise the chromosome sizes and da
 ****PLEASE ENSURE THE CHROMOSOME IDS IN DATA FIELD 3 CORRESPOND TO THE CORRECT CHROMOSOME SIZE INDEX LISTED IN THE SDD HEADER, 
 OTHERWISE THE KARYOGRAM PLOTTER WILL BE INCORRECT****
 
-8. Functionality has been added to parse an SDR file using the following command './SDDparser -sdr ./path/to/SDRinputFile.txt'. The summary of the SDR header
-and subheader are returned for each cell, as well as a summary of the number of mutations present in the SDR file. 
+8. Functionality has been added to parse an SDR file using the following command './SDDparser -sdr ./path/to/SDRinputFile.txt'. The summary of the SDR 
+header and subheader are returned for each cell, as well as a summary of the number of mutations present in the SDR file. DO NOT FORGET THE '-sdr' after
+./SDDparser, otherwise the program will assume you are feeding an SDD file as input, and exit with an error. 
 
 9. The user can also now optionally plot a karyogram of the mutations described in an SDR file using the following command:
 '/path/to/SDDparser -sdr path/to/SDRinputFile.txt --karyogram human|other'. 
 
-To check if everything works correctly, run the following commands:
+To check if the SDD and SDR parsing, summary, and karyogram plotting work correctly, run the following commands:
 
 a) './SDDparser exampleSDD.txt --karyogram human'
 
@@ -60,9 +62,8 @@ The output to the terminal should be:
 Summary written to: "exampleSDD_summary.txt"
 Karyogram generated successfully: "exampleSDD_karyogram_human.png"'
 
-The exampleSDD_summary.txt file and exampleSDD_karyogram_human.png files
-should resemble the ones shown in the attached files of this repository in the
-examples/ folder.
+(The exampleSDD_summary.txt file and exampleSDD_karyogram_human.png files should resemble the ones shown in the attached files of this repository in the
+examples/ folder).
 
 b) './SDDparser -sdr exampleSDR.txt --karyogram human'
 
@@ -70,9 +71,8 @@ The output to the terminal should be:
 'Summary written to: "exampleSDR_summary.txt"
 Karyogram generated successfully: "exampleSDR_cell0_karyogram_human.png"'
 
-The exampleSDR_summary.txt file and exampleSDR_cell0_karyogram_human.png files
-should resemble the ones shown in the attached files of this repository in the 
-examples/ folder.
+The exampleSDR_summary.txt file and exampleSDR_cell0_karyogram_human.png files should resemble the ones shown in the attached files of this repository in
+the examples/ folder).
 
 
 WHAT IS SUMMARIZED IN THE SDD FILE SUMMARY:
@@ -83,11 +83,11 @@ The header summary is separated into 3 main subsections:
 3. DNA Damage Information - describes the damage definition for the appearance of Double Strand Breaks, and other exposure information.
 
 The data block is summarized under the subsection 'Chromosome Damages', where the following information is summarized:
-1. The number of exposures contained in the SDD file (number of cells irradiated).
-2. The number of damage entries (data rows) per exposure.
-3. The associated damages per chromosome per exposure (i.e. number base damages, single-strand breaks, and double-strand breaks)
-4. Total number of base damages, single-strand breaks, and double-strand breaks over all chromosomes per exposure.
-5. The total number of base damages, single-strand breaks, and double-strand breaks over all chromosomes over all exposures.
+1. The number of cell exposures contained in the SDD file (number of cells irradiated).
+2. The number of damage entries (data rows) per cell exposure.
+3. The associated damages per chromosome per cell exposure (i.e. number base damages, single-strand breaks, and double-strand breaks)
+4. Total number of base damages, single-strand breaks, and double-strand breaks over all chromosomes per cell exposure.
+5. The total number of base damages, single-strand breaks, and double-strand breaks over all chromosomes over all cell exposures.
 
 WHAT IS PLOTTED IN THE SDD FILE KARYOGRAM:
 <p align = "center">
@@ -95,10 +95,9 @@ WHAT IS PLOTTED IN THE SDD FILE KARYOGRAM:
 <em> Increasing DNA damages as a function of dose resulting from secondary electrons of a primary 6 MeV photon beam.</em>
 </p>
 
-1. All chromosomes passed by the user are plotted with distinct colors for visual clarity. If the user passes in the SDD file a genome that is
-not of human origin (i.e. not 46 chromosomes), the user must specify '--karyogram other'.
+1. All chromosomes passed by the user are plotted with distinct colors for visual clarity.
 2. Centromeric positions using the '--karyogram human' option are realistic and adjusted based on the chromosome being drawn, whereas 
-non-human genomes will be drawn using the generic centromere locations at approximately 35% of the chromosomes length. 
+non-human genomes will be drawn using the generic centromere locations at approximately 50% of the chromosomes length. 
 3. Double-strand breaks are denoted using black lines spanning slightly more than the width of the chromosome to disitnguish from single-strand breaks.
 4. Single-strand breaks are denoted using white lines on the chromosomes and the line lengths are scaled based on the number of single-strand breaks 
 within a given damage site (i.e. a given SDD data row) (usually between 0-5 SSBs). 
@@ -119,7 +118,7 @@ original chromosomes. Extrachromosomal DNA (ecDNA) is drawn as circles with thei
 clarity.
 4. A legend of symbols at the bottom of the karyogram to denote what all the symbols mean, particulary for inversions and ecDNA.
 5. So far, drawing is supported for long deletions, balanced inversions, balanced translocations, ecDNA, deletion-inversions, deletion-translocations,
-and deletion-insertions.
+and deletion-insertions, chromoplexy and chromothripsis. 
 
 <p align = "center">
 <img src="examples/exampleSDR_cell0_karyogram_human.png" alt="Different mutation representations from irradiated DNA"><br>
@@ -129,7 +128,7 @@ and deletion-insertions.
 
 FURTHER KARYOGRAM PLOTTING WORK:
 1. Add a zoom in and out and a panning option to conserve image quality. 
-2. Add SDR detectors for chromothripsis, and add mutation detection and drawing capabilities for BFB cycle.
+2. Add SDR mutation detection and drawing capabilities for BFB cycle.
 3. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
 5. Convert this command-line program into a linked c++ library to be called by any user who needs its functionality.
 ... and much more.
