@@ -134,6 +134,7 @@ FURTHER KARYOGRAM PLOTTING WORK:
 ... and much more.
 
 APPENDIX:
+
 Example SDR file mutated data entries for each type, the exact same as exampleSDR.txt, with additiona comments:
 ** NOTE: In reality, the order of the SDR data entries do not matter, but they are logically ordered in the exampleSDR.txt file for clarity**
 
