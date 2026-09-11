@@ -32,9 +32,9 @@ struct PaintedSegment
 
 enum class ChromosomeLayout                     // Determine how the user passed the chromosome sizes to modify karyogram plotting logic.
 {
-    NON_HOMOLOGOUS,       // 1,2,3,...,22,Y,X
-    ADJACENT_HOMOLOGS,    // 1,1,2,2,...,22,22,Y,X
-    SPLIT_HOMOLOGS        // 1,2,...,22,1,2,...,22,Y,X
+    NON_HOMOLOGOUS,       			// 1,2,3,...,22,Y,X
+    ADJACENT_HOMOLOGS,    			// 1,1,2,2,...,22,22,Y,X
+    SPLIT_HOMOLOGS        			// 1,2,...,22,1,2,...,22,Y,X
 };
 
 
@@ -74,29 +74,40 @@ public:
 
 private:
 
-    RGB generateChromosomeColor(int chromosomeNumber, int totalChromosomes); 	// Function to generate chromosome colors depending on the number of chromosomes, and to choose colors that are different enough between successive chromosomes. 
-    RGB getColorForOriginalStrand(int oldStrandID, const SDRmasterHeader& masterHeader);			// For SDR tracking of chromosome colors during rearrangements
+    // Function to generate chromosome colors depending on the number of chromosomes, and to choose colors that are different enough between successive chromosomes.
+    RGB generateChromosomeColor(int chromosomeNumber, int totalChromosomes);
+    // For SDR tracking of chromosome colors during rearrangements
+    RGB getColorForOriginalStrand(int oldStrandID, const SDRmasterHeader& masterHeader);
 
     // Helper functions to build the mutated segments onto the original chromosome strands, adjusting the color depending on the origin of the mutation, or white for deletions
     std::vector<PaintedSegment> buildPaintedSegments(const SDRdataRecord& record, bool humanGenome, const SDRmasterHeader& masterHeader);
     std::vector<PaintedSegment> buildDeletionRemainingSegments(const SDRdataRecord& record, int homeOldStrandID, bool humanGenome, const SDRmasterHeader& masterHeader);
     std::vector<PaintedSegment> buildMixedStrandSegmentsWithGaps(const SDRdataRecord& record, int homeOldStrandID, bool humanGenome, const SDRmasterHeader& masterHeader, double& outTotalLengthMbp);
 
-    void drawChromosome(cairo_t* cr, double x, double y, double height, double width, RGB color, double centromereStart, double centromereEnd); // The main draw chromosome function, accounting for individual chromosome sizes and centromere ranges and locations.
+    // The main draw chromosome function, accounting for individual chromosome sizes and centromere ranges and locations.
+    void drawChromosome(cairo_t* cr, double x, double y, double height, double width, RGB color, double centromereStart, double centromereEnd);
+    // The main draw mutated chromosome function, accounting additionally for foreign segments with different colors, inversion markers, white deletion segments.
     void drawPaintedChromosome(cairo_t* cr, double x, double y, double height, double width, const std::vector<PaintedSegment>& segments, bool roundTopCap = true, bool roundBottomCap = true, bool drawOutline = true);
+    // Function to help stack mutated segments onto original intact chromosomes with their original colors, determines positioning of the mutated segments and deleted segments
     void drawStackedMutations(cairo_t* cr, const std::vector<const SDRdataRecord*>& records, double slotCenterX, double posY, double chromosomeWidth, double maxLengthMbp, double maxRenderHeight, bool humanGenome, const SDRmasterHeader& masterHeader, int homeOldStrandID);
 
-    std::vector<DamageLocation> getDoubleStrandBreaks(const std::vector<Exposure>& exposures); // Use to obtain the stored double strand break locations in each exposure and determine their coordinates on the Karyogram. 
+    // Use to obtain the stored single- and double-strand break locations in each exposure and determine their coordinates on the Karyogram.
+    std::vector<DamageLocation> getDoubleStrandBreaks(const std::vector<Exposure>& exposures);
     std::vector<DamageLocation> getSingleStrandBreaks(const std::vector<Exposure>& exposures);
 
-    double getDamageFraction(const DamageLocation& damage, double chromosomeSize);		// Convert damage locations in base pairs to a fractional length along the chromosome for easy Karyogram pixel conversion.
+    // Convert damage locations in base pairs to a fractional length along the chromosome for easy Karyogram pixel conversion.
+    double getDamageFraction(const DamageLocation& damage, double chromosomeSize);
 
-    void drawDoubleStrandBreakMarker(cairo_t* cr, double x, double y, double chromosomeWidth);				// Functions to draw the damage locations at a given x and y coordinate on the Karyogram, the entire width of the drawn chromosome.
+    // Functions to draw the damage locations at a given x and y coordinate on the Karyogram, the entire width of the drawn chromosome.
+    void drawDoubleStrandBreakMarker(cairo_t* cr, double x, double y, double chromosomeWidth);
     void drawSingleStrandBreakMarker(cairo_t* cr, double x, double y, double markerLength);
-    void drawInversionChevron(cairo_t* cr, double centerX, double centerY, double size);	// Draw symbol for SDR file inversions
-    void drawCircularFragment(cairo_t* cr, double centerX, double centerY, double diameter, RGB color, bool drawOutline = true);	// Draw symbol for SDR file ecDNA 
+    // Draw symbol for inverted segments arising from mutations in the SDR file
+    void drawInversionChevron(cairo_t* cr, double centerX, double centerY, double size);
+    // Draw symbol for ecDNA mutated segments found in SDR file.
+    void drawCircularFragment(cairo_t* cr, double centerX, double centerY, double diameter, RGB color, bool drawOutline = true);
 
-    const CentromerePosition* getHumanCentromere(int chromosomeID);		// Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
+    // Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
+    const CentromerePosition* getHumanCentromere(int chromosomeID);
     bool getCentromereForOriginalStrand(int oldStrandID, bool humanGenome, const SDRmasterHeader& masterHeader, double&centromereStartBP, double& centromereEndBP);			// Check if original strand has centromere in the given range
 
     // Helper functions to modify the chromosome heights and widths to adjust for mutated content being carried over into this slot.
@@ -105,22 +116,27 @@ private:
     double computeSlotWidth(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, double chromosomeWidth, double maxLengthMbp, double maxRenderHeight, const SDRmasterHeader& masterHeader, double& outColumn2Width);
     int computeExcisedColumnLayout(const std::vector<const SDRdataRecord*>& excisedRecords, double maxLengthMbp, double maxRenderHeight, double maxColumnHeight, double verticalGap, std::vector<double>& outHeights);
 
-    void drawLegend(cairo_t* cr, double legendY);						// Function to draw the SDD karyogram legend at the bottom.
-    void drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCyclePhase, const std::vector<Exposure>& exposures, const std::vector<double>& doseOrFluence, const std::vector<int>& incidentParticles);						// Function to draw the karyogram summary box at the top.
-    void drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader, const SDRsubHeader& subHeader);	// Function to draw the top SDR karyogram summary box summarizing which mutations were in the SDR file
-    void drawSDRlegend(cairo_t* cr, double legendY);						// Draw legend at bottom of the SDR karyogram which has different symbols than the SDD file karyogram
+    // Function to draw the SDD karyogram legend at the bottom.
+    void drawLegend(cairo_t* cr, double legendY);
+    // Function to draw the karyogram summary box at the top.
+    void drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCyclePhase, const std::vector<Exposure>& exposures, const std::vector<double>& doseOrFluence, const std::vector<int>& incidentParticles);
+    // Function to draw the top SDR karyogram summary box summarizing which mutations were in the SDR file
+    void drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader, const SDRsubHeader& subHeader);
+    // Draw legend at bottom of the SDR karyogram which has different symbols than the SDD file karyogram
+    void drawSDRlegend(cairo_t* cr, double legendY);
 
-    ChromosomeLayout determineChromosomeLayout(const std::vector<double>& chromosomeSizes);	// Function that will determine how the user passed the chromosomes.
+    // Function that will determine how the user passed the sizes of the chromosomes (non-homologous, adjacent-homologous, or split-homologous order).
+    ChromosomeLayout determineChromosomeLayout(const std::vector<double>& chromosomeSizes);
 
     // Function to check if the SDR data entries are depciting mutations, or are the original intact strand information
     std::vector<const SDRdataRecord*> filterBaselineIfMutated(const std::vector<const SDRdataRecord*>& records, int numOriginalStrands);
 
     // Functions to alter the drawing of certain mutations depending on the specific mutation involved
-    bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);		// For long deletions
-    bool isECDNAshape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);			// For ecDNA mutations
-    bool isDeletionInversionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);	// For deletion-inversion mutations
+    bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);			// For long deletions
+    bool isECDNAshape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);				// For ecDNA mutations
+    bool isDeletionInversionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);		// For deletion-inversion mutations
     bool isDeletionTranslocationDonorShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);	// For deletion-translocation mutations
-    bool isLoneGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);			// For deletion-insertion mutations
+    bool isLoneGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);				// For deletion-insertion mutations
 
     // Helper functions to stack mutated chromosome segments of different colors on top of the original segments and remove the correct amount of 
     // chromosome if a deletion occurs.

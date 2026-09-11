@@ -10,26 +10,44 @@
 
 #include "SDRtypes.h"
 
+
+
 // -------------------------------------------------- //
 // --------- SDR MUTATION DETECTION HELPERS --------- //
 // -------------------------------------------------- //
 
-// oldStrandID always refers to one of the
-// original intact chromosomes (46 for humans), never to a
-// newly-created strand ID produced by an earlier rearrangement.
-// This is what allows every detect<Mutation>() function below to group a
-// cell's fragments by oldStrandID and treat that as "all the
-// rearrangement activity affecting a given original chromosome",
-// rather than needing to trace strand lineage across events.
+// oldStrandID always refers to one of the  original intact chromosomes (46 for humans), never to a
+// newly-created strand ID produced by an earlier rearrangement. This is what allows every detect<Mutation>() 
+// function below to group a cell's fragments by oldStrandID and treat that as "all the rearrangement activity 
+// affecting a given original chromosome", rather than needing to trace strand lineage across events.
 
 
-
-// Determines which original strand a record "belongs to" for karyogram
-// slot placement. A record with exactly one centromere-bearing
-// fragment unambiguously belongs to that fragment's strand - this is
-// the correct rule for any BALANCED rearrangement, since by
+// Determines which original strand a record "belongs to" for karyogram slot placement. A record with exactly one centromere-bearing
+// fragment unambiguously belongs to that fragment's strand - this is the correct rule for any BALANCED rearrangement, since by
 // definition each derivative keeps exactly one parent's centromere.
-//
+inline int determineHomeStrandID(const SDRdataRecord& record)
+{
+    int centromereStrandID = -1;
+    int centromereCount = 0;
+
+    for (const SDRfragment& fragment : record.fragments)			// Find which fragment holds the centromere
+    {
+        if (fragment.hasCentromere)						// If the fragment has centromere
+        {
+            centromereStrandID = fragment.oldStrandID;				// Store the associated original strand ID of that fragment
+            ++centromereCount;							// Increment the centromere count for that data record
+        }
+    }
+
+    if (centromereCount == 1)							// Only supports single-centromere records for determining home strand
+    {										// Otherwise, home strand is the first listed fragment old strand ID
+        return centromereStrandID;
+    }
+
+    // Zero or 2+ centromeres - ambiguous under today's single-slot
+    // model. Fall back to the original strand-ordering convention.
+    return record.fragments.empty() ? -1 : record.fragments[0].oldStrandID;
+}
 // FUTURE WORK: a record with zero (acentric) or two+ (dicentric)
 // centromere-bearing fragments currently falls back to the old
 // first-fragment rule, placing it in exactly one slot. True dicentric
@@ -39,29 +57,6 @@
 // only live under one key), not just this function. Left as a single
 // deliberate fallback here so that future change has one clear call
 // site to revisit, rather than being scattered.
-inline int determineHomeStrandID(const SDRdataRecord& record)
-{
-    int centromereStrandID = -1;
-    int centromereCount = 0;
-
-    for (const SDRfragment& fragment : record.fragments)
-    {
-        if (fragment.hasCentromere)
-        {
-            centromereStrandID = fragment.oldStrandID;
-            ++centromereCount;
-        }
-    }
-
-    if (centromereCount == 1)
-    {
-        return centromereStrandID;
-    }
-
-    // Zero or 2+ centromeres - ambiguous under today's single-slot
-    // model. Fall back to the original strand-ordering convention.
-    return record.fragments.empty() ? -1 : record.fragments[0].oldStrandID;
-}
 
 
 
@@ -71,7 +66,7 @@ inline int determineHomeStrandID(const SDRdataRecord& record)
 
 
 
-// Mutated strands are only those with new strand IDs >= numOriginalStrands.
+// Mutated strands are only those with new strand IDs > numOriginalStrands.
 // EX: for the 46 human chromosomes with strand IDs (1-46), mutated strands
 // begin with new Strand ID > 46. This will be consistent across SDR files.
 inline bool isRearrangementCandidate(int newStrandID, int numOriginalStrands)
@@ -86,6 +81,13 @@ inline bool approxEqual(double a, double b, double tolerance)
 
     return std::fabs(a - b) <= tolerance;
 }
+
+
+
+
+
+
+
 
 
 
@@ -170,29 +172,30 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
         std::vector<SDRfragment>* flankingFragments = nullptr;
 	std::vector<std::pair<int, SDRfragment*>> excisedCandidates;
 
-	bool multipleRemainingRecords = false;
+	bool multipleRemainingRecords = false;					// Variable to check if the amount of fragments remaining in a strand that
+										// had an excised fragment is greater than 1.
 
         for (auto& [newStrandID, fragments] : groupNewStrand)			// Loop through each pair in groupNewStrand vector
         {
-	    if (fragments.size() != newStrandIDtotalFragments[newStrandID]) // Reject if this record has fragments from OTHER old strands too - a pure remaining/excised piece must be entirely from this old strand.
+	    if (fragments.size() != newStrandIDtotalFragments[newStrandID]) 	// Reject if this record has fragments from OTHER old strands too - a pure remaining/excised piece must be entirely from this old strand.
             {
                 continue;
             }
 
-            if (fragments.size() >= 2)						// If the entry has two flanking fragments, 
-            {
+            if (fragments.size() >= 2)						// If the entry has two flanking fragments, then there are multiple
+            {									// remaining records. A deletion was detected.
 		if (flankingFragments != nullptr)
 		{
 		    multipleRemainingRecords = true;
 		    break;
 		}
 
-		remainingStrandID = newStrandID;                                // Track the newStrandID of the flanking fragments
+		remainingStrandID = newStrandID;                                // Track the newStrandID of the flanking fragments in the remaining strand
                 flankingFragments = &fragments;
             }
             else if (fragments.size() == 1)					// Fragment size of 1 corresponds to the excised/deleted DNA fragment
             {
-		excisedCandidates.push_back({newStrandID, &fragments[0]});
+		excisedCandidates.push_back({newStrandID, &fragments[0]});	// Store excised candidate fragment new Strand ID and corresponding old Strand ID.
 
             }
         }
@@ -217,8 +220,8 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
             });
 
 
-	struct Gap
-	{
+	struct Gap								// Struct to store the size of the gap from the excised piece
+	{									// and match it with the flanking fragment ends within tolerance
 	    double startPos;
 	    double endPos;
 	};
@@ -228,8 +231,9 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
 
 	for (std::size_t i = 0; i + 1 < flankingFragments->size(); i++)
         {
-            const double gapStart = (*flankingFragments)[i].oldEndPosition;
-            const double gapEnd = (*flankingFragments)[i + 1].oldStartPosition;
+	    // Generalized for multiple flanking fragments per data record
+            const double gapStart = (*flankingFragments)[i].oldEndPosition;	// Gap starts at the end of the first flanking fragment
+            const double gapEnd = (*flankingFragments)[i + 1].oldStartPosition; // Gap ends at the start of the second flanking fragment
 
             if (gapEnd <= gapStart)                                             // Check if a gap was left from the deletion event
             {
@@ -454,6 +458,7 @@ inline std::vector<SDRinversionEvent> detectInversions(const SDRsubHeader& subHe
 
 
 
+
 // A candidate "half" of a balanced translocation: a record with exactly two fragments, referencing two distinct old strand IDs,
 // both fragments in their original (non-reversed) orientation.
 inline bool getTranslocationCandidateFragments(const SDRdataRecord& record, int numOriginalStrands, SDRfragment& fragmentA, SDRfragment& fragmentB)
@@ -562,45 +567,47 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
 
     const std::vector<SDRdataRecord>& records = subHeader.dataRecords;			// Records vector to store the SDR data records/entries
 
-    const double balTraTolerance = 0.00001;
+    const double balTraTolerance = 0.00001;						// Tolerance of base position mismatch of approximately 10 bp
 
 
+    // Sub function to check if the strand being investigated is valid (linear for BalTrans, and a mutation record). Need this since we are
+    // checking across multiple data records for two distinct old strand IDs sharing DNA information in a balanced manner (no information loss).
+    // Groups a given record's fragments by each old Strand ID that fragment came from
     auto getRecordStrandFragments = [&](const SDRdataRecord& record, std::map<int, std::vector<SDRfragment>>& groupStrand) -> bool
     {
-        if (!record.linear)
+        if (!record.linear)								// Data record must be linear to be considered
         {
             return false;
         }
 
-        if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands))
-        {
+        if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands))		// Data record must have a new strand ID > numOriginalStrands
+        {										// Otherwise not a mutation
             return false;
         }
 
-        for (const SDRfragment& fragment : record.fragments)
-        {
+        for (const SDRfragment& fragment : record.fragments)				// If initial checks pass, store the fragment associated with
+        {										// A given oldStrandID
             groupStrand[fragment.oldStrandID].push_back(fragment);
         }
 
-        return !groupStrand.empty();
+        return !groupStrand.empty();							// Return true if the groupStrand is non-empty
     };
 
 
 
-    // Checks that the pooled fragments for one strand, normalized to
-    // [min,max] and sorted, tile [0, fullSize] exactly with no gaps or
-    // overlaps. On success, breakpointsOut holds every internal
+    // Checks that the pooled fragments for one strand (groupStrand), normalized to [min,max] and sorted, span the full size of 
+    // the chromosome [0, fullSize] exactly with no gaps or overlaps. On success, breakpointsOut holds every internal
     // boundary between consecutive fragments.
-    auto checkFullTiling = [&](std::vector<SDRfragment> pooled, int strandID, std::vector<double>& breakpointsOut) -> bool
+    auto checkChromosomeSpan = [&](std::vector<SDRfragment> pooledFragments, int strandID, std::vector<double>& allBreakpoints) -> bool
     {
         const std::size_t sizeIndex = static_cast<std::size_t>(strandID);
 
-        if (sizeIndex >= masterHeader.intactChromosomeSizes.size())
-        {
+        if (sizeIndex >= masterHeader.intactChromosomeSizes.size())			// Check sizes of intact chromosomes to ensure translocations are
+        {										// balanced, will skip all mutated data entries
             return false;
         }
 
-        const double fullSize = masterHeader.intactChromosomeSizes[sizeIndex];
+        const double fullSize = masterHeader.intactChromosomeSizes[sizeIndex];		// Store the fullSize of a given chromosome
 
         if (fullSize <= 0.0)
         {
@@ -608,120 +615,139 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
 	}
 
 
-	struct NormalizedFragment
+	struct NormalizedFragment							// Struct to order fragments according to start position
         {
-            double low;
-            double high;
+            double lowerPos;								// Lower of the two fragment positions (generalized in case fragment inverted)
+            double higherPos;								// Higher of the two fragment positions
         };
 
-        std::vector<NormalizedFragment> normalized;
-        normalized.reserve(pooled.size());
+        std::vector<NormalizedFragment> normalizedFragments;				// Vector to hold the rearranged (normalized) fragment order after
+        normalizedFragments.reserve(pooledFragments.size());
 
-	for (const SDRfragment& fragment : pooled)
+	for (const SDRfragment& fragment : pooledFragments)				// Loop through all pooledFragments which group fragments according to old strand ID
         {
-            normalized.push_back({
-                std::min(fragment.oldStartPosition, fragment.oldEndPosition),
+            normalizedFragments.push_back({						// Store the fragments according to lower fragment position first,
+                std::min(fragment.oldStartPosition, fragment.oldEndPosition),		// higher fragment position second.
                 std::max(fragment.oldStartPosition, fragment.oldEndPosition)
             });
         }
 
-        std::sort(normalized.begin(), normalized.end(), [](const NormalizedFragment& a, const NormalizedFragment& b)
+	// Sort normalizedFragments vector fragments in ascending order of position.
+        std::sort(normalizedFragments.begin(), normalizedFragments.end(), [](const NormalizedFragment& a, const NormalizedFragment& b)
         {
-            return a.low < b.low;
+            return a.lowerPos < b.lowerPos;
         });
 
-        if (!approxEqual(normalized.front().low, 0.0, balTraTolerance))
+	// Need the first sorted fragment's start position to start at 0
+        if (!approxEqual(normalizedFragments.front().lowerPos, 0.0, balTraTolerance))
         {
             return false;
         }
 
-	if (!approxEqual(normalized.back().high, fullSize, balTraTolerance))
+	// Need the last sorted fragment's end position to end at the fullSize of the chromosome
+	if (!approxEqual(normalizedFragments.back().higherPos, fullSize, balTraTolerance))
         {
             return false;
         }
 
-        breakpointsOut.clear();
 
-        for (std::size_t k = 0; k + 1 < normalized.size(); ++k)
+        allBreakpoints.clear();
+
+	// Loop through all normalizedFragments to check if the fragments are contiguous
+        for (std::size_t k = 0; k + 1 < normalizedFragments.size(); ++k)
         {
-            if (!approxEqual(normalized[k].high, normalized[k + 1].low, balTraTolerance))
+	    // Require neighbouring fragments to be contiguous within balTraTolerance = 10 bp, otherwise not a balanced translocation
+            if (!approxEqual(normalizedFragments[k].higherPos, normalizedFragments[k + 1].lowerPos, balTraTolerance))
             {
                 return false;
             }
-
-            breakpointsOut.push_back(normalized[k].high);
+	    // Store breakpoint locations using the higher positions of the fragment ends
+            allBreakpoints.push_back(normalizedFragments[k].higherPos);
         }
 
         return true;
     };
 
 
-    for (std::size_t i = 0; i < records.size(); ++i)
+
+    for (std::size_t i = 0; i < records.size(); ++i)				// Loop through all SDR data records, looking for a first candidate
     {
-        std::map<int, std::vector<SDRfragment>> iByStrand;
-
-        if (!getRecordStrandFragments(records[i], iByStrand))
+        std::map<int, std::vector<SDRfragment>> firstStrandGroup;		// This variable stores the first group of two original strands contributing to the 
+										// balanced translocation.
+        if (!getRecordStrandFragments(records[i], firstStrandGroup))		// If the first record does not fit the required balTrans shape, skip record
         {
             continue;
         }
 
-        if (iByStrand.size() != 2)
+        if (firstStrandGroup.size() != 2)					// Simple balanced translocation mutations only involve two chromosomes
         {
             continue;
         }
 
-	for (std::size_t j = i + 1; j < records.size(); ++j)
-        {
-            std::map<int, std::vector<SDRfragment>> jByStrand;
+	for (std::size_t j = i + 1; j < records.size(); ++j)			// Loop through all following records after the i-th data record,
+        {									// looking for a second candidate for the balTrans
+            std::map<int, std::vector<SDRfragment>> secondStrandGroup;		// Store the second group of two strands that contribute to balanced translocations.
 
-            if (!getRecordStrandFragments(records[j], jByStrand))
+            if (!getRecordStrandFragments(records[j], secondStrandGroup))	// If secondStrandGroup does not fit balTrans shape, skip record
             {
                 continue;
             }
 
-            if (jByStrand.size() != 2)
+            if (secondStrandGroup.size() != 2)					// Simple balTrans mutations only involve two chromosomes
             {
                 continue;
             }
 
-            std::vector<int> iStrands;
 
+	    // Store fragment original strand IDs for the first candidate
+            std::vector<int> firstStrands;
 
-	    for (auto& [strandID, fragments] : iByStrand)
+	    for (auto& [strandID, fragments] : firstStrandGroup)
             {
-                iStrands.push_back(strandID);
+                firstStrands.push_back(strandID);
             }
 
-            std::vector<int> jStrands;
+	    // Store the fragment original strand IDs for the second candidate
+            std::vector<int> secondStrands;
 
-            for (auto& [strandID, fragments] : jByStrand)
+            for (auto& [strandID, fragments] : secondStrandGroup)
             {
-                jStrands.push_back(strandID);
+                secondStrands.push_back(strandID);
             }
 
-            if (iStrands != jStrands)
+	    // If the two original strands referenced by each candidate record are not equivalent, then this is not a balanced translocation
+            if (firstStrands != secondStrands)
             {
                 continue;
             }
 
-	    const int strandA = iStrands[0];
-            const int strandB = iStrands[1];
+	    // Once the strand IDs are confirmed to be identical, set strand A and strand B IDs
+	    const int strandAid = firstStrands[0];			// equivalent to secondStrand[0]
+            const int strandBid = firstStrands[1];			// equivalent to secondStrand[1]
 
-            std::vector<SDRfragment> pooledA = iByStrand[strandA];
-            pooledA.insert(pooledA.end(), jByStrand[strandA].begin(), jByStrand[strandA].end());
 
-            std::vector<SDRfragment> pooledB = iByStrand[strandB];
-            pooledB.insert(pooledB.end(), jByStrand[strandB].begin(), jByStrand[strandB].end());
+	    // Instead of assuming each record has exactly one fragment per strand (which only holds for a clean single-breakpoint swap), 
+	    // this gathers every fragment referencing strand A across both records into one list, and does the same for strand B.
+	    // This is what also allows for central segment balanced translocations, not only chromosome end swapping.
+            std::vector<SDRfragment> pooledFragmentsA = firstStrandGroup[strandAid];
+            pooledFragmentsA.insert(pooledFragmentsA.end(), secondStrandGroup[strandAid].begin(), secondStrandGroup[strandAid].end());
 
+            std::vector<SDRfragment> pooledFragmentsB = firstStrandGroup[strandBid];
+            pooledFragmentsB.insert(pooledFragmentsB.end(), secondStrandGroup[strandBid].begin(), secondStrandGroup[strandBid].end());
+
+	    // Store the breakpoints on both chromosome A and chromosome B
             std::vector<double> breakpointsA;
             std::vector<double> breakpointsB;
 
-            if (!checkFullTiling(pooledA, strandA, breakpointsA) || !checkFullTiling(pooledB, strandB, breakpointsB))
+	    // If the fragments of a given old strand ID do not span the entire length of the original intact chromosome they came from,
+	    // this is not a balanced translocation
+            if (!checkChromosomeSpan(pooledFragmentsA, strandAid, breakpointsA) || !checkChromosomeSpan(pooledFragmentsB, strandBid, breakpointsB))
             {
                 continue;
             }
 
 
+	    // All balanced translocation mutation checks passed, store the strand and fragment information, as well as the break locations
 	    SDRtranslocationEvent event{};
             event.oldStrandA = strandA;
             event.oldStrandB = strandB;
@@ -821,7 +847,7 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 	int remainingStrandID = -1;						// newStrandID for the strand missing an excised fragment
         std::vector<SDRfragment>* flankingFragments = nullptr;			// Vector containing the pointer to the two fragments missing a central excised segment
         bool multipleRemainingRecords = false;
-        std::vector<std::pair<int, std::vector<SDRfragment>*>> excisedCandidates; 					// {newStrandID, fragments}
+        std::vector<std::pair<int, std::vector<SDRfragment>*>> excisedCandidates; // {newStrandID, fragments}
 
 
         for (auto& [newStrandID, fragments] : groupNewStrand)
@@ -838,14 +864,14 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
             {
 		if (flankingFragments != nullptr)
                 {
-                    multipleRemainingRecords = true; // More than one candidate "remaining" record - invalid shape.
+                    multipleRemainingRecords = true; 				// More than one candidate "remaining" record - invalid shape.
                     break;
                 }
 
                 remainingStrandID = newStrandID;
                 flankingFragments = &fragments;
             }
-            else if (!record->linear)			// Necessary format is one entry that is non-linear with one singular fragment referencing the same oldStrandID as the record with the two flanking fragments
+            else if (!record->linear)						// Necessary format is one entry that is non-linear with one singular fragment referencing the same oldStrandID as the record with the two flanking fragments
             {
 		// Every fragment in an ecDNA (excised) record must be acentric.
                 bool hasCentromereFlag = false;
@@ -1670,7 +1696,7 @@ inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& su
     // Groups chromosomes based on their shared mutations
     std::map<int, int> parent;
 
-    auto findRoot = [&](int x) -> int		// x are the individual chromosomes
+    auto findRoot = [&](int x) -> int		// x are the individual chromosome IDs
     {
         if (!parent.count(x))			// If chromosome x was found in the parent collection or not, if not initialize x as the parent
         {
@@ -1702,73 +1728,86 @@ inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& su
 
     // For every rearranged record, track which distinct old strand IDs
     // it references - and union every pair found together.
-    std::vector<std::pair<int, std::set<int>>> recordStrandSets; // {newStrandID, distinct old strand IDs}
+    std::vector<std::pair<int, std::set<int>>> recordStrandSets; 			// {newStrandID, {distinct old strand IDs}}
 
-    for (const SDRdataRecord& record : subHeader.dataRecords)
+    for (const SDRdataRecord& record : subHeader.dataRecords)				// Loop through all SDR data records per cell
     {
-        if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands))
+        if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands))		// If the record is not a mutation, but an intact record, skip
         {
             continue;
         }
 
-	std::set<int> strandsInRecord;
+	std::set<int> strandsInRecord;							// Track which chromosomes make up the fragments in the mutation
 
         for (const SDRfragment& fragment : record.fragments)
         {
             strandsInRecord.insert(fragment.oldStrandID);
         }
 
-        if (strandsInRecord.size() < 2)
+        if (strandsInRecord.size() < 2)							// Purely intra-strand record, contributes no edges (only one chromosome is involved).
         {
-            continue; // Purely intra-strand record - contributes no edges.
+            continue;
         }
 
-        recordStrandSets.push_back({record.newStrandID, strandsInRecord});
+        recordStrandSets.push_back({record.newStrandID, strandsInRecord});		// Couple the new strand ID with the old strand IDs of its fragments
 
-        std::vector<int> strandVec(strandsInRecord.begin(), strandsInRecord.end());
+        std::vector<int> strandVec(strandsInRecord.begin(), strandsInRecord.end());	// Store the involved new strand IDs and their respective fragments' old strand IDs
 
+	// Loop through all original chromosome IDs, in the current record and following records
 	for (std::size_t a = 0; a < strandVec.size(); ++a)
         {
             for (std::size_t b = a + 1; b < strandVec.size(); ++b)
             {
-                unite(strandVec[a], strandVec[b]);
+                unite(strandVec[a], strandVec[b]);					// Unite two old strand IDs from two records
             }
         }
     }
 
-    std::map<int, std::set<int>> componentsByRoot;
 
+    // as you iterate all strands, every strand sharing the same root ends up collected together in one set — and using a set rather than a vector means 
+    // duplicates (from path-compressed lookups) just don't matter.
+    std::map<int, std::set<int>> componentsByRoot;					// maps one arbitrary representative strand the full set of every strand connected to it.
+
+    // for every strand that's ever been registered as a node: call findRoot(strandID) to get its component's representative 
+    // ("root") strand ID, and record that strandID belongs under that root.
     for (auto& [strandID, strandParent] : parent)
     {
         componentsByRoot[findRoot(strandID)].insert(strandID);
     }
 
+    // Loops through every discovered component and checks if it has >= 3 strands
     for (auto& [root, strandSet] : componentsByRoot)
     {
-        if (strandSet.size() < 3)
+        if (strandSet.size() < 3)							// Chromoplexy involved 3 or more chromosomes
         {
             continue;
         }
 
-        std::vector<int> contributingIDs;
+	// Build the list of records by newStrandID since the component qualifies with 3+ strands
+        std::vector<int> contributingIDs;						// Will hold all records touching at least one of the componentsByRoot's 3+ strands.
 
+	// The nested loop checks for each record if any old strand this record touches belong to the current 3+-strand component.
         for (auto& [newStrandID, strands] : recordStrandSets)
         {
+	    // Check each strand reference in the given record
             for (int s : strands)
             {
-                if (strandSet.count(s))
+                if (strandSet.count(s))							// If that strand is in strandSet, add newStrandID to the contributingIDs
                 {
-                    contributingIDs.push_back(newStrandID);
+                    contributingIDs.push_back(newStrandID);				// Store the record ID and break, one match is proof the record belongs to the chromoplexy event, stop searching further.
                     break;
                 }
             }
         }
 
 
+	// All checks passed for chromoplexy, store the mutation event information
         SDRchromoplexyEvent event{};
         event.involvedStrandIDs = std::vector<int>(strandSet.begin(), strandSet.end());
         event.contributingNewStrandIDs = contributingIDs;
 
+
+	// Extra non-essential check to assess whether one of the involved strands in chromoplexy also has a separate associated deletion, and stores that deletions information
         for (const SDRdeletionEvent& deletionEvent : deletions)
         {
             if (strandSet.count(deletionEvent.oldStrandID))
