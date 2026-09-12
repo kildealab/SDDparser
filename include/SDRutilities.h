@@ -749,8 +749,8 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
 
 	    // All balanced translocation mutation checks passed, store the strand and fragment information, as well as the break locations
 	    SDRtranslocationEvent event{};
-            event.oldStrandA = strandA;
-            event.oldStrandB = strandB;
+            event.oldStrandAid = strandAid;
+            event.oldStrandBid = strandBid;
             event.breakpointsA = breakpointsA;
             event.breakpointsB = breakpointsB;
             event.newStrandID1 = records[i].newStrandID;
@@ -1437,8 +1437,8 @@ inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(
 
 		// All checks for deletion-translocation passed, store information in event object
                 SDRdeletionTranslocationEvent event{};
-                event.oldStrandA = fragmentA1.oldStrandID;
-                event.oldStrandB = fragmentB1.oldStrandID;
+                event.oldStrandAid = fragmentA1.oldStrandID;
+                event.oldStrandBid = fragmentB1.oldStrandID;
                 event.deletedOldStrandID = deletedOldStrandID;
                 event.cleanBreakPos = cleanBreakPos;
                 event.deletionStart = gapStart;

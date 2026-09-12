@@ -94,8 +94,8 @@ struct SDRinversionEvent
 // lost. --> Generalized to handle swapping of central fragments.
 struct SDRtranslocationEvent
 {
-    int oldStrandA;				// Which chromosome/strand ID the fragments originate from for strand A
-    int oldStrandB;				// Which chromosome/strand ID the fragments originate from for strand B
+    int oldStrandAid;				// Which chromosome/strand ID the fragments originate from for strand A
+    int oldStrandBid;				// Which chromosome/strand ID the fragments originate from for strand B
     std::vector<double> breakpointsA;   	// position on oldStrandAid where the breaks occurred
     std::vector<double> breakpointsB;   	// position on oldStrandBid where the breaks occurred
     int newStrandID1;				// ID of the new strand containing fragment rearrangements for strand 1
@@ -144,8 +144,8 @@ struct SDRdeletionInversionEvent
 // a total of three new data records per delTra mutation
 struct SDRdeletionTranslocationEvent
 {
-    int oldStrandA;		// Old strand ID for strand A involved in the translocation
-    int oldStrandB;		// Old strand ID for strand B involved in the translocation
+    int oldStrandAid;		// Old strand ID for strand A involved in the translocation
+    int oldStrandBid;		// Old strand ID for strand B involved in the translocation
     int deletedOldStrandID;   	// whichever of oldStrandA/oldStrandB has the gap, the
     double cleanBreakPos;     	// breakpoint is on the OTHER strand, which split cleanly
     double deletionStart;	// Location of where the deletion started in Mbp

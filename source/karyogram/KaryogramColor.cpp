@@ -129,7 +129,7 @@ RGB Karyogram::getColorForOriginalStrand(
     }
     else if (layout == ChromosomeLayout::ADJACENT_HOMOLOGS && homologousPairs > 0)
     {
-        group = oldStrandID / 2;
+        group = (oldStrandID - 1) / 2;				// Account for 1-indexing with the -1
     }
 
     if (totalColorGroups <= 0)

@@ -195,8 +195,61 @@ bool Karyogram::getCentromereForOriginalStrand(
 
     if (humanGenome)
     {
-        // SDR has 1-indexing for strand IDs, same as getHumanCentromere
-        const CentromerePosition* centromere = getHumanCentromere(oldStrandID);
+	// Modify strand ID based on how chromosome sizes are passed
+	int relativeStrandID = oldStrandID; // SPLIT_HOMOLOGS already matches getHumanCentromere's 1-indexed convention directly.
+
+        const std::vector<double>& sizes = masterHeader.intactChromosomeSizes;
+        const int chromosomeCount = sizes.empty() ? 0 : static_cast<int>(sizes[0]);
+
+	if (chromosomeCount >= 2)
+        {
+	    const ChromosomeLayout layout = determineChromosomeLayout(sizes);
+            const bool hasHomologs = layout != ChromosomeLayout::NON_HOMOLOGOUS;
+            const int homologousPairs = hasHomologs ? (chromosomeCount - 2) / 2 : 0;
+            const int yStrandID = chromosomeCount - 1;
+            const int xStrandID = chromosomeCount;
+
+            if (layout == ChromosomeLayout::ADJACENT_HOMOLOGS)
+            {
+                if (oldStrandID == yStrandID)
+                {
+                    relativeStrandID = 2 * homologousPairs + 1;
+                }
+                else if (oldStrandID == xStrandID)
+                {
+                    relativeStrandID = 2 * homologousPairs + 2;
+                }
+		else if (homologousPairs > 0)
+                {
+                    // Adjacent pairs: strand 2i+1 is chromosome i+1's first
+                    // copy, strand 2i+2 is its second copy - both map to
+                    // the same i via integer division, since (2i+1-1)/2=i
+                    // and (2i+2-1)/2=i as well.
+                    const int i = (oldStrandID - 1) / 2;
+                    const bool isSecondCopy = (oldStrandID % 2 == 0);
+
+                    relativeStrandID = isSecondCopy ? (i + 1 + homologousPairs) : (i + 1);
+                }
+            }
+	    else if (layout == ChromosomeLayout::NON_HOMOLOGOUS)
+            {
+                // No homolog duplication at all - autosomes (1..drawableGroups)
+                // already match getHumanCentromere's convention directly, but
+                // Y and X sit wherever the file's total count puts them
+                // (e.g. 23/24 for a 24-strand file), NOT at the table's
+                // fixed 45/46 - those two need explicit remapping.
+                if (oldStrandID == yStrandID)
+                {
+                    relativeStrandID = 45;
+                }
+                else if (oldStrandID == xStrandID)
+                {
+                    relativeStrandID = 46;
+                }
+            }
+        }
+
+	const CentromerePosition* centromere = getHumanCentromere(relativeStrandID);
 
         if (centromere == nullptr)
         {
@@ -207,6 +260,7 @@ bool Karyogram::getCentromereForOriginalStrand(
         centromereEndBP = static_cast<double>(centromere->end);
 
         return true;
+
     }
     else
     {
