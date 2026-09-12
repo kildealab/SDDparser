@@ -173,7 +173,7 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 
 0; 68; 13/121.3/73.2/0, 9/20.7/149.4/1; 1;
 
-0; 69; 13/0/73.2/1, 9/0/20.7/0; 1;
+0; 69; 13/0/73.2/1, 9/20.7/0/0; 1;
 
 -- Central fragments swap:
 
