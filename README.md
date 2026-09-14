@@ -121,7 +121,7 @@ clarity.
 and deletion-insertions, chromoplexy and chromothripsis. 
 
 <p align = "center">
-<img src="examples/exampleSDR_cell0_karyogram_human.png" alt="Different mutation representations from irradiated DNA"><br>
+<img src="examples/exampleSDR_with_dicentrics_cell0_karyogram_human.png" alt="Different mutation representations from irradiated DNA"><br>
 <em> Depicting common DNA structural variations that arise from ionizing radiation.</em>
 </p>
 
@@ -138,54 +138,50 @@ APPENDIX:
 Example SDR file mutated data entries for each type, the exact same as exampleSDR.txt, with additiona comments:
 ** NOTE: In reality, the order of the SDR data entries do not matter, but they are logically ordered in the exampleSDR.txt file for clarity**
 
+-- Multiple Deletions per chromosome:
 
------------------- Multiple deletion per chromosome ---------------------
-
-0; 47; 5/0/55.0/1, 5/88.0/137.4/0, 5/181.2/192.2/0; 1;
+0; 47; 5/88.0/137.4/0, 5/181.2/192.2/0; 1;
 
 0; 48; 5/137.4/181.2/0; 1;
 
-0; 49; 5/55.0/88.0/0; 1;
+0; 49; 5/0/88.0/1; 1;
 
 
------------- Single and multiple inversions per chromosome --------------
-
-0; 50; 1/0/90.203953/0, 1/110.236709/90.203953/0, 1/110.236709/263.2/1; 1;
+-- Multiple balanced inversions per chromosome, with inverted centromere-bearing fragment:
 
 0; 51; 3/0/100.8/1, 3/120.5/100.8/0, 3/120.5/150.9/0, 3/173.2/150.9/0, 3/173.2/212.4/0; 1;
 
 
------------------ Balanced translocation examples -----------------------
+-- Different balanced translocation examples:
 
--- Bottoms Swapped:
+- Central fragments translocate leading to dicentric and acentric strands:
 
-0; 52; 2/0/223.579143/1, 1/127.793521/263.2/0; 1;
+0; 52; 2/0/80/0, 1/130/190/0, 2/170/258.1/0; 1;
 
-0; 53; 1/0/127.793521/1, 2/223.579143/258.1/0; 1;
+0; 53; 1/0/130/1, 2/80/170/1, 1/190/263.2/0; 1;
 
--- Tops swapped:
+- Simple translocation where the top of one chromosome swaps with the bottom of another:
 
-0; 66; 30/0/60.0/1, 26/75.3/203.4/0; 1;
+0; 66; 26/203.4/75.3/0, 30/60/155.5/0; 1;
 
-0; 67; 26/0/75.3/1, 30/60.0/155.5/0; 1;
+0; 67; 26/0/75.3/1, 30/60/0/1; 1;
 
--- Bottom swaps with top:
+- The same as the previous example: 
 
 0; 68; 13/121.3/73.2/0, 9/20.7/149.4/1; 1;
 
 0; 69; 13/0/73.2/1, 9/20.7/0/0; 1;
 
--- Central fragments swap:
+- Balanced translocation between central fragments not leading to dicentrics
 
 0; 70; 12/0/70.0/1, 16/60.0/78.0/0, 12/100.0/140.8/0; 1;
 
 0; 71; 16/0/60.0/1, 12/70.0/100.0/0, 16/78.0/94.7/0; 1;
 
 
+-- ecDNA mutations:
 
----------------------------- ecDNA examples -----------------------------
-
--- Multiple deletions forming multiple ecDNA fragments:
+- Multiple ecDNA per chromosome strand
 
 0; 54; 36/0/55.0/1, 36/70.0/88.0/0, 36/100.0/113.0/0; 1;
 
@@ -193,37 +189,47 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 
 0; 56; 36/88.0/100.0/0; 0;
 
--- Multiple deletions recombining to form one ecDNA fragment:
+- Multiple deletions recombining into one larger ecDNA:
 
 0; 57; 15/0/30.0/1, 15/50.0/70.0/0, 15/90.0/106.9/0; 1;
 
 0; 58; 15/30.0/50.0/0, 15/70.0/90.0/0; 0;
 
 
--------------------- Deletion-Inversion ---------------------------------
+-- Deletion-Inversion, deleted segment has centromere 
 
-0; 59; 8/0/44.0/0, 8/112.5/85.0/1, 8/112.5/155.5/0; 1;
+0; 59; 8/0/44.0/0, 8/112.5/85.0/0, 8/112.5/155.5/0; 1;
 
 0; 60; 8/44.0/85.0/1; 1;
 
 
------------------------ Deletion-Translocation --------------------------
+-- Deletion-translocation examples:
 
-0; 61; 10/0/65.0/1, 11/79.0/142.9/0; 1;
+- Translocation of central segments, leading to dicentric and acentric strands:
 
-0; 62; 11/0/79.0/1, 10/100.0/144.0/0; 1;
+0; 61; 10/0/20/0, 11/79.0/120/0, 10/100/144/0; 1;
+
+0; 62; 11/0/79.0/1, 10/20/65/1, 11/120/142.9/0; 1;
 
 0; 63; 10/65.0/100.0/0; 1;
 
+- Translocation of terminal segments, leading to dicentric and acentric strands:
 
------------------------ Deletion-Insertion ------------------------------
+0; 88; 33/0/79/1, 32/65/0/1; 1;
 
-0; 64; 24/0/121.265341/1, 24/188.892635/258.1/0; 1;
+0; 89; 33/142.9/79/0, 32/100/144/0; 1;
 
-0; 65; 23/0/130.124698/1, 24/121.265341/188.892635/0, 23/130.124698/263.2/0; 1;
+9; 90; 32/65/100/0; 1;
 
 
--------------------------- Chromoplexy ----------------------------------
+-- Deletion-Insertion mutation, leading to dicentric and acentric chromosomes:
+
+0; 64; 23/0/130/1, 24/50/150/1, 23/130/263.2/0; 1;
+
+0; 65; 24/0/50/0, 24/150/258.1/0; 1;
+
+
+-- Simple chromoplexy case:
 
 0; 72; 41/0/20.0/0, 39/15/83.5/1; 1;
 
@@ -232,9 +238,9 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 0; 74; 40/81.0/70.0/0, 41/20.0/68.0/1; 1;
 
 
--------------------------- Chromothripsis -------------------------------
+-- Chromothripsis examples:
 
--- Single-chromosome chromothripsis:
+- Chromothripsis involving only one chromosome:
 
 0; 75; 6/0/15/0, 6/25/15/0, 6/30/35/0, 6/50/62/1, 6/70/62/0, 6/70/75/0, 6/85/80/0, 6/98/105/0, 6/126/105/0, 6/135/140/0, 6/155/168/0, 6/174/181.8/0; 1;
 
@@ -252,7 +258,7 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 
 0; 82; 6/168/174/0; 1;
 
--- Two-chromosome chromothripsis
+- Chromothripsis involving two chromosomes:
 
 0; 83; 25/0/35/0, 29/145/155/0, 25/50/65/0, 25/80/65/0, 25/85/95/1, 29/32/16/0, 25/130/200/0, 29/16/0/0; 1;
 
