@@ -1109,10 +1109,25 @@ void Karyogram::drawSDDsummary(								// Box at top of karyogram to summarize t
     // TOP ROW
     // ------------------------------------------
 
+    // Cell ID
+    std::string cellIDlabel = exposures.empty() ? "N/A" : std::to_string(exposures[0].exposureID - 1);		// 0-index cell ID by subtracting 1 from the number of exposures.
+
+    cairo_move_to(
+	cr,
+	summaryX + 15.0,
+	firstRowY
+    );
+
+    cairo_show_text(
+	cr,
+	("Cell ID: " + cellIDlabel).c_str()
+    );
+
+
     // Incident Particle(s)
     cairo_move_to(
         cr,
-        summaryX + 15.0,
+        summaryX + 470.0,
         firstRowY
     );
 

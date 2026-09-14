@@ -91,7 +91,7 @@ The data block is summarized under the subsection 'Chromosome Damages', where th
 
 WHAT IS PLOTTED IN THE SDD FILE KARYOGRAM:
 <p align = "center">
-<img src="karyogram_damages_vs_dose.gif" alt="Secondary electrons from 6 MeV photons at different doses"><br>
+<img src="karyogram_evolution_SDD.gif" alt="Secondary electrons from 6 MeV photons at different doses"><br>
 <em> Increasing DNA damages as a function of dose resulting from secondary electrons of a primary 6 MeV photon beam.</em>
 </p>
 

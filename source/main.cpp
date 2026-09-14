@@ -265,10 +265,10 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
     	    std::vector<Exposure> singleExposure;
     	    singleExposure.push_back(exposure);
 
-    	    // Create a separate output filename for this cell.
+    	    // Create a separate output filename for this cell (0-indexing requires - 1 to exposure ID which is 1-indexed).
     	    std::filesystem::path karyogramPath = inputPath.parent_path() /
             (inputPath.stem().string() + "_cell" + 
-	    std::to_string(exposure.exposureID) + "_karyogram_" + 
+	    std::to_string(exposure.exposureID - 1) + "_karyogram_" + 
 	    genomeType + ".png");
 
     	    if (!karyogram.generateKaryogram(				// Check if generateKaryogram correctly runs
