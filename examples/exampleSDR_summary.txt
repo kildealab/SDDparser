@@ -4,7 +4,7 @@ SDR MASTER HEADER SUMMARY
 
 SDR Version: SDRv2.1
 Author: Samy Boutros
-Associated SDD File: None - Example for LongDels BalInvs BalTrans ecDNA DelInvs MultiDels MultiecDNA DelTrans DelIns Chromoplexy Chromothripsis
+Associated SDD File: None - Example for all mutation types and dicentric chromosome support
 
 Declared Chromosome Count: 46
 Number Of Chromosome Sizes Listed: 46
@@ -19,11 +19,11 @@ Total Misrepair Count: N/A
 
 Mutation Summary:
   Long Deletions: 2
-  Balanced Inversions: 3
+  Balanced Inversions: 2
   Balanced Translocations: 4
   Extrachromosomal DNA (ecDNA): 3
   Deletion-Inversions: 1
-  Deletion-Translocations: 1
+  Deletion-Translocations: 2
   Deletion-Insertions: 1
   Chromoplexy: 1
   Chromothripsis: 2

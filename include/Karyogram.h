@@ -132,8 +132,8 @@ private:
     std::vector<const SDRdataRecord*> filterBaselineIfMutated(const std::vector<const SDRdataRecord*>& records, int numOriginalStrands);
 
     // Functions to alter the drawing of certain mutations depending on the specific mutation involved
-    bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);			// For long deletions
-    bool isECDNAshape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);				// For ecDNA mutations
+    bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);			// For long deletions
+    bool isECDNAshape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);				// For ecDNA mutations
     bool isDeletionInversionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);		// For deletion-inversion mutations
     bool isDeletionTranslocationDonorShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);	// For deletion-translocation mutations
     bool isLoneGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);				// For deletion-insertion mutations
@@ -141,7 +141,7 @@ private:
     // Helper functions to stack mutated chromosome segments of different colors on top of the original segments and remove the correct amount of 
     // chromosome if a deletion occurs.
     SDRdataRecord concatenateRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);
-    std::vector<const SDRdataRecord*> clusterRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, std::vector<SDRdataRecord>& mergedStorage);
+    std::vector<const SDRdataRecord*> clusterRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, std::vector<SDRdataRecord>& mergedStorage, const SDRmasterHeader& masterHeader);
 
     // If intact chromosome strands are not listed in SDR data record, synthesize them using the intact chromosome sizes.
     std::vector<const SDRdataRecord*> synthesizeIntactRecordIfMissing(int oldStrandID, int cellID, const SDRmasterHeader& masterHeader, std::vector<SDRdataRecord>& intactRecordStorage);

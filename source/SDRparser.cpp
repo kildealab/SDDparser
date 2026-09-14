@@ -258,8 +258,13 @@ bool SDRparser::parseSubHeader(
 	}
 	else if (field == "mutated chromosome sizes")
 	{
+	    if (value.empty())
+	    {
+		// Not measured, leave mutatedChromosomeSizes as its
+        	// default-constructed empty map.
+	    }
 
-	    if (!parseMutatedChromosomeSizes(value, subHeader.mutatedChromosomeSizes))	// Use helper function parseMutatedChromosomeSizes to see if the entries are formatted correctly.
+	    else if (!parseMutatedChromosomeSizes(value, subHeader.mutatedChromosomeSizes))		// Use helper function parseMutatedChromosomeSizes to see if the entries are formatted correctly.
 	    {
 		return false;
 	    }
@@ -267,15 +272,22 @@ bool SDRparser::parseSubHeader(
 	}
 	else if (field == "intact strands id")
 	{
-
-	    try
+	    if (value.empty())
 	    {
-	    	subHeader.intactStrandIDs = parseIntList(split(value, ','));		// try/catch for parseIntList in case non-integer is encountered in vector.
+		// Not measured - leave intactStrandIDs as its
+        	// default-constructed empty vector.
 	    }
-	    catch (const std::exception& error)
- 	    {
-		std::cerr << "ERROR: Invalid 'Intact Strands ID' value in SDR subheader: " << value << " (" << error.what() << ")\n";
-		return false;
+	    else
+	    {
+	    	try
+	    	{
+	    	    subHeader.intactStrandIDs = parseIntList(split(value, ','));		// try/catch for parseIntList in case non-integer is encountered in vector.
+	    	}
+	    	catch (const std::exception& error)
+ 	    	{
+		    std::cerr << "ERROR: Invalid 'Intact Strands ID' value in SDR subheader: " << value << " (" << error.what() << ")\n";
+		    return false;
+	    	}
 	    }
 
 	}
@@ -300,7 +312,6 @@ bool SDRparser::parseSubHeader(
 	}
 	else if (field == "total misrepair count")
 	{
-
 	    if (value.empty())
 	    {
 		subHeader.totalMisrepairCount = SDR_FIELD_NOT_MEASURED;			// Blank/absent field means not measured, not an error.
@@ -320,16 +331,23 @@ bool SDRparser::parseSubHeader(
 	}
 	else if (field == "medras-mc log")
 	{
-	    try										// Blank value already handled through split, no special error
+	    if (value.empty())
+    	    {
+        	// Not measured - leave medrasMClog as its
+        	// default-constructed empty vector.
+    	    }
+	    else
 	    {
-	    	subHeader.medrasMClog = parseIntList(split(value, ','));		// try/catch for parseIntList in case non-integer is encountered in vector
+		try										// Blank value already handled through split, no special error
+	    	{
+	            subHeader.medrasMClog = parseIntList(split(value, ','));		// try/catch for parseIntList in case non-integer is encountered in vector
+	    	}
+	    	catch (const std::exception& error)
+	    	{
+		    std::cerr << "ERROR: Invalid 'MEDRAS-MC Log' value in SDR subheader: " << value << " (" << error.what() << ")\n";
+		    return false;
+	    	}
 	    }
-	    catch (const std::exception& error)
-	    {
-		std::cerr << "ERROR: Invalid 'MEDRAS-MC Log' value in SDR subheader: " << value << " (" << error.what() << ")\n";
-		return false;
-	    }
-
 	}
 	else										// If unknown subheader key encountered, exit with error.
 	{
@@ -776,14 +794,14 @@ void SDRparser::writeCellDataSummary(
     // New-strand records numbered below this threshold are baseline restatements of an original chromosome, not rearrangement/mutated outcomes.
     const int numOriginalStrands = masterHeader.intactChromosomeSizes.empty() ? 0 : static_cast<int>(masterHeader.intactChromosomeSizes[0]);
 
-    const std::vector<SDRdeletionEvent> deletions = detectDeletions(subHeader, numOriginalStrands);
+    const std::vector<SDRdeletionEvent> deletions = detectDeletions(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRinversionEvent> inversions = detectInversions(subHeader, numOriginalStrands);
     const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands, masterHeader);
-    const std::vector<SDRecDNAevent> ecDNAs = detectECDNA(subHeader, numOriginalStrands);
+    const std::vector<SDRecDNAevent> ecDNAs = detectECDNA(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRdeletionInversionEvent> delInvs = detectDeletionInversions(subHeader, numOriginalStrands);
-    const std::vector<SDRdeletionTranslocationEvent> delTras = detectDeletionTranslocations(subHeader, numOriginalStrands);
+    const std::vector<SDRdeletionTranslocationEvent> delTras = detectDeletionTranslocations(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRdeletionInsertionEvent> delInsertions = detectDeletionInsertions(subHeader, numOriginalStrands);
-    const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands);
+    const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRchromothripsisEvent> chromothripsis = detectChromothripsis(subHeader, numOriginalStrands);
 
     output << "Mutation Summary:\n";

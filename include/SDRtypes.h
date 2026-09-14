@@ -147,7 +147,7 @@ struct SDRdeletionTranslocationEvent
     int oldStrandAid;		// Old strand ID for strand A involved in the translocation
     int oldStrandBid;		// Old strand ID for strand B involved in the translocation
     int deletedOldStrandID;   	// whichever of oldStrandA/oldStrandB has the gap, the
-    double cleanBreakPos;     	// breakpoint is on the OTHER strand, which split cleanly
+    std::vector<double> cleanBreakPositions;     	// // One or more breakpoints on the non-deleted strand
     double deletionStart;	// Location of where the deletion started in Mbp
     double deletionEnd;		// Location of where the deletion ended in Mbp
     int newStrandID1;         	// First translocation record ID
