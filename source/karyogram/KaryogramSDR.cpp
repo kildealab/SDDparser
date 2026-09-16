@@ -10,6 +10,12 @@
 #include "SDRutilities.h"
 
 
+
+
+
+namespace sddparser
+{
+
 bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the rearranged chromosome segments on the karyogram
     const SDRmasterHeader& masterHeader,				// Access SDR master header for intact chromosome sizes
     const SDRsubHeader& subHeader, 					// Access SDR subheader for cell-by-cell damage/misrepair data
@@ -24,6 +30,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         return false;
     }
 
+    // Chromosome sizes must be passed in the masterHeader, otherwise Karyogram cannot be drawn and mutations cannot be checked.
     const std::vector<double>& sizes = masterHeader.intactChromosomeSizes;
     if (sizes.empty())
     {
@@ -38,8 +45,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     std::vector<SDRdataRecord> mergedRecordStorage;
     mergedRecordStorage.reserve(subHeader.dataRecords.size()); // Safe upper bound.
 
-    const int chromosomeCountForOverrides = static_cast<int>(sizes[0]);
-    const std::map<int, int> dicentricAcentricOverrides = findDicentricAcentricHomeOverrides(subHeader, chromosomeCountForOverrides, masterHeader);
+    // Store maps of chromosome IDs for dicentric and acentric chromosomes to be drawn in their corresponding remaining home slots.
+    const std::map<int, int> dicentricAcentricOverrides = findDicentricAcentricHomeOverrides(subHeader, static_cast<int>(sizes[0]), masterHeader);
 
 
     for (const SDRdataRecord& record : subHeader.dataRecords)
@@ -50,10 +57,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         }
         else
         {
-	    // A dicentric/acentric pair needs an explicit override, since
-            // the acentric side's correct home strand depends on the
-            // PAIRED dicentric record's second fragment (information
-            // determineHomeStrandID() can't see on its own).
+	    // A dicentric/acentric pair needs an explicit override, since the acentric side's correct home strand depends on the
+            // PAIRED dicentric record's second fragment (information determineHomeStrandID() can't see on its own).
             const auto overrideIt = dicentricAcentricOverrides.find(record.newStrandID);
             const int homeStrandID = (overrideIt != dicentricAcentricOverrides.end()) ? overrideIt->second : determineHomeStrandID(record);
 
@@ -73,8 +78,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     const int drawableGroups = hasHomologs ? homologousPairs : chromosomeCount - 2;	// Determines the number of chromosome groups to draw in the karyogram, the X and Y chromosomes are excluded and will be drawn at the end.
 
 
-    // Storage for synthesized baseline records, for original strands
-    // that have NO data records at all in the file.
+    // Storage for synthesized baseline records, for original strand that have NO data records at all in the file.
     std::vector<SDRdataRecord> intactRecordStorage;
     intactRecordStorage.reserve(static_cast<std::size_t>(chromosomeCount));
 
@@ -199,8 +203,9 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             std::vector<const SDRdataRecord*> leftRecords;			// Left homolog
             std::vector<const SDRdataRecord*> rightRecords;			// Right homolog
 
+	    // Cluster records for drawing only on mutated records, such that mutations are grouped according to their original strand location
 	    if (firstIt != recordsByOriginalStrand.end())
-            {
+            {   // First homolog
                 leftRecords = clusterRecordsForDrawing(filterBaselineIfMutated(firstIt->second, chromosomeCount), firstOldStrandID, mergedRecordStorage, masterHeader);  // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
             }
             else
@@ -209,7 +214,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             }
 
             if (secondIt != recordsByOriginalStrand.end())
-            {
+            {   // Second homolog
                 rightRecords = clusterRecordsForDrawing(filterBaselineIfMutated(secondIt->second, chromosomeCount), secondOldStrandID, mergedRecordStorage, masterHeader);       // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
             }
             else
@@ -221,13 +226,14 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 	    // Adjust the gap of the left and right homologs and their corresponding deletions/ecDNA depending on the actual width drawStackedMutations() will use.
             double leftColumn2Width = chromosomeWidth;
             double rightColumn2Width = chromosomeWidth;
+	    // Adjust slot width to account for drawing of deleted segments and ecDNA beside the original chromosomes
             const double leftStackWidth = computeSlotWidth(leftRecords, firstOldStrandID, chromosomeWidth, maxLengthMbp, maxRenderHeight, masterHeader, leftColumn2Width);
             const double rightStackWidth = computeSlotWidth(rightRecords, secondOldStrandID, chromosomeWidth, maxLengthMbp, maxRenderHeight, masterHeader, rightColumn2Width);
-
             const double leftSlotCenterX = groupCenterX - leftStackWidth / 2.0 - homologGap / 2.0;
             const double rightSlotCenterX = groupCenterX + rightStackWidth / 2.0 + homologGap / 2.0;
 
-	    // After checking for the presence of long deletions drawn beside the original chromosomes, draw them for the left and right homologs.
+	    // After checking for the presence of long deletions and ecDNA drawn beside the original chromosomes, draw them for the left and right homologs.
+	    // And draw other mutations stacked on top of the original intact chromosome
             if (!leftRecords.empty())
             {
                 drawStackedMutations(cr, leftRecords, leftSlotCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, firstOldStrandID);
@@ -242,8 +248,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             if (!leftRecords.empty() || !rightRecords.empty())
             {
                 labelHeight = std::max(
-                    computeMaxBarHeight(leftRecords, maxLengthMbp, maxRenderHeight),
-                    computeMaxBarHeight(rightRecords, maxLengthMbp, maxRenderHeight)
+                    computeMaxBarHeight(leftRecords, maxLengthMbp, maxRenderHeight, firstOldStrandID, masterHeader),
+                    computeMaxBarHeight(rightRecords, maxLengthMbp, maxRenderHeight, secondOldStrandID, masterHeader)
                 );
             }
 
@@ -262,18 +268,19 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
                 if (!filtered.empty())		// If data present, draw the mutation and label it
                 {
                     drawStackedMutations(cr, filtered, groupCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, firstOldStrandID);
-                    labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight);
-
+                    labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight, firstOldStrandID, masterHeader);
                 }
             }
 	    else
             {
+		// If intact chromosome data entries are absent in the SDR file, use intact chromosome sizes to synthesize them regardless, but that means
+		// intact chromosome sizes must be passed by the user
                 const std::vector<const SDRdataRecord*> filtered = synthesizeIntactRecordIfMissing(firstOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
 
                 if (!filtered.empty())
                 {
                     drawStackedMutations(cr, filtered, groupCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, firstOldStrandID);
-                    labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight);
+                    labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight, firstOldStrandID, masterHeader);
                 }
             }
         }
@@ -337,7 +344,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             if (!yRecords.empty())
             {
                 drawStackedMutations(cr, yRecords, yCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, yOldStrandID);
-                yLabelHeight = computeMaxBarHeight(yRecords, maxLengthMbp, maxRenderHeight);
+                yLabelHeight = computeMaxBarHeight(yRecords, maxLengthMbp, maxRenderHeight, yOldStrandID, masterHeader);
             }
 
             cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
@@ -359,7 +366,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             if (!xRecords.empty())
             {
                 drawStackedMutations(cr, xRecords, xCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, xOldStrandID);
-                xLabelHeight = computeMaxBarHeight(xRecords, maxLengthMbp, maxRenderHeight);
+                xLabelHeight = computeMaxBarHeight(xRecords, maxLengthMbp, maxRenderHeight, xOldStrandID, masterHeader);
             }
 
             cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
@@ -374,7 +381,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     // ---------------------------------------------
     // Draw legend at bottom
     // ---------------------------------------------
-    const double legendY = imgHeight - legendBottomMargin - legendHeight;     // Accounts for border padding Y height
+    const double legendY = imgHeight - legendBottomMargin - legendHeight;
     drawSDRlegend(cr, legendY);
 
     cairo_surface_write_to_png(surface, outputFilename.c_str());
@@ -540,6 +547,7 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     // --------------------------------------
     // Segment boundaries and reversed segment markers
     // --------------------------------------
+    // Draw white segments on chromosomes where deletions occurred instead of truncating the chromosome, for clarity.
     const auto isWhiteColor = [](const RGB& color)
     {
         const double tolerance = 0.001;
@@ -549,11 +557,12 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     cairo_set_line_width(cr, 1.0);
 
+    // Skip boundary lines touching a white (deletion gap) segment, a thin gap with black lines on both edges reads as solid black instead of white.
     for (std::size_t i = 0; i + 1 < segments.size(); i++)
     {
         if (isWhiteColor(segments[i].color) || isWhiteColor(segments[i + 1].color))
         {
-            continue; // Skip boundary lines touching a white (deletion gap) segment - a thin gap with black lines on both edges reads as solid black instead of white.
+            continue;
         }
 
         const double boundaryY = y + height * segments[i].endFraction;
@@ -569,7 +578,7 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
 
     for (const PaintedSegment& segment : segments)
     {
-        if (!segment.isReversed)				// For non-balanced inversion mutations
+        if (!segment.isReversed)						// For non-balanced inversion mutations
         {
             continue;
         }
@@ -656,15 +665,13 @@ void Karyogram::drawStackedMutations(
     }
 
 
-    // A long deletion's pair of records gets special treatment: the
-    // remaining piece is drawn at the ORIGINAL chromosome's full
-    // length with a white gap marking the deletion, and the excised
-    // piece gets flat (non-rounded) caps on whichever end isn't a
+    // A long deletion's pair of records gets special treatment: the remaining piece is drawn at the ORIGINAL chromosome's full
+    // length with a white gap marking the deletion, and the excised piece gets flat (non-rounded) caps on whichever end isn't a
     // real chromosome edge.
     const bool isDeletion = isDeletionShape(records, homeOldStrandID, masterHeader);
     const bool isECDNA = isECDNAshape(records, homeOldStrandID, masterHeader);
     const bool isDeletionInversion = isDeletionInversionShape(records, homeOldStrandID);
-    const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);
+    const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);			// For deletion-insertion mutation shape
 
 
     const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
@@ -1684,12 +1691,51 @@ double Karyogram::computeSDRbarHeight(
 double Karyogram::computeMaxBarHeight(
     const std::vector<const SDRdataRecord*>& records, 				// Access the fragment sizes
     double maxLengthMbp, 							// Max length in Mbp of the chromosomes for normalization
-    double maxRenderHeight)							// Max height of the entire karyogram for scaling
+    double maxRenderHeight,							// Max height of the entire karyogram for scaling
+    int homeOldStrandID,							// Adjust label height to the home slot it was designated for
+    const SDRmasterHeader& masterHeader)					// Access intact chromosome sizes
 {
+    if (records.empty())
+    {
+	return 0.0;
+    }
 
-    double tallest = 0.0;							// Find tallest portion of a drawable group, including intact and aberrant strands
 
-    for (const SDRdataRecord* record : records)					// Search all data records
+    // These are the same special shapes that can cause the
+    // remaining chromosome to be drawn at its ORIGINAL height
+    // rather than its reduced fragment length.
+    const bool isDeletion = isDeletionShape(records, homeOldStrandID, masterHeader);
+
+    const bool isECDNA = isECDNAshape(records, homeOldStrandID, masterHeader);
+
+    const bool isDeletionInversion = isDeletionInversionShape(records, homeOldStrandID);
+
+    const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);
+
+
+    // For deletion-like chromosome drawings, the remaining
+    // chromosome is drawn using the full original chromosome
+    // length, with the deleted material represented as a white gap.
+    if (isDeletion || isECDNA || isDeletionInversion || isLoneGap)
+    {
+        const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
+
+        if (sizeIndex < masterHeader.intactChromosomeSizes.size())
+        {
+            const double originalSizeMbp = masterHeader.intactChromosomeSizes[sizeIndex];
+
+            if (originalSizeMbp > 0.0)
+            {
+                return computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
+            }
+        }
+    }
+
+    
+    // Normal case: determine the tallest actual record.
+    double tallest = 0.0;
+
+    for (const SDRdataRecord* record : records)
     {
         double lengthMbp = 0.0;
 
@@ -1698,7 +1744,7 @@ double Karyogram::computeMaxBarHeight(
             lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
         }
 
-        const double height = computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight);
+        const double height =computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight);
 
         if (height > tallest)
         {
@@ -2066,7 +2112,7 @@ bool Karyogram::isDeletionTranslocationDonorShape(const std::vector<const SDRdat
 // fragments and at least one real gap between them. The material
 // that left this strand shows up as a foreign fragment inside a
 // completely different slot's record (the recipient), so there's no
-// matching excised record here to pair with - this shape has to be
+// matching excised record here to pair with, this shape has to be
 // recognized from a single record alone.
 bool Karyogram::isLoneGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID)
 {
@@ -2996,6 +3042,6 @@ void Karyogram::drawSDRlegend(cairo_t* cr, double legendY)
     cairo_move_to(cr, ecDNAX + 12.0, textBaseline);
     cairo_show_text(cr, "ecDNA");
 
-
-
 }
+
+} // namespace sddparser

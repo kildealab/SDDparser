@@ -12,6 +12,8 @@
 
 #include "SDDtypes.h"
 
+namespace sddparser
+{
 
 class SDDparser
 {
@@ -44,5 +46,7 @@ private:
     std::map<int, ChromosomeDamageSummary> summarizeChromosomeDamage(const Exposure& exposure) const; // Function that maps numBaseDamages, numSingleStrandBreaks, and numDoubleStranBreaks to each chromosome in a given exposure. 
 
 };
+
+} // namespace sddparser
 
 #endif

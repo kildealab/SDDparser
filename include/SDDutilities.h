@@ -11,6 +11,8 @@
 #include <cmath>
 
 
+namespace sddparser
+{
 // --------------------------------------------------------------------- //
 // ------ HELPER FUNCTIONS TO INTERPRET SDD HEADER FIELD ENTRIES ------- //
 // --------------------------------------------------------------------- //
@@ -519,5 +521,6 @@ inline std::string dataEntriesMeaning(const std::vector<int>& dataEntriesVec)
     return result;
 }
 
+} // namespace sddparser
 
 #endif

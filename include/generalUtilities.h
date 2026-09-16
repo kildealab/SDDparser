@@ -8,6 +8,13 @@
 #include <algorithm>
 #include <cctype>
 
+
+
+
+
+namespace sddparser
+{
+
 // -------------------------------------------------- //
 // ----------- GENERIC HELPER FUNCTIONS ------------- //
 // -------------------------------------------------- //
@@ -100,6 +107,6 @@ inline std::vector<int> parseIntList(const std::vector<std::string>& values)
     return output;
 }
 
-
+} // namespace sddparser
 
 #endif

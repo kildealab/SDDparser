@@ -7,6 +7,9 @@
 
 #include "SDRtypes.h"
 
+namespace sddparser
+{
+
 class SDRparser
 {
 public:
@@ -51,4 +54,5 @@ private:
 
 };
 
+} //namespace sddparser
 #endif

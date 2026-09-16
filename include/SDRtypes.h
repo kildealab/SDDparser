@@ -5,15 +5,19 @@
 #include <vector>
 #include <map>
 
+namespace sddparser
+{
+
 // Represents one fragment used to construct a new SDR strand. - Field 3
 struct SDRfragment
 {
-// Field 3: oldStrandID/oldStrandStart/oldStrandEnd/hasCentromere
+    // Field 3: oldStrandID/oldStrandStart/oldStrandEnd/hasCentromere
     int oldStrandID;
     double oldStartPosition;
     double oldEndPosition;
     bool hasCentromere;
 };
+
 
 // Represents one strand in the SDR data section.
 struct SDRdataRecord
@@ -21,11 +25,9 @@ struct SDRdataRecord
     int cellID;						// SDR data field 1
     int newStrandID;					// SDR data field 2
     std::vector<SDRfragment> fragments;			// SDR data field 3, can contain multiple subfields separated by ',' and each subfield contains 4 entries separated by '/'.
-
-    // false = ring/circular
-    // true  = linear
     bool linear;
 };
+
 
 // Stores the SDR master header entries
 struct SDRmasterHeader
@@ -35,6 +37,7 @@ struct SDRmasterHeader
     std::string associatedSDDFile;
     std::vector<double> intactChromosomeSizes;		// First value in the SDR file is the number of chromosomes, followed by the chromosome sizes.
 };
+
 
 // Stores the information contained in one SDR cell subheader.
 struct SDRsubHeader
@@ -55,15 +58,16 @@ struct SDRsubHeader
 };
 
 
+
 // Use for checking if total DSB count, total Misrepair count, or MEDRAS-MC log are blank, if so pass warning, not error.
 constexpr int SDR_FIELD_NOT_MEASURED = -1;
+
 
 
 
 // ------------------------------------------------ //
 // Mutation types for summarizing in text file
 // ------------------------------------------------ //
-
 
 // Represents a detected deletion event within a single cell
 struct SDRdeletionEvent
@@ -103,23 +107,23 @@ struct SDRtranslocationEvent
 };
 
 
-// Represents a detected extrachromosomal DNA fragment -
+// Represents a detected extrachromosomal DNA fragment.
 // It has the same fragment signature as long deletions, but
 // the isLinear data field 4 is 0 (for circular fragments) rather than
 // 1 for linear fragments. Can be made up of multiple fragments from the
 // same original strand
 struct SDRecDNAevent
 {
-    int oldStrandID;		// Which chromosome/strand ID the fragments originate from
-    std::vector<std::pair<double, double>> ecDNAsegments; // One or more (start, end) segments making up this ecDNA molecule
-    int remainingStrandID;	// New strand ID of the strand that lost the excised fragment
-    int excisedStrandID;	// New strand ID of the excised strand
+    int oldStrandID;						// Which chromosome/strand ID the fragments originate from
+    std::vector<std::pair<double, double>> ecDNAsegments; 	// One or more (start, end) segments making up this ecDNA molecule
+    int remainingStrandID;					// New strand ID of the strand that lost the excised fragment
+    int excisedStrandID;					// New strand ID of the excised strand
 };
 
 
 
 
-// Represents a combined detected deletion and inversion event -
+// Represents a combined detected deletion-inversion event.
 // One new strand contains three fragments with an inversion and a
 // missing section. Another new strand contains one fragment that is
 // the missing section from the previous new strand.
@@ -138,21 +142,21 @@ struct SDRdeletionInversionEvent
 
 
 
-// Represents a combined detected deletion and translocation event - 
+// Represents a combined detected deletion-translocation event.
 // Two strands contain two translocated fragments, and another strand
 // contains a deleted segment of one of the original strand IDs, for 
 // a total of three new data records per delTra mutation
 struct SDRdeletionTranslocationEvent
 {
-    int oldStrandAid;		// Old strand ID for strand A involved in the translocation
-    int oldStrandBid;		// Old strand ID for strand B involved in the translocation
-    int deletedOldStrandID;   	// whichever of oldStrandA/oldStrandB has the gap, the
-    std::vector<double> cleanBreakPositions;     	// // One or more breakpoints on the non-deleted strand
-    double deletionStart;	// Location of where the deletion started in Mbp
-    double deletionEnd;		// Location of where the deletion ended in Mbp
-    int newStrandID1;         	// First translocation record ID
-    int newStrandID2;         	// Second translocation record ID
-    int excisedStrandID;      	// The excised strand's ID
+    int oldStrandAid;				// Old strand ID for strand A involved in the translocation
+    int oldStrandBid;				// Old strand ID for strand B involved in the translocation
+    int deletedOldStrandID;   			// whichever of oldStrandA/oldStrandB has the gap, the
+    std::vector<double> cleanBreakPositions;	// One or more breakpoints on the non-deleted strand
+    double deletionStart;			// Location of where the deletion started in Mbp
+    double deletionEnd;				// Location of where the deletion ended in Mbp
+    int newStrandID1;         			// First translocation record ID
+    int newStrandID2;         			// Second translocation record ID
+    int excisedStrandID;      			// The excised strand's ID
 
 };
 
@@ -208,7 +212,7 @@ struct SDRchromothripsisEvent
     int totalFragmentCount;                     // Total data-field-3 fragments summed across all contributing records
 };
 
-
+} // namespace sddparser
 
 
 

@@ -6,6 +6,9 @@
 
 
 
+namespace sddparser
+{
+
 // Function to generate colors for each chromosome by sampling the color hues
 // equally around the entire color wheel for each chromosome listed, used to 
 // generate SDD and SDR karyograms
@@ -139,3 +142,5 @@ RGB Karyogram::getColorForOriginalStrand(
 
     return generateChromosomeColor(group, totalColorGroups);
 }
+
+} // namespace sddparser

@@ -1,13 +1,36 @@
 # SDDparser
-Writing a C++ package capable of parsing the Standard for DNA Damage (SDD) file header and data fields,
-and the Standard for DNA Repair (SDR) header and data fields, plotting the associated damages and mutations on a karyogram. 
+Writing a C++ toolkit capable of parsing the Standard for DNA Damage (SDD) file header and data fields,
+and the Standard for DNA Repair (SDR) header and data fields, drawing the cairo-based karyogram visualizations
+of the associated damages and mutations. 
 
 This package is now capable of summarizing the SDD header fields and the data fields into a single summary file. It can also optionally plot a 
 karyogram of the double-strand break and single-strand break locations onto the chromosomes the user passes in the SDD file header. 
 This package can also accomodate the SDR file format in the same way as the SDD file, by summarizing the mutations specified
 in the SDR file for each cell, as well as optionally plotting the karyogram of the mutations specified in the SDR file.
 
-HOW TO USE:
+Available both as a **command-line tool** and as a **linkable C++ library**
+you can embed in your own project.
+
+## Dependencies
+
+- A C++17 compiler (`g++` or equivalent)
+- [Cairo](https://www.cairographics.org/) (`libcairo`) — required for karyogram drawing
+
+On Debian/Ubuntu: `sudo apt install libcairo2-dev`
+On macOS (Homebrew): `brew install cairo`
+
+## Building
+
+```
+make        # builds the SDDparser CLI executable (and, as part of that, the library)
+make lib    # builds only the static library, libSDDparser.a
+make clean  # removes build artifacts
+```
+
+---
+
+
+## HOW TO USE AS A COMMAND-LINE EXECUTABLE PROGRAM:
 1. To compile the SDDparser program, navigate to the directory where the Makefile is stored: 'cd /path/to/SDDparserDirectory/'.
 
 2. Ensure g++ is installed on your computer by checking "g++ --version". The terminal should return the version number and license.
@@ -16,15 +39,49 @@ HOW TO USE:
 
 3. Simply type 'make' into your terminal to compile the program 'SDDparser'. No warnings or errors should appear. 
 
-4. To run the SDDparser and generate a summary, type in the command line './SDDparser /path/to/SDDinputFile.txt', where SDDinputFile.txt 
-is the SDD file you want to parse. 
+4. To run the SDDparser and generate a summary of either the SDD or SDR file, type in the command line 
 
-5. The SDD file summary will be stored in a file labeled 'SDDinputFile_summary.txt' in the same directory as the SDDinputFile.
+```
+./SDDparser <SDD file> [--karyogram human|other]
+./SDDparser -sdr <SDR file> [--karyogram human|other]
+```
 
-6. If you decide to plot the Karyogram of the SDD file illustrating the locations of the single- and double-strand breaks on each of the chromosomes, 
-type in the command-line './SDDparser /path/to/SDDinputFile.txt --karyogram human|other'. '--karyogram' indicates you want to draw
-the karyogram of the associated damages, and you must specify either 'human' for human genome centromere positions or 'other' for generic centromere
-locations. The output .png file will be stored in the same directory as the SDD input file.
+Examples:
+
+```
+./SDDparser exampleSDD.txt
+./SDDparser exampleSDD.txt --karyogram human
+./SDDparser -sdr exampleSDR.txt
+./SDDparser -sdr exampleSDR.txt --karyogram human
+```
+
+Each run writes a `<input>_summary.txt` file next to the input, and, if
+`--karyogram` is passed, one `<input>_cell<N>_karyogram_<human|other>.png`
+per exposure/cell found in the file. 
+
+The outputs after parsing an SDD file should resemble:
+
+'SDD header parsed successfully.
+Summary written to: "exampleSDD_summary.txt"
+Karyogram generated successfully: "exampleSDD_karyogram_human.png"'
+
+(The exampleSDD_summary.txt file and exampleSDD_karyogram_human.png files should resemble the ones shown in the attached files of this repository in the
+examples/ folder).
+
+The outputs after parsing an SDR file should resemble:
+
+'Summary written to: "exampleSDR_summary.txt"
+Karyogram generated successfully: "exampleSDR_cell0_karyogram_human.png"'
+
+The exampleSDR_summary.txt file and exampleSDR_cell0_karyogram_human.png files should resemble the ones shown in the attached files of this repository in
+the examples/ folder).
+
+
+5. The SDD/SDR file summary will be stored in a file labeled '<SDDinputFile|SDRinputFile>_summary.txt' in the same directory as the SDDinputFile/SDRinputFile.
+
+6. If you decide to plot the Karyogram of the SDD/SDR file illustrating the locations of the single- and double-strand breaks on each of the chromosomes, 
+or the mutations on each chromosome, respectively you can specify either 'human' for human genome centromere positions or 'other' for generic centromere
+locations. The output .png file will be stored in the same directory as the SDD/SDR input file.
 
 7. IMPORTANT: The karyogram can now handle the user passing 'Chromosome sizes' in the SDD and SDR header in the following three ways 
 (example for human chromosomes) :
@@ -35,47 +92,21 @@ locations. The output .png file will be stored in the same directory as the SDD 
 
 	c. Non-homologous/haploid chromosome sizes layout: 1,2,3,...,22,Y,X.
 
-In the SDD chromosome sizes header, please specify Y chromosome size before X. If the user passes two X chromosomes, the second one will be labeled as Y
+In the SDD/SDR chromosome sizes header, please specify Y chromosome size before X. If the user passes two X chromosomes, the second one will be labeled as Y
 and will have an incorrect centromere position in the karyogram. 
 The plotter also works for more than 46 chromosomes, but the '--karyogram other' option must be specified by the user if that is the case.
 If the user desires, the cell cycle phase can also be specified in the SDD header, and the karyogram plotter will account for if the cell cycle phase 
 is pre-replication (G0 or G1 phase) or post-replication (S, G2, M phase). If the user passes '0' (unspecified) as the cell cycle phase, the plotter 
 will assume the cells are in a pre-replication phase. In addition to the chromosome number and sizes passed in the SDD header, the karyogram plotter 
 also requires SDD data fields 3, 4, and 6, otherwise the chromosome sizes and damage information will not be present to draw the karyogram. 
+For the SDR file, only the intact chromosome sizes header field is required, and the corresponding SDR data entries for mutations (intact chromosome
+entries are optional).
 
-****PLEASE ENSURE THE CHROMOSOME IDS IN DATA FIELD 3 CORRESPOND TO THE CORRECT CHROMOSOME SIZE INDEX LISTED IN THE SDD HEADER, 
-OTHERWISE THE KARYOGRAM PLOTTER WILL BE INCORRECT****
-
-8. Functionality has been added to parse an SDR file using the following command './SDDparser -sdr ./path/to/SDRinputFile.txt'. The summary of the SDR 
-header and subheader are returned for each cell, as well as a summary of the number of mutations present in the SDR file. DO NOT FORGET THE '-sdr' after
-./SDDparser, otherwise the program will assume you are feeding an SDD file as input, and exit with an error. 
-
-9. The user can also now optionally plot a karyogram of the mutations described in an SDR file using the following command:
-'/path/to/SDDparser -sdr path/to/SDRinputFile.txt --karyogram human|other'. 
-
-To check if the SDD and SDR parsing, summary, and karyogram plotting work correctly, run the following commands:
-
-a) './SDDparser exampleSDD.txt --karyogram human'
-
-The output to the terminal should be:
-'SDD header parsed successfully.
-Summary written to: "exampleSDD_summary.txt"
-Karyogram generated successfully: "exampleSDD_karyogram_human.png"'
-
-(The exampleSDD_summary.txt file and exampleSDD_karyogram_human.png files should resemble the ones shown in the attached files of this repository in the
-examples/ folder).
-
-b) './SDDparser -sdr exampleSDR.txt --karyogram human'
-
-The output to the terminal should be:
-'Summary written to: "exampleSDR_summary.txt"
-Karyogram generated successfully: "exampleSDR_cell0_karyogram_human.png"'
-
-The exampleSDR_summary.txt file and exampleSDR_cell0_karyogram_human.png files should resemble the ones shown in the attached files of this repository in
-the examples/ folder).
+****PLEASE ENSURE THE CHROMOSOME IDS IN SDD DATA FIELD 3 AND SDR DATA FIELD 3 CORRESPOND TO THE CORRECT CHROMOSOME SIZE INDEX 
+LISTED IN THE SDD HEADER, OTHERWISE THE KARYOGRAM PLOTTER WILL BE INCORRECT****
 
 
-WHAT IS SUMMARIZED IN THE SDD FILE SUMMARY:
+### WHAT IS SUMMARIZED IN THE SDD FILE SUMMARY:
 All important header fields are interpreted and summarized in a text format at the beginning of the summary file.
 The header summary is separated into 3 main subsections:
 1. Incident Radiation Information - describes the type of radiation particle simulated.
@@ -89,7 +120,7 @@ The data block is summarized under the subsection 'Chromosome Damages', where th
 4. Total number of base damages, single-strand breaks, and double-strand breaks over all chromosomes per cell exposure.
 5. The total number of base damages, single-strand breaks, and double-strand breaks over all chromosomes over all cell exposures.
 
-WHAT IS PLOTTED IN THE SDD FILE KARYOGRAM:
+### WHAT IS PLOTTED IN THE SDD FILE KARYOGRAM:
 <p align = "center">
 <img src="karyogram_evolution_SDD.gif" alt="Secondary electrons from 6 MeV photons at different doses"><br>
 <em> Increasing DNA damages as a function of dose resulting from secondary electrons of a primary 6 MeV photon beam.</em>
@@ -104,13 +135,13 @@ within a given damage site (i.e. a given SDD data row) (usually between 0-5 SSBs
 5. Summary at the top to describe the dose or fluence in the SDD file, the cell cycle phase, and the number of single- and double-strand breaks.
 6. Legend at the bottom to describe what each symbol signifies in the karyogram.
 
-WHAT IS SUMMARIZED IN THE SDR FILE SUMMARY:
+### WHAT IS SUMMARIZED IN THE SDR FILE SUMMARY:
 1. SDR version, author, associated SDD file that produced the SDR file from the MEDRAS-MC output.
 2. Number of chromosomes listed and their respective sizes in mega base pairs.
 3. Per Cell summary of the cell subheader (number of double-strand breaks and misrepairs).
 4. Number of mutations per each type.
 
-WHAT IS PLOTTED IN THE SDR FILE KARYOGRAM 
+### WHAT IS PLOTTED IN THE SDR FILE KARYOGRAM 
 1. Summary at the top, including which cell the Karyogram is plotted for, and the number of each mutation type.
 2. Chromosomes plotted with their associated homologs if specified, and structural rearrangements from the associated mutations. 
 3. The colors are used to depict where the chromosomal rearrangements came from, the white sections indicate where the deletions occurred on the 
@@ -121,21 +152,174 @@ clarity.
 and deletion-insertions, chromoplexy and chromothripsis. 
 
 <p align = "center">
-<img src="examples/exampleSDR_with_dicentrics_cell0_karyogram_human.png" alt="Different mutation representations from irradiated DNA"><br>
+<img src="./SDRkaryogram_figure.png" alt="Different mutation representations from irradiated DNA"><br>
 <em> Depicting common DNA structural variations that arise from ionizing radiation.</em>
 </p>
 
 
-FURTHER KARYOGRAM PLOTTING WORK:
+## FURTHER KARYOGRAM PLOTTING WORK:
 1. Add a zoom in and out and a panning option to conserve image quality. 
-2. Add SDR mutation detection and drawing capabilities for BFB cycle.
-3. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
-5. Convert this command-line program into a linked c++ library to be called by any user who needs its functionality.
+2. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
 ... and much more.
+
+
+---
+
+## USING SDDparser AS A LIBRARY
+
+Everything the library exposes lives in the `sddparser` namespace. Include the single umbrella header to get all three public classes at once:
+
+```cpp
+#include <SDDparserLibrary.h>
+```
+
+Link against `libSDDparser.a` and `cairo`:
+
+```
+g++ -std=c++17 -I/path/to/SDDparser/include -o my_program my_program.cpp \
+    /path/to/SDDparser/libSDDparser.a -lcairo
+```
+
+### Parsing an SDD file — `sddparser::SDDparser`
+
+```cpp
+#include <SDDparserLibrary.h>
+#include <fstream>
+#include <iostream>
+
+int main()
+{
+    sddparser::SDDparser parser;
+
+    if (!parser.load("exampleSDD.txt"))
+    {
+        std::cerr << "Failed to load SDD file\n";
+        return 1;
+    }
+
+    const sddparser::Header& header = parser.getHeader();
+    const std::vector<sddparser::Exposure>& exposures = parser.getExposures();
+
+    std::cout << "SDD version: " << header.sdd_version << "\n";
+    std::cout << "Exposures found: " << exposures.size() << "\n";
+
+    // Write the same text summary the CLI tool produces, to any std::ostream.
+    std::ofstream summaryFile("summary.txt");
+    parser.printSummary(summaryFile);
+
+    return 0;
+}
+```
+
+**Public interface:**
+
+| Method | Description |
+|---|---|
+| `bool load(const std::string& filename)` | Parses the given SDD file. Returns `false` on failure. |
+| `const Header& getHeader() const` | The parsed SDD header fields (dose, chromosome sizes, cell cycle phase, etc.). |
+| `const std::vector<Exposure>& getExposures() const` | One `Exposure` per cell/exposure in the file, each holding its own damage records. |
+| `void printSummary(std::ostream& out) const` | Writes a human-readable summary of the header and every exposure's damage to any output stream. |
+
+### Parsing an SDR file — `sddparser::SDRparser`
+
+```cpp
+#include <SDDparserLibrary.h>
+#include <iostream>
+
+int main()
+{
+    sddparser::SDRparser parser;
+
+    if (!parser.parseFile("exampleSDR.txt"))
+    {
+        std::cerr << "Failed to parse SDR file\n";
+        return 1;
+    }
+
+    const sddparser::SDRmasterHeader& masterHeader = parser.getMasterHeader();
+    const std::vector<sddparser::SDRsubHeader>& subHeaders = parser.getSubHeaders();
+
+    std::cout << "SDR version: " << masterHeader.sdrVersion << "\n";
+    std::cout << "Cells parsed: " << subHeaders.size() << "\n";
+
+    // Write the text summary (mutation counts, breakpoints, etc.) to a file.
+    parser.writeSummary("summary.txt");
+
+    return 0;
+}
+```
+
+**Public interface:**
+
+| Method | Description |
+|---|---|
+| `bool parseFile(const std::string& filename)` | Parses the given SDR file. Returns `false` on failure. |
+| `const SDRmasterHeader& getMasterHeader() const` | Master header fields — chromosome sizes, SDR version, etc. |
+| `const std::vector<SDRsubHeader>& getSubHeaders() const` | One `SDRsubHeader` per cell, each holding that cell's data records. |
+| `bool writeSummary(const std::string& outputFilename) const` | Writes a text summary of every detected mutation type per cell (deletions, inversions, translocations, ecDNA, deletion-inversions, deletion-translocations, deletion-insertions, chromoplexy, chromothripsis) to the given file. |
+
+### Drawing a karyogram — `sddparser::Karyogram`
+
+One `Karyogram` instance can draw both SDD-style damage karyograms and SDR-style rearrangement karyograms.
+
+**From SDD data:**
+
+```cpp
+sddparser::Karyogram karyogram;
+sddparser::SDDparser parser;
+parser.load("exampleSDD.txt");
+
+const sddparser::Header& header = parser.getHeader();
+
+for (const sddparser::Exposure& exposure : parser.getExposures())
+{
+    std::vector<sddparser::Exposure> singleExposure = {exposure};
+
+    karyogram.generateKaryogram(
+        header.chromosome_sizes,
+        header.cell_cycle_phase,
+        header.dose_or_fluence,
+        header.incident_particles,
+        singleExposure,
+        /*humanGenome=*/true,
+        "cell" + std::to_string(exposure.exposureID - 1) + "_karyogram.png"
+    );
+}
+```
+
+**From SDR data:**
+
+```cpp
+sddparser::Karyogram karyogram;
+sddparser::SDRparser parser;
+parser.parseFile("exampleSDR.txt");
+
+for (const sddparser::SDRsubHeader& subHeader : parser.getSubHeaders())
+{
+    karyogram.generateSDRkaryogram(
+        parser.getMasterHeader(),
+        subHeader,
+        /*humanGenome=*/true,
+        "cell" + std::to_string(subHeader.cellID) + "_karyogram.png"
+    );
+}
+```
+
+**Public interface:**
+
+| Method | Description |
+|---|---|
+| `bool generateKaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, outputFilename)` | Draws a damage karyogram (SSB/DSB markers) for one exposure from SDD data. |
+| `bool generateSDRkaryogram(masterHeader, subHeader, humanGenome, outputFilename)` | Draws a structural-rearrangement karyogram (deletions, inversions, translocations, ecDNA, chromoplexy, chromothripsis, and more) for one cell from SDR data. |
+
+`humanGenome = true` draws real human centromere positions; `false` uses a generic centromere at the midpoint of each chromosome.
+
+
+
 
 APPENDIX:
 
-Example SDR file mutated data entries for each type, the exact same as exampleSDR.txt, with additiona comments:
+Example SDR file mutated data entries for each type, the exact same as exampleSDR_with_dicentrics.txt, with additional comments:
 ** NOTE: In reality, the order of the SDR data entries do not matter, but they are logically ordered in the exampleSDR.txt file for clarity**
 
 -- Multiple Deletions per chromosome:

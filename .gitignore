@@ -13,3 +13,12 @@ SDDdata/
 
 # Ignore prototype code for zooming and panning karyogram
 chromosome_viewer.cpp
+
+# Ignore for now, will integrate to the current README.MD soon
+README_after_library_linking.md
+
+# Ignore for now
+libSDDparser.a
+
+# Ignore figures for AQPMC symposium
+aqpmc*

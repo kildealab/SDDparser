@@ -10,6 +10,9 @@
 #include "SDDtypes.h"
 #include "SDRtypes.h"
 
+namespace sddparser
+{
+
 struct RGB                                      // Use to define chromosome colors using Red, Green, and Blue codes.
 {
     double r;
@@ -112,7 +115,7 @@ private:
 
     // Helper functions to modify the chromosome heights and widths to adjust for mutated content being carried over into this slot.
     double computeSDRbarHeight(double lengthMbp, double maxLengthMbp, double maxRenderHeight);
-    double computeMaxBarHeight(const std::vector<const SDRdataRecord*>& records, double maxLengthMbp, double maxRenderHeight);
+    double computeMaxBarHeight(const std::vector<const SDRdataRecord*>& records, double maxLengthMbp, double maxRenderHeight, int homeOldStrandID, const SDRmasterHeader& masterHeader);
     double computeSlotWidth(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, double chromosomeWidth, double maxLengthMbp, double maxRenderHeight, const SDRmasterHeader& masterHeader, double& outColumn2Width);
     int computeExcisedColumnLayout(const std::vector<const SDRdataRecord*>& excisedRecords, double maxLengthMbp, double maxRenderHeight, double maxColumnHeight, double verticalGap, std::vector<double>& outHeights);
 
@@ -147,5 +150,8 @@ private:
     std::vector<const SDRdataRecord*> synthesizeIntactRecordIfMissing(int oldStrandID, int cellID, const SDRmasterHeader& masterHeader, std::vector<SDRdataRecord>& intactRecordStorage);
 
 };
+
+} //namespace sddparser
+
 
 #endif

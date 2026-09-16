@@ -6,6 +6,7 @@
 #include "SDRparser.h"
 #include "Karyogram.h"
 
+using namespace sddparser;
 
 namespace
 {
@@ -19,12 +20,12 @@ namespace
             << "  ./SDDparser -sdr <SDR file>\n"
             << "  ./SDDparser -sdr <SDR file> --karyogram human|other\n\n"
             << "Examples:\n"
-            << "  ./SDDparser SDDOutput_1.txt\n"
-            << "  ./SDDparser SDDOutput_1.txt --karyogram human\n"
-            << "  ./SDDparser -sdr SDROutput_1.txt\n"
-            << "  ./SDDparser -sdr SDROutput_1.txt --karyogram human\n";
+            << "  ./SDDparser exampleSDD.txt\n"
+            << "  ./SDDparser exampleSDD.txt --karyogram human\n"
+            << "  ./SDDparser -sdr exampleSDR.txt\n"
+            << "  ./SDDparser -sdr exampleSDR.txt --karyogram human\n";
     }
-    
+
     // Parses an optional "--karyogram human|other" pair starting at
     // argv[startIndex]. If nothing follows the preceding arguments,
     // drawKaryogram is left false and this returns true (nothing to do).
@@ -159,19 +160,20 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 	// --------------------------------------------- //
 	// SDR karyogram drawing
 	// --------------------------------------------- //
-        if (drawKaryogram)
+        if (drawKaryogram)					// If user specifies --karyogram then draw
         {
-	    Karyogram karyogram;
+	    Karyogram karyogram;				// Instantiate the Karyogram object karyogram
 
 	    bool hasFailed = false;
 
-	    for (const SDRsubHeader& subHeader : parser.getSubHeaders())
+	    for (const SDRsubHeader& subHeader : parser.getSubHeaders())	// Draw one karyogram per cell subheader present in SDR file
 	    {
-		std::filesystem::path cellKaryogramPath =
+		std::filesystem::path cellKaryogramPath =			// Modify name of output karyogram
             		inputPath.parent_path() /
             		(inputPath.stem().string() + "_cell" + std::to_string(subHeader.cellID) +
              		"_karyogram_" + genomeType + ".png");
 
+		// Check if karyogram generated correctly
 		if (!karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, humanGenome, cellKaryogramPath.string()))
 		{
 		    std::cerr << "Failed to generate karyogram for cell " << subHeader.cellID << ".\n";

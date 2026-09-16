@@ -9,12 +9,15 @@
 #include "SDRutilities.h"
 
 
-bool SDRparser::parseFile(								// Main parser function that parses the SDR file
-    const std::string& filename)							// Takes as input SDR file path
+namespace sddparser
 {
-    std::ifstream file(filename);
 
-    if (!file.is_open())								// If SDR file cannot open, exit with error
+bool SDRparser::parseFile(							// Main parser function that parses the SDR file
+    const std::string& filename)						// Takes as input SDR file path
+{
+     std::ifstream file(filename);
+
+    if (!file.is_open())							// If SDR file cannot open, exit with error
     {
         std::cerr << "Error: Could not open SDR file: "
                   << filename << std::endl;
@@ -333,12 +336,11 @@ bool SDRparser::parseSubHeader(
 	{
 	    if (value.empty())
     	    {
-        	// Not measured - leave medrasMClog as its
-        	// default-constructed empty vector.
+        	// Not measured, leave medrasMClog as its default-constructed empty vector.
     	    }
 	    else
 	    {
-		try										// Blank value already handled through split, no special error
+		try									// Blank value already handled through split, no special error
 	    	{
 	            subHeader.medrasMClog = parseIntList(split(value, ','));		// try/catch for parseIntList in case non-integer is encountered in vector
 	    	}
@@ -711,8 +713,7 @@ void SDRparser::writeMasterHeaderSummary(
         return;
     }
 
-    // Index 0 is the declared chromosome count, not a size -
-    // see the comment on SDRmasterHeader::intactChromosomeSizes.
+    // Index 0 is the declared chromosome count, not a size.
     const double declaredCount = masterHeader.intactChromosomeSizes[0];
     const std::size_t numSizes = masterHeader.intactChromosomeSizes.size() - 1;
 
@@ -794,6 +795,7 @@ void SDRparser::writeCellDataSummary(
     // New-strand records numbered below this threshold are baseline restatements of an original chromosome, not rearrangement/mutated outcomes.
     const int numOriginalStrands = masterHeader.intactChromosomeSizes.empty() ? 0 : static_cast<int>(masterHeader.intactChromosomeSizes[0]);
 
+    // Declare mutation types to summarize the types of each mutation fed into SDDparser
     const std::vector<SDRdeletionEvent> deletions = detectDeletions(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRinversionEvent> inversions = detectInversions(subHeader, numOriginalStrands);
     const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands, masterHeader);
@@ -864,5 +866,5 @@ void SDRparser::pushBackLine(
 }
 
 
-
+} // namespace sddparser
 

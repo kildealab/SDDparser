@@ -2,6 +2,10 @@
 
 
 
+
+namespace sddparser
+{
+
 // Function to return the location in base pairs for a double strand break associated with a given chromosome Number and exposure.
 std::vector<DamageLocation> Karyogram::getDoubleStrandBreaks(
     const std::vector<Exposure>& exposures)				// Access exposures to determine the damage locations according to each chromosome ID
@@ -89,3 +93,5 @@ double Karyogram::getDamageFraction(
 
     return position / chromosomeSizeBP;                         // If SDD data field 4 is not fractional, return scaled position in fractional format.
 }
+
+} // namespace sddparser

@@ -7,6 +7,12 @@
 #include "SDDutilities.h"
 
 
+
+
+
+namespace sddparser
+{
+
 // Bookkeeping struct - remembers each drawn chromosome's pixel
 // position and height so the DSB/SSB-drawing code further down can
 // look it back up by chromosome/chromatid number.
@@ -1596,3 +1602,5 @@ void Karyogram::drawLegend(					// Function to draw a legend of symbols at the b
         "Centromere"
     );
 }
+
+} // namespace sddparser

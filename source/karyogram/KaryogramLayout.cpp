@@ -7,6 +7,10 @@
 #include "Karyogram.h"
 
 
+
+namespace sddparser 
+{
+
 ChromosomeLayout Karyogram::determineChromosomeLayout(
     const std::vector<double>& chromosomeSizes)							// Access chromosome sizes to determine how they were passed by the user, adjacent-homologs, split-homologs, non-homologous.
 {
@@ -196,7 +200,7 @@ bool Karyogram::getCentromereForOriginalStrand(
     if (humanGenome)
     {
 	// Modify strand ID based on how chromosome sizes are passed
-	int relativeStrandID = oldStrandID; // SPLIT_HOMOLOGS already matches getHumanCentromere's 1-indexed convention directly.
+	int relativeStrandID = oldStrandID;
 
         const std::vector<double>& sizes = masterHeader.intactChromosomeSizes;
         const int chromosomeCount = sizes.empty() ? 0 : static_cast<int>(sizes[0]);
@@ -247,6 +251,30 @@ bool Karyogram::getCentromereForOriginalStrand(
                     relativeStrandID = 46;
                 }
             }
+	    else if (layout == ChromosomeLayout::SPLIT_HOMOLOGS)
+	    {
+    		if (oldStrandID == yStrandID)
+    		{
+        	    relativeStrandID = 45;
+    		}
+    		else if (oldStrandID == xStrandID)
+    		{
+        	    relativeStrandID = 46;
+    		}
+    		else if (homologousPairs > 0 && oldStrandID > homologousPairs)
+    		{
+        	    // Second-copy homolog: strand (homologousPairs + k) is chromosome k's
+        	    // second copy. getHumanCentromere expects second copies at k+22
+        	    // specifically, regardless of how many pairs THIS file declares
+        	    // (only coincides with oldStrandID directly when homologousPairs==22,
+        	    // i.e. a full 46-chromosome file).
+        	    const int k = oldStrandID - homologousPairs;
+        	    relativeStrandID = k + 22;
+    		}
+    		// else: first-copy homolog (1 <= oldStrandID <= homologousPairs) already
+    		// matches getHumanCentromere's 1-22 convention directly - no conversion needed.
+	    }
+
         }
 
 	const CentromerePosition* centromere = getHumanCentromere(relativeStrandID);
@@ -282,3 +310,4 @@ bool Karyogram::getCentromereForOriginalStrand(
 }
 
 
+} // namespace sddparser

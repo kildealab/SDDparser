@@ -6,6 +6,8 @@
 #include <vector>
 #include <unordered_map>
 
+namespace sddparser
+{
 
 // Use for checking if any optional header fields are absent, to not raise an error, but report as not measured.
 constexpr int SDD_INT_FIELD_NOT_MEASURED = -1;
@@ -169,5 +171,7 @@ struct DamageLocation		// Stores the chromosome position in base pairs where the
     ChromosomePosition chromosomePosition;
     int numSingleStrandBreaks;
 };
+
+} // namespace sddparser
 
 #endif

@@ -8,6 +8,12 @@
 #include "generalUtilities.h"
 #include "SDDutilities.h"
 
+
+
+
+namespace sddparser
+{
+
 // Function to check if SDD file successfully loads, and if header and data blocks were successfully processed.
 bool SDDparser::load(
     const std::string& filename)		// Takes as input the SDD file path
@@ -1311,3 +1317,5 @@ void SDDparser::printSummary(
 
 
 }
+
+} // namespace sddparser
