@@ -152,7 +152,7 @@ clarity.
 and deletion-insertions, chromoplexy and chromothripsis. 
 
 <p align = "center">
-<img src="./SDRkaryogram_figure.png" alt="Different mutation representations from irradiated DNA"><br>
+<img src="./SDRkaryogram_figure.svg" width = "100%" alt="Different mutation representations from irradiated DNA"><br>
 <em> Depicting common DNA structural variations that arise from ionizing radiation.</em>
 </p>
 
