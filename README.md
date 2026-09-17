@@ -151,10 +151,10 @@ clarity.
 5. So far, drawing is supported for long deletions, balanced inversions, balanced translocations, ecDNA, deletion-inversions, deletion-translocations,
 and deletion-insertions, chromoplexy and chromothripsis. 
 
-<p align = "center">
+<picture align = "center">
 <img src="./SDRkaryogram_figure.svg" width = "100%" alt="Different mutation representations from irradiated DNA"><br>
 <em> Depicting common DNA structural variations that arise from ionizing radiation.</em>
-</p>
+</picture>
 
 
 ## FURTHER KARYOGRAM PLOTTING WORK:
