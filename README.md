@@ -338,12 +338,6 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 
 -- Different balanced translocation examples:
 
-- Central fragments translocate leading to dicentric and acentric strands:
-
-0; 52; 2/0/80/0, 1/130/190/0, 2/170/258.1/0; 1;
-
-0; 53; 1/0/130/1, 2/80/170/1, 1/190/263.2/0; 1;
-
 - Simple translocation where the top of one chromosome swaps with the bottom of another:
 
 0; 66; 26/203.4/75.3/0, 30/60/155.5/0; 1;
@@ -356,7 +350,7 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 
 0; 69; 13/0/73.2/1, 9/20.7/0/0; 1;
 
-- Balanced translocation between central fragments not leading to dicentrics
+- Balanced translocation between central fragments (can also lead to dicentrics)
 
 0; 70; 12/0/70.0/1, 16/60.0/78.0/0, 12/100.0/140.8/0; 1;
 

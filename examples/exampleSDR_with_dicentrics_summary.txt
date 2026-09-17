@@ -20,7 +20,7 @@ Total Misrepair Count: N/A
 Mutation Summary:
   Long Deletions: 2
   Balanced Inversions: 2
-  Balanced Translocations: 4
+  Balanced Translocations: 3
   Extrachromosomal DNA (ecDNA): 3
   Deletion-Inversions: 1
   Deletion-Translocations: 2
