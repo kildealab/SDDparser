@@ -49,12 +49,35 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     const std::map<int, int> dicentricAcentricOverrides = findDicentricAcentricHomeOverrides(subHeader, static_cast<int>(sizes[0]), masterHeader);
 
 
+    // Chromoplexy-specific shape: an original strand fully consumed by fusing onto two OTHER
+    // strands' centromeres (one piece each) gets hidden from its own slot entirely, and its two
+    // partners' own leftover acentric pieces are drawn together in one new slot after X and Y.
+    const std::vector<SDRchromoplexyAcentricPlacement> chromoplexyPlacements = findChromoplexyAcentricRecombinations(subHeader, static_cast<int>(sizes[0]), masterHeader);
+
+    std::set<int> chromoplexyConsumedStrands;
+    std::set<int> chromoplexyRecombinedNewStrandIDs; // newStrandIDs now drawn ONLY in the dedicated chromoplexy slot, not in their own chromosome's slot.
+    for (const SDRchromoplexyAcentricPlacement& placement : chromoplexyPlacements)
+    {
+        chromoplexyConsumedStrands.insert(placement.consumedStrandID);
+        for (int leftoverNewStrandID : placement.leftoverNewStrandIDs)
+        {
+            chromoplexyRecombinedNewStrandIDs.insert(leftoverNewStrandID);
+        }
+    }
+
+
     for (const SDRdataRecord& record : subHeader.dataRecords)
     {
         if (record.fragments.empty())
         {
             continue;
         }
+	// This record's material is drawn only in the dedicated chromoplexy acentric slot below, leave
+	// it out of its own chromosome's normal slot grouping so it isn't drawn twice.
+	else if (chromoplexyRecombinedNewStrandIDs.count(record.newStrandID))
+	{
+	    continue;
+	}
         else
         {
 	    // A dicentric/acentric pair needs an explicit override, since the acentric side's correct home strand depends on the
@@ -128,14 +151,16 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     const int sexChromosomeRow = (drawableGroups > 0) ? (drawableGroups - 1) / columns : 0;
     const int lastRowUsedCols = drawableGroups - sexChromosomeRow * columns;
     const bool sexChromosomesFitInLastRow = (columns - lastRowUsedCols) >= 2;
-    if (sexChromosomesFitInLastRow)
-    {
-        imgHeight = static_cast<int>(startY + rows * rowHeight + legendHeight + legendBottomMargin);
-    }
-    else
-    {
-        imgHeight = static_cast<int>(startY + (rows + 1) * rowHeight + legendHeight + legendBottomMargin);
-    }
+
+    // Chromoplexy acentric-recombination slots are drawn in their own row(s) after X and Y,
+    // packed the same way autosome slots are.
+    const int chromoplexySlotCount = static_cast<int>(chromoplexyPlacements.size());
+    const int chromoplexyRows = (chromoplexySlotCount + columns - 1) / columns;
+    const int autosomeAndSexRows = sexChromosomesFitInLastRow ? rows : rows + 1;
+    const int chromoplexyStartRow = autosomeAndSexRows;
+    const double chromoplexyStartY = startY + chromoplexyStartRow * rowHeight;
+
+    imgHeight = static_cast<int>(startY + (autosomeAndSexRows + chromoplexyRows) * rowHeight + legendHeight + legendBottomMargin);
 
     const double maxRenderHeight = 180.0;
     const double chromosomeWidth = 20.0;
@@ -157,6 +182,35 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     // Summary Box
     // --------------------------------------------------
     drawSDRsummary(cr, masterHeader, subHeader);
+
+
+    // Resolves the records to draw for a given original strand's slot: its own
+    // rearranged records if any exist, a synthesized intact baseline if it was
+    // never touched, or nothing at all if a chromoplexy fusion elsewhere fully
+    // consumed it (in that case, drawing a synthesized "intact" baseline would
+    // be actively wrong, the strand no longer exists on its own).
+    auto resolveSlotRecords = [&](int oldStrandID) -> std::vector<const SDRdataRecord*>
+    {
+	if (chromoplexyConsumedStrands.count(oldStrandID))
+    	{
+            return {};
+    	}
+
+        const auto it = recordsByOriginalStrand.find(oldStrandID);
+
+        if (it != recordsByOriginalStrand.end())
+        {
+            return clusterRecordsForDrawing(filterBaselineIfMutated(it->second, chromosomeCount), oldStrandID, mergedRecordStorage, masterHeader);
+        }
+
+        if (chromoplexyConsumedStrands.count(oldStrandID))
+        {
+            return {};
+        }
+
+        return synthesizeIntactRecordIfMissing(oldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
+    };
+
 
 
     // --------------------------------------------------
@@ -195,32 +249,11 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         if (hasHomologs)
         {
 
-	    // Check if the data record we are looking at is an intact strand record, if so ignore. Only care about misrepaired records.
-	    // Check by comparing if every fragments old strand ID is the same as that corresponding data record's new strand ID --> If so, skip.
-            auto firstIt = recordsByOriginalStrand.find(firstOldStrandID);
-            auto secondIt = recordsByOriginalStrand.find(secondOldStrandID);
-
-            std::vector<const SDRdataRecord*> leftRecords;			// Left homolog
-            std::vector<const SDRdataRecord*> rightRecords;			// Right homolog
-
 	    // Cluster records for drawing only on mutated records, such that mutations are grouped according to their original strand location
-	    if (firstIt != recordsByOriginalStrand.end())
-            {   // First homolog
-                leftRecords = clusterRecordsForDrawing(filterBaselineIfMutated(firstIt->second, chromosomeCount), firstOldStrandID, mergedRecordStorage, masterHeader);  // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
-            }
-            else
-            {
-                leftRecords = synthesizeIntactRecordIfMissing(firstOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
-            }
-
-            if (secondIt != recordsByOriginalStrand.end())
-            {   // Second homolog
-                rightRecords = clusterRecordsForDrawing(filterBaselineIfMutated(secondIt->second, chromosomeCount), secondOldStrandID, mergedRecordStorage, masterHeader);       // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
-            }
-            else
-            {
-                rightRecords = synthesizeIntactRecordIfMissing(secondOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
-            }
+	    // resolveSlotRecords() also leaves a slot empty (rather than synthesizing a false intact baseline) when a
+	    // chromoplexy fusion elsewhere has fully consumed that strand.
+	    const std::vector<const SDRdataRecord*> leftRecords = resolveSlotRecords(firstOldStrandID);	// First homolog
+            const std::vector<const SDRdataRecord*> rightRecords = resolveSlotRecords(secondOldStrandID);	// Second homolog
 
 
 	    // Adjust the gap of the left and right homologs and their corresponding deletions/ecDNA depending on the actual width drawStackedMutations() will use.
@@ -258,30 +291,15 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 	// Non-homologous chromosome sizes layout specified by the user in the SDR header (simpler, do not need to adjust gap between homologs for possible long deletions)
         else
         {
-            auto it = recordsByOriginalStrand.find(firstOldStrandID);
+	    // resolveSlotRecords() clusters mutated records, falls back to a synthesized intact
+            // baseline for untouched strands, and leaves the slot empty for a strand fully
+            // consumed by a chromoplexy fusion elsewhere.
+            const std::vector<const SDRdataRecord*> filtered = resolveSlotRecords(firstOldStrandID);
 
-            if (it != recordsByOriginalStrand.end())
+            if (!filtered.empty())		// If data present, draw the mutation and label it
             {
-		// If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
-                const std::vector<const SDRdataRecord*> filtered = clusterRecordsForDrawing(filterBaselineIfMutated(it->second, chromosomeCount), firstOldStrandID, mergedRecordStorage, masterHeader); 
-
-                if (!filtered.empty())		// If data present, draw the mutation and label it
-                {
-                    drawStackedMutations(cr, filtered, groupCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, firstOldStrandID);
-                    labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight, firstOldStrandID, masterHeader);
-                }
-            }
-	    else
-            {
-		// If intact chromosome data entries are absent in the SDR file, use intact chromosome sizes to synthesize them regardless, but that means
-		// intact chromosome sizes must be passed by the user
-                const std::vector<const SDRdataRecord*> filtered = synthesizeIntactRecordIfMissing(firstOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
-
-                if (!filtered.empty())
-                {
-                    drawStackedMutations(cr, filtered, groupCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, firstOldStrandID);
-                    labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight, firstOldStrandID, masterHeader);
-                }
+                drawStackedMutations(cr, filtered, groupCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, firstOldStrandID);
+                labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight, firstOldStrandID, masterHeader);
             }
         }
 
@@ -329,54 +347,124 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         double yCenterPosX = (yChromCol * colWidth) + (colWidth / 2.0);
         double xCenterPosX = (xChromCol * colWidth) + (colWidth / 2.0);
 
-	// Ignore intact strand data records for mutated strand drawing
-        auto yIt = recordsByOriginalStrand.find(yOldStrandID);
-        auto xIt = recordsByOriginalStrand.find(xOldStrandID);
 
-        if (yIt != recordsByOriginalStrand.end() || true)
+	// resolveSlotRecords() clusters mutated records, falls back to a synthesized intact baseline
+	// for an untouched sex chromosome, and leaves the slot empty if a chromoplexy fusion
+	// elsewhere fully consumed it.
+        const std::vector<const SDRdataRecord*> yRecords = resolveSlotRecords(yOldStrandID);
+
+        double yLabelHeight = maxRenderHeight;
+        if (!yRecords.empty())
         {
-            // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
-            const std::vector<const SDRdataRecord*> yRecords = (yIt != recordsByOriginalStrand.end())
-                ? clusterRecordsForDrawing(filterBaselineIfMutated(yIt->second, chromosomeCount), yOldStrandID, mergedRecordStorage, masterHeader)
-                : synthesizeIntactRecordIfMissing(yOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
-
-            double yLabelHeight = maxRenderHeight;
-            if (!yRecords.empty())
-            {
-                drawStackedMutations(cr, yRecords, yCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, yOldStrandID);
-                yLabelHeight = computeMaxBarHeight(yRecords, maxLengthMbp, maxRenderHeight, yOldStrandID, masterHeader);
-            }
-
-            cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-            cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-            cairo_set_font_size(cr, 16.0);
-            cairo_move_to(cr, yCenterPosX - 10.0, sexChromPosY + yLabelHeight + 25.0);
-            cairo_show_text(cr, "Y");
+            drawStackedMutations(cr, yRecords, yCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, yOldStrandID);
+            yLabelHeight = computeMaxBarHeight(yRecords, maxLengthMbp, maxRenderHeight, yOldStrandID, masterHeader);
         }
 
-	if (xIt != recordsByOriginalStrand.end() || true)
+        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, 16.0);
+        cairo_move_to(cr, yCenterPosX - 10.0, sexChromPosY + yLabelHeight + 25.0);
+        cairo_show_text(cr, "Y");
+
+        const std::vector<const SDRdataRecord*> xRecords = resolveSlotRecords(xOldStrandID);
+
+        double xLabelHeight = maxRenderHeight;
+
+        if (!xRecords.empty())
         {
-            // If strand has been mutated, ignore that original strands intact strand data record, draw only the mutated strand, not the original and mutated strands together
-            const std::vector<const SDRdataRecord*> xRecords = (xIt != recordsByOriginalStrand.end())
-                ? clusterRecordsForDrawing(filterBaselineIfMutated(xIt->second, chromosomeCount), xOldStrandID, mergedRecordStorage, masterHeader)
-                : synthesizeIntactRecordIfMissing(xOldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
-
-            double xLabelHeight = maxRenderHeight;
-
-            if (!xRecords.empty())
-            {
-                drawStackedMutations(cr, xRecords, xCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, xOldStrandID);
-                xLabelHeight = computeMaxBarHeight(xRecords, maxLengthMbp, maxRenderHeight, xOldStrandID, masterHeader);
-            }
-
-            cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-            cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-            cairo_set_font_size(cr, 16.0);
-            cairo_move_to(cr, xCenterPosX - 10.0, sexChromPosY + xLabelHeight + 25.0);
-            cairo_show_text(cr, "X");
+            drawStackedMutations(cr, xRecords, xCenterPosX, sexChromPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, xOldStrandID);
+            xLabelHeight = computeMaxBarHeight(xRecords, maxLengthMbp, maxRenderHeight, xOldStrandID, masterHeader);
         }
 
+        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, 16.0);
+        cairo_move_to(cr, xCenterPosX - 10.0, sexChromPosY + xLabelHeight + 25.0);
+        cairo_show_text(cr, "X");
     }
+
+
+    // ---------------------------------------------------
+    // Draw chromoplexy acentric-recombination slots, one
+    // per placement, packed into rows after X and Y exactly
+    // like the autosome slots are.
+    // ---------------------------------------------------
+    for (std::size_t p = 0; p < chromoplexyPlacements.size(); ++p)
+    {
+        const SDRchromoplexyAcentricPlacement& placement = chromoplexyPlacements[p];
+
+        // Gather the leftover record(s) this placement points to, in the order it lists them.
+        std::vector<const SDRdataRecord*> leftoverRecords;
+        for (int leftoverNewStrandID : placement.leftoverNewStrandIDs)
+        {
+            for (const SDRdataRecord& record : subHeader.dataRecords)
+            {
+                if (record.newStrandID == leftoverNewStrandID)
+                {
+                    leftoverRecords.push_back(&record);
+                    break;
+                }
+            }
+        }
+
+        if (leftoverRecords.empty())
+        {
+            continue; // Shouldn't happen - findChromoplexyAcentricRecombinations() only returns newStrandIDs it found in this same subHeader.
+        }
+
+        // Concatenate every leftover record's fragments into one synthetic record. When the SDR file
+        // already combined both partners' leftover pieces into a single record, this is just that
+        // record's own fragments (a no-op concatenation); when they're still two separate records,
+        // this joins them - either way, these are the loose, non-centromeric ends of the same 3-way
+        // rearrangement re-joining each other.
+        SDRdataRecord combinedRecord{};
+        combinedRecord.cellID = subHeader.cellID;
+        combinedRecord.newStrandID = leftoverRecords.front()->newStrandID; // Representative ID, used only for the drawn label.
+        combinedRecord.linear = true;
+
+        for (const SDRdataRecord* leftoverRecord : leftoverRecords)
+        {
+            combinedRecord.linear = combinedRecord.linear && leftoverRecord->linear;
+            combinedRecord.fragments.insert(combinedRecord.fragments.end(), leftoverRecord->fragments.begin(), leftoverRecord->fragments.end());
+        }
+
+        mergedRecordStorage.push_back(combinedRecord);
+        const std::vector<const SDRdataRecord*> combinedRecords = { &mergedRecordStorage.back() };
+
+        const int col = static_cast<int>(p) % columns;
+        const int row = static_cast<int>(p) / columns;
+        const double slotCenterX = (col * colWidth) + (colWidth / 2.0);
+        const double slotPosY = chromoplexyStartY + row * rowHeight;
+
+        // homeOldStrandID is only used by drawStackedMutations()/computeMaxBarHeight() to test for
+        // named single-strand shapes (deletion, ecDNA, etc.) - this record mixes two different
+        // strands' fragments, so none of those shapes can match regardless of which ID is passed.
+        drawStackedMutations(cr, combinedRecords, slotCenterX, slotPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, combinedRecord.fragments.front().oldStrandID);
+        const double slotLabelHeight = computeMaxBarHeight(combinedRecords, maxLengthMbp, maxRenderHeight, combinedRecord.fragments.front().oldStrandID, masterHeader);
+
+        //  Label acentric strand with the fragments that appear on the drawn strand, trailing "*" marking it as acentric.
+	std::string chromoplexyLabel;
+	for (std::size_t f = 0; f < combinedRecord.fragments.size(); ++f)
+	{
+    	    if (f > 0)
+    	    {
+        	chromoplexyLabel += "-";
+    	    }
+    	    chromoplexyLabel += "chr" + std::to_string(combinedRecord.fragments[f].oldStrandID);
+	}
+	chromoplexyLabel += "*";
+
+	cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+	cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+	cairo_set_font_size(cr, 13.0);
+
+	cairo_text_extents_t labelExtents;
+	cairo_text_extents(cr, chromoplexyLabel.c_str(), &labelExtents);
+	cairo_move_to(cr, slotCenterX - labelExtents.width / 2.0, slotPosY + slotLabelHeight + 25.0);
+	cairo_show_text(cr, chromoplexyLabel.c_str());
+    }
+
+
 
     // ---------------------------------------------
     // Draw legend at bottom
@@ -930,7 +1018,7 @@ void Karyogram::drawStackedMutations(
 	    else
             {
                 // Mixed-strand case (material exchanged between two
-                // chromosomes) - fragment positions live in different
+                // chromosomes), fragment positions live in different
                 // coordinate systems, so buildDeletionRemainingSegments'
                 // sorting assumption doesn't hold. Walks fragments in
                 // file order instead, inserting white gaps only between
@@ -974,7 +1062,7 @@ void Karyogram::drawStackedMutations(
 
             // A piece that is PURELY home-strand material represents a
             // simple deleted/excised segment (nothing exchanged with
-            // another chromosome) - gets the same "no outline"
+            // another chromosome), gets the same "no outline"
             // treatment as a plain deletion's excised piece. A piece
             // carrying foreign material represents an exchange, not a
             // deletion, so it keeps its outline.
@@ -993,7 +1081,7 @@ void Karyogram::drawStackedMutations(
 
             if (!record->linear)
             {
-                // Circular (ecDNA-like) piece - draw as a circle, same
+                // Circular (ecDNA-like) piece, draw as a circle, same
                 // diameter convention as the plain ecDNA branch (scaled
                 // directly to fragment length, capped at 3x chromosomeWidth).
                 const double diameter = std::min(pieceHeight, chromosomeWidth * 3.0);

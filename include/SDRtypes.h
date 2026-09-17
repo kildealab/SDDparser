@@ -201,6 +201,30 @@ struct SDRchromoplexyEvent
 
 
 
+// Represents a karyogram-drawing decision for a specific chromoplexy shape:
+// one original strand (consumedStrandID) had BOTH of its pieces fused onto
+// two OTHER strands' centromere-bearing fragments (one piece per partner),
+// so no data record is left representing it on its own, it should be
+// hidden from the karyogram entirely rather than drawn as an untouched
+// baseline chromosome. The two partner strands' own remaining acentric
+// fragments (the halves that did NOT fuse with the consumed strand) are
+// the "loose ends" of the same 3-way rearrangement, and get combined and
+// drawn together in their own dedicated karyogram slot after X and Y.
+struct SDRchromoplexyAcentricPlacement
+{
+    int consumedStrandID;                     // Original strand to omit entirely from the karyogram
+    std::vector<int> leftoverNewStrandIDs;    // newStrandID(s) whose fragments make up the new combined slot either
+                                              // one record that already combines both partners' leftover pieces, or
+                                              // two separate single-fragment records, one per partner.
+};
+
+
+
+
+
+
+
+
 // Represents a detected chromothripsis event: a cluster of 1 or 2
 // original strands with an unusually high number of DETECTED mutation
 // events touching them. Greater than 10 fragments across all involved 

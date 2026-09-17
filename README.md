@@ -333,7 +333,7 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 
 -- Multiple balanced inversions per chromosome, with inverted centromere-bearing fragment:
 
-0; 51; 3/0/100.8/1, 3/120.5/100.8/0, 3/120.5/150.9/0, 3/173.2/150.9/0, 3/173.2/212.4/0; 1;
+0; 51; 28/0/40/0, 28/100/40/1, 28/100/130/0, 28/175/130/0, 28/175/181.8/0; 1;
 
 
 -- Different balanced translocation examples:
@@ -413,13 +413,36 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 0; 65; 24/0/50/0, 24/150/258.1/0; 1;
 
 
--- Simple chromoplexy case:
+-- Chromoplexy examples:
+
+- Simple chromoplexy case, balanced translocations between three chromosomes:
 
 0; 72; 41/0/20.0/0, 39/15/83.5/1; 1;
 
 0; 73; 40/0/70.0/1, 39/15.0/0/0; 1;
 
 0; 74; 40/81.0/70.0/0, 41/20.0/68.0/1; 1;
+
+- Complex chromoplexy case with many translocations, insertions, and inversions:
+
+0; 91; 21/0/25/1, 17/30/0/1; 1;
+
+0; 92; 19/0/30/1, 21/25/40/0, 19/50/68/0; 1;
+
+0; 93; 20/0/20/0, 19/30/50/0, 18/60/0/1; 1;
+
+0; 94; 17/83.5/30/0, 21/40/50/0; 1;
+
+0; 95; 20/66.6/20/1, 18/60/81/0; 1;
+
+
+- Chromoplexy case leading to one dicentric, one monocentric and one acentric:
+
+0; 96; 1/0/150/1, 3/150/0/1; 1;
+
+0; 97; 2/0/150/1, 3/150/212.4/0; 1;
+
+0; 98; 1/263.2/150/0, 2/150/258.1/0; 1;
 
 
 -- Chromothripsis examples:

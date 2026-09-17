@@ -399,6 +399,274 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
 
 
 
+// Detects the 3-strand chromoplexy shape that findDicentricAcentricHomeOverrides()
+// does NOT cover: strand A's centromeric piece fuses with strand B's centromeric
+// piece (dicentric), but instead of strand B's OTHER piece pairing back up with
+// strand A (which is what findDicentricAcentricHomeOverrides looks for), it
+// instead fuses onto a THIRD strand C's centromeric piece. The result is
+// monocentric overall (A keeps its own centromere via the dicentric record, C
+// keeps its own via the second record), and strand B has been fully consumed,
+// both of its pieces now live on strands A and C, with nothing left representing
+// B on its own.
+//
+// Strand A's and strand C's own remaining acentric fragments (whatever did NOT
+// fuse with B) are the two "loose ends" of this same rearrangement and are
+// re-paired with each other here, to be drawn together in their own slot.
+inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecombinations(
+    const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
+{
+    std::vector<SDRchromoplexyAcentricPlacement> placements;
+    const std::vector<SDRdataRecord>& records = subHeader.dataRecords;
+    const double tolerance = 0.001;
+
+    // Checks that fragment1 and fragment2 together exactly tile strandID's
+    // whole declared length with no gap and no overlap - i.e. that strandID
+    // really has been fully consumed by exactly these two pieces.
+    auto fragmentsSpanFullLength = [&](const SDRfragment& fragment1, const SDRfragment& fragment2, int strandID) -> bool
+    {
+        const std::size_t sizeIndex = static_cast<std::size_t>(strandID);
+
+        if (sizeIndex >= masterHeader.intactChromosomeSizes.size())
+        {
+            return false;
+        }
+
+        const double fullSize = masterHeader.intactChromosomeSizes[sizeIndex];
+
+        if (fullSize <= 0.0)
+        {
+            return false;
+        }
+
+        double lowerStart = std::min(fragment1.oldStartPosition, fragment1.oldEndPosition);
+        double lowerEnd = std::max(fragment1.oldStartPosition, fragment1.oldEndPosition);
+        double higherStart = std::min(fragment2.oldStartPosition, fragment2.oldEndPosition);
+        double higherEnd = std::max(fragment2.oldStartPosition, fragment2.oldEndPosition);
+
+        if (lowerStart > higherStart)
+        {
+            std::swap(lowerStart, higherStart);
+            std::swap(lowerEnd, higherEnd);
+        }
+
+        return approxEqual(lowerStart, 0.0, tolerance)
+            && approxEqual(lowerEnd, higherStart, tolerance)
+            && approxEqual(higherEnd, fullSize, tolerance);
+    };
+
+    for (std::size_t i = 0; i < records.size(); ++i)
+    {
+        const SDRdataRecord& dicentric = records[i];
+
+        if (!dicentric.linear || !isRearrangementCandidate(dicentric.newStrandID, numOriginalStrands) || dicentric.fragments.size() != 2)
+        {
+            continue;
+        }
+
+        std::vector<int> centromereStrands;
+
+        for (const SDRfragment& fragment : dicentric.fragments)
+        {
+            if (fragment.hasCentromere)
+            {
+                centromereStrands.push_back(fragment.oldStrandID);
+            }
+        }
+
+        if (centromereStrands.size() != 2 || centromereStrands[0] == centromereStrands[1])
+        {
+            continue; // Not a two-different-strand dicentric fusion.
+        }
+
+        const int strandA = centromereStrands[0];
+        const int strandB = centromereStrands[1];
+
+        const SDRfragment& fragmentA = (dicentric.fragments[0].oldStrandID == strandA) ? dicentric.fragments[0] : dicentric.fragments[1];
+        const SDRfragment& fragmentB = (dicentric.fragments[0].oldStrandID == strandB) ? dicentric.fragments[0] : dicentric.fragments[1];
+
+        // Look for a second record fusing strand B's OTHER (acentric) piece onto a third strand C's centromere.
+        for (std::size_t j = 0; j < records.size(); ++j)
+        {
+            if (i == j)
+            {
+                continue;
+            }
+
+            const SDRdataRecord& monocentric = records[j];
+
+            if (!monocentric.linear || !isRearrangementCandidate(monocentric.newStrandID, numOriginalStrands) || monocentric.fragments.size() != 2)
+            {
+                continue;
+            }
+
+            int strandC = -1;
+            int centromereCountHere = 0;
+            const SDRfragment* fragmentBOther = nullptr;
+            const SDRfragment* fragmentC = nullptr;
+
+            for (const SDRfragment& fragment : monocentric.fragments)
+            {
+                if (fragment.hasCentromere)
+                {
+                    ++centromereCountHere;
+
+                    if (fragment.oldStrandID != strandB)
+                    {
+                        strandC = fragment.oldStrandID;
+                        fragmentC = &fragment;
+                    }
+                }
+
+                if (fragment.oldStrandID == strandB)
+                {
+                    fragmentBOther = &fragment;
+                }
+            }
+
+            // Must be monocentric overall (strand C keeps exactly one centromere), must actually
+            // reference strand B, that B fragment must be the acentric half, and C must be a genuinely
+            // third strand, not A or B again.
+            if (centromereCountHere != 1 || strandC == -1 || strandC == strandA || strandC == strandB
+                || fragmentBOther == nullptr || fragmentBOther->hasCentromere || fragmentC == nullptr)
+            {
+                continue;
+            }
+
+            // Confirm strand B really is fully consumed: its two pieces (one from each record) tile its whole length.
+            if (!fragmentsSpanFullLength(fragmentB, *fragmentBOther, strandB))
+            {
+                continue;
+            }
+
+            // Find strand A's and strand C's own leftover acentric fragments, whatever did NOT fuse
+            // with strand B, and confirm each, together with its partner's centromeric fragment from
+            // above, fully tiles its own strand's length. The SDR file may express these two leftover
+            // pieces either as ONE record that already combines both (fragments.size() == 2, one
+            // fragment per strand) or as two separate single-fragment records, one per strand.
+            std::vector<int> leftoverNewStrandIDs;
+
+            for (const SDRdataRecord& candidate : records)
+            {
+                if (candidate.newStrandID == dicentric.newStrandID || candidate.newStrandID == monocentric.newStrandID)
+                {
+                    continue;
+                }
+
+                if (!candidate.linear || !isRearrangementCandidate(candidate.newStrandID, numOriginalStrands))
+                {
+                    continue;
+                }
+
+                if (candidate.fragments.size() == 2)
+                {
+                    // Already-combined shape: one fragment must be strand A's leftover, the other
+                    // strand C's leftover, neither carrying a centromere.
+                    const SDRfragment* candidateA = nullptr;
+                    const SDRfragment* candidateC = nullptr;
+
+                    for (const SDRfragment& fragment : candidate.fragments)
+                    {
+                        if (fragment.hasCentromere)
+                        {
+                            candidateA = nullptr;
+                            candidateC = nullptr;
+                            break;
+                        }
+
+                        if (fragment.oldStrandID == strandA)
+                        {
+                            candidateA = &fragment;
+                        }
+                        else if (fragment.oldStrandID == strandC)
+                        {
+                            candidateC = &fragment;
+                        }
+                    }
+
+                    if (candidateA != nullptr && candidateC != nullptr
+                        && fragmentsSpanFullLength(fragmentA, *candidateA, strandA)
+                        && fragmentsSpanFullLength(*fragmentC, *candidateC, strandC))
+                    {
+                        leftoverNewStrandIDs = { candidate.newStrandID };
+                        break;
+                    }
+                }
+            }
+
+            if (leftoverNewStrandIDs.empty())
+            {
+                // Fall back to the two-separate-records shape.
+                const SDRdataRecord* leftoverA = nullptr;
+                const SDRdataRecord* leftoverC = nullptr;
+
+                for (const SDRdataRecord& candidate : records)
+                {
+                    if (candidate.newStrandID == dicentric.newStrandID || candidate.newStrandID == monocentric.newStrandID)
+                    {
+                        continue;
+                    }
+
+                    if (!candidate.linear || !isRearrangementCandidate(candidate.newStrandID, numOriginalStrands) || candidate.fragments.size() != 1)
+                    {
+                        continue;
+                    }
+
+                    const SDRfragment& fragment = candidate.fragments[0];
+
+                    if (fragment.hasCentromere)
+                    {
+                        continue;
+                    }
+
+                    if (leftoverA == nullptr && fragment.oldStrandID == strandA && fragmentsSpanFullLength(fragmentA, fragment, strandA))
+                    {
+                        leftoverA = &candidate;
+                    }
+                    else if (leftoverC == nullptr && fragment.oldStrandID == strandC && fragmentsSpanFullLength(*fragmentC, fragment, strandC))
+                    {
+                        leftoverC = &candidate;
+                    }
+                }
+
+                if (leftoverA != nullptr && leftoverC != nullptr)
+                {
+                    leftoverNewStrandIDs = { leftoverA->newStrandID, leftoverC->newStrandID };
+                }
+            }
+
+            if (leftoverNewStrandIDs.empty())
+            {
+                continue;
+            }
+
+            SDRchromoplexyAcentricPlacement placement{};
+            placement.consumedStrandID = strandB;
+            placement.leftoverNewStrandIDs = leftoverNewStrandIDs;
+            placements.push_back(placement);
+
+            break; // Found this dicentric record's match, move on to the next candidate dicentric record.
+        }
+    }
+
+    return placements;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // --------------------------------------------------------------------------- //
 // Detects LONG DELETION events within a single cell.
@@ -2150,7 +2418,7 @@ inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDR
 // ------------------------------------------------------------------------------------ //
 
 // Builds a graph where each old strand ID is a node. For every rearranged record, every
-// PAIR of distinct old strand IDs referenced by its fragments gets an edge - regardless
+// PAIR of distinct old strand IDs referenced by its fragments gets an edge, regardless
 // of whether that record matches any specific named mutation shape (translocation,
 // deletion-translocation, etc.). Any connected component spanning 3 or more distinct
 // strands is reported as one chromoplexy event.
