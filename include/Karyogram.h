@@ -57,7 +57,7 @@ class Karyogram
 {
 public:
 
-    bool generateKaryogram(				// Function that generates the overall Karyogram structure and calls individual functions to draw each chromosome based on sizes.
+    bool generateSDDkaryogram(				// Function that generates the overall Karyogram structure and calls individual functions to draw each chromosome based on sizes.
         const std::vector<double>& chromosomeSizes,	// Use to scale the chromosome heights and convert to number of pixels on the Karyogram.
 	const std::vector<double>& cellCyclePhase, 	// Look at SDD header 'Cell cycle phase' to determine if chromosomes should be replicated or not in the final karyogram.
 	const std::vector<double>& doseOrFluence,	// Look at SDD header for dose or fluence to be summarized in Karyogram.
@@ -120,7 +120,7 @@ private:
     int computeExcisedColumnLayout(const std::vector<const SDRdataRecord*>& excisedRecords, double maxLengthMbp, double maxRenderHeight, double maxColumnHeight, double verticalGap, std::vector<double>& outHeights);
 
     // Function to draw the SDD karyogram legend at the bottom.
-    void drawLegend(cairo_t* cr, double legendY);
+    void drawSDDlegend(cairo_t* cr, double legendY);
     // Function to draw the karyogram summary box at the top.
     void drawSDDsummary(cairo_t* cr, const std::vector<double>& cellCyclePhase, const std::vector<Exposure>& exposures, const std::vector<double>& doseOrFluence, const std::vector<int>& incidentParticles);
     // Function to draw the top SDR karyogram summary box summarizing which mutations were in the SDR file

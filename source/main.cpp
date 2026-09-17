@@ -273,7 +273,7 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 	    std::to_string(exposure.exposureID - 1) + "_karyogram_" + 
 	    genomeType + ".png");
 
-    	    if (!karyogram.generateKaryogram(				// Check if generateKaryogram correctly runs
+    	    if (!karyogram.generateSDDkaryogram(				// Check if generateSDDkaryogram correctly runs
             	header.chromosome_sizes,
             	header.cell_cycle_phase,
             	header.dose_or_fluence,
