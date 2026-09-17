@@ -60,30 +60,28 @@ Each run writes a `<input>_summary.txt` file next to the input, and, if
 per exposure/cell found in the file. 
 
 The outputs after parsing an SDD file should resemble:
-
-'SDD header parsed successfully.
+```
+SDD header parsed successfully.
 Summary written to: "exampleSDD_summary.txt"
-Karyogram generated successfully: "exampleSDD_karyogram_human.png"'
-
+Karyogram generated successfully: "exampleSDD_karyogram_human.png"
+```
 (The exampleSDD_summary.txt file and exampleSDD_karyogram_human.png files should resemble the ones shown in the attached files of this repository in the
 examples/ folder).
 
 The outputs after parsing an SDR file should resemble:
-
-'Summary written to: "exampleSDR_summary.txt"
-Karyogram generated successfully: "exampleSDR_cell0_karyogram_human.png"'
-
+```
+Summary written to: "exampleSDR_summary.txt"
+Karyogram generated successfully: "exampleSDR_cell0_karyogram_human.png"
+```
 The exampleSDR_summary.txt file and exampleSDR_cell0_karyogram_human.png files should resemble the ones shown in the attached files of this repository in
 the examples/ folder).
 
 
-5. The SDD/SDR file summary will be stored in a file labeled '<SDDinputFile|SDRinputFile>_summary.txt' in the same directory as the SDDinputFile/SDRinputFile.
-
-6. If you decide to plot the Karyogram of the SDD/SDR file illustrating the locations of the single- and double-strand breaks on each of the chromosomes, 
+5. If you decide to plot the Karyogram of the SDD/SDR file illustrating the locations of the single- and double-strand breaks on each of the chromosomes, 
 or the mutations on each chromosome, respectively you can specify either 'human' for human genome centromere positions or 'other' for generic centromere
 locations. The output .png file will be stored in the same directory as the SDD/SDR input file.
 
-7. IMPORTANT: The karyogram can now handle the user passing 'Chromosome sizes' in the SDD and SDR header in the following three ways 
+6. IMPORTANT: The karyogram can now handle the user passing 'Chromosome sizes' in the SDD and SDR header in the following three ways 
 (example for human chromosomes) :
 
 	a. Split homolog chromosome sizes layout: 1,2,3,...,22,1,2,3,...,22,Y,X.
@@ -138,7 +136,7 @@ within a given damage site (i.e. a given SDD data row) (usually between 0-5 SSBs
 ### WHAT IS SUMMARIZED IN THE SDR FILE SUMMARY:
 1. SDR version, author, associated SDD file that produced the SDR file from the MEDRAS-MC output.
 2. Number of chromosomes listed and their respective sizes in mega base pairs.
-3. Per Cell summary of the cell subheader (number of double-strand breaks and misrepairs).
+3. Per cell summary of the cell subheader (number of double-strand breaks and misrepairs).
 4. Number of mutations per each type.
 
 ### WHAT IS PLOTTED IN THE SDR FILE KARYOGRAM 
@@ -160,6 +158,8 @@ and deletion-insertions, chromoplexy and chromothripsis.
 ## FURTHER KARYOGRAM PLOTTING WORK:
 1. Add a zoom in and out and a panning option to conserve image quality. 
 2. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
+3. Draw edge cases for ecDNA formed from multiple foreign acentric fragments.
+4. Draw edge cases for chromoplexy leading to the formation of acentric fragments.
 ... and much more.
 
 
@@ -317,7 +317,7 @@ for (const sddparser::SDRsubHeader& subHeader : parser.getSubHeaders())
 
 
 
-APPENDIX:
+## APPENDIX
 
 Example SDR file mutated data entries for each type, the exact same as exampleSDR_with_dicentrics.txt, with additional comments:
 ** NOTE: In reality, the order of the SDR data entries do not matter, but they are logically ordered in the exampleSDR.txt file for clarity**
