@@ -1389,18 +1389,31 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
 
 
 
+
+
+
+
 // ----------------------------------------------------------------- //
 // Detects EXTRACHROMOSOMAL DNA (ecDNA) events within a single cell. //
 // ----------------------------------------------------------------- //
 
 // Identical fragment signature to the long deletion events with the added
-// indicator of data field 4 isLinear = 0 (for circular fragments). 
+// indicator of data field 4 isLinear = 0 (for circular fragments).
 // Generalized to N independent ecDNA mutations, and for ecDNA made up of
 // multiple deleted fragments from the same original strand. Can have either
 // One remaining strand with N deletions and N+1 fragments, followed by
-// N records of ecDNA depicting the N ecDNA mutations, or followed by one or 
+// N records of ecDNA depicting the N ecDNA mutations, or followed by one or
 // multiple records with multiple fragments forming ecDNA.
-
+//
+// Also covers ecDNA assembled from excised fragments of TWO OR MORE
+// DIFFERENT original strands: each contributing strand still has its own
+// separate flanking/remaining record (the same deletion-shaped gap(s) as
+// the single-origin case), but some or all of their excised gap fragments
+// are combined onto ONE shared circular new strand instead of each getting
+// its own. A contributing strand may supply more than one of its own gap
+// fragments to that shared strand (oldStrandIDs/remainingStrandIDs then
+// repeat that strand once per matched segment, same as the same-origin
+// case), alongside fragments from other strands.
 inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
 {
     std::vector<SDRecDNAevent> ecDNAevents;					// Vector to store ecDNA event information (strand IDs, fragment lengths)
@@ -1432,6 +1445,21 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 	    groupOldStrand[fragment.oldStrandID].push_back({&record, fragment});// Store the fragments corresponding to each original (old) strand ID
 	}
     }
+
+
+    struct Gap								// Gap struct to store the start and end positions of multiple gaps caused by multiple ecDNA events in a single fragment
+    {
+        double startPos;
+        double endPos;
+    };
+
+    // Populated as a side effect of the per-old-strand loop below, for every strand that has a
+    // valid remaining/flanking record - regardless of whether that strand also has any
+    // same-origin excised candidates of its own, and regardless of how many gaps it has. Used
+    // afterward to match multi-origin circular records, whose fragments reference several
+    // different old strands at once (and may reference the SAME old strand more than once, if
+    // that strand has multiple gaps).
+    std::map<int, std::pair<int, std::vector<Gap>>> gapsByOldStrand;		// oldStrandID -> {remainingNewStrandID, gaps}
 
 
     // This regroups the same three fragments, but now keyed by newStrandID instead of oldStrandID,
@@ -1513,7 +1541,7 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
         }
 
 
-	if (multipleRemainingRecords || flankingFragments == nullptr || excisedCandidates.empty())	// If desired format not detected, skip this record
+	if (multipleRemainingRecords || flankingFragments == nullptr)		// Without a valid remaining/flanking record, there's nothing to compute a gap from at all.
         {
             continue;
         }
@@ -1525,12 +1553,6 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
         });
 
 	const double ecDNAtolerance = 0.001;					// tolerance in Mbp difference between contiguous segments <= 100 bp
-
-	struct Gap								// Gap struct to store the start and end positions of multiple gaps caused by multiple ecDNA events in a single fragment
-        {
-            double startPos;
-            double endPos;
-        };
 
         std::vector<Gap> gaps;
 
@@ -1583,8 +1605,22 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
         }
 
 
+	// Remember this strand's gap shape, however many gaps it has, for the multi-origin
+	// matching pass below, regardless of whether it also has any same-origin excised candidates.
+	if (!gaps.empty())
+	{
+	    gapsByOldStrand[oldStrandID] = { remainingStrandID, gaps };
+	}
+
+
+	if (excisedCandidates.empty())						// Nothing of this strand's own origin to match against its gaps, the strand may still be
+        {									// picked up by the multi-origin pass below via gapsByOldStrand.
+            continue;
+        }
+
+
 	// Total fragments across all excised candidates must match the
-        // total number of gaps - every gap must be filled by exactly one
+        // total number of gaps. Every gap must be filled by exactly one
         // fragment, and every excised fragment must fill exactly one gap.
         std::size_t totalExcisedFragments = 0;
 
@@ -1641,11 +1677,13 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
                 break;
             }
 
-	    // All checks for mutation shape passed, store the mutation information.
+	    // All checks for mutation shape passed, store the mutation information. Every segment in a
+	    // same-origin event comes from this one oldStrandID/remainingStrandID, so both vectors just
+	    // repeat that single value once per matched segment.
 	    SDRecDNAevent event{};
-            event.oldStrandID = oldStrandID;
+            event.oldStrandIDs.assign(matchedSegments.size(), oldStrandID);
             event.ecDNAsegments = matchedSegments;
-            event.remainingStrandID = remainingStrandID;
+            event.remainingStrandIDs.assign(matchedSegments.size(), remainingStrandID);
             event.excisedStrandID = newStrandID;
 
             strandEvents.push_back(event);
@@ -1662,8 +1700,114 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 
     }
 
+
+    // ---------------------------------------------------------------------------- //
+    // -------------- Multi-foreign-fragment ecDNA detection section -------------- //
+    // ---------------------------------------------------------------------------- //
+
+    // Circular records combining fragments from TWO OR MORE different original
+    // strands. Each contributing strand may supply ONE OR MORE of its own fragments (matched
+    // against that strand's own gap set computed above), not just a single fragment each. So a
+    // strand with several gaps can have more than one of them recombine into the same circular
+    // molecule, alongside fragments from other strands.
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+        if (record.linear || !isRearrangementCandidate(record.newStrandID, numOriginalStrands) || record.fragments.size() < 2)
+        {
+            continue;
+        }
+
+        std::set<int> distinctStrands;
+
+        for (const SDRfragment& fragment : record.fragments)
+        {
+            distinctStrands.insert(fragment.oldStrandID);
+        }
+
+        if (distinctStrands.size() < 2)
+        {
+            continue; 				// Only one contributing strand, already handled above for single-origin fragment ecDNA.
+        }
+
+        // Track, per contributing strand, which of that strand's own gaps this record has already
+        // claimed, so two fragments from the same strand can't both match the same gap.
+        std::map<int, std::vector<bool>> claimedByStrand;
+
+        for (int strandID : distinctStrands)
+        {
+            const auto strandIt = gapsByOldStrand.find(strandID);
+            claimedByStrand[strandID] = std::vector<bool>(strandIt != gapsByOldStrand.end() ? strandIt->second.second.size() : 0, false);
+        }
+
+        SDRecDNAevent event{};
+        event.excisedStrandID = record.newStrandID;
+        bool allMatched = true;
+
+        for (const SDRfragment& fragment : record.fragments)			// Keep the record's own fragment order in the assembled event.
+        {
+            if (fragment.hasCentromere)
+            {
+                allMatched = false;
+                break;
+            }
+
+            const auto strandIt = gapsByOldStrand.find(fragment.oldStrandID);
+
+            if (strandIt == gapsByOldStrand.end())
+            {
+                allMatched = false;
+                break;
+            }
+
+            const int remainingStrandIDForFragment = strandIt->second.first;
+            const std::vector<Gap>& strandGaps = strandIt->second.second;
+            std::vector<bool>& claimed = claimedByStrand[fragment.oldStrandID];
+
+            bool matched = false;
+
+            for (std::size_t i = 0; i < strandGaps.size(); ++i)
+            {
+                if (claimed[i])
+                {
+                    continue;
+                }
+
+                if (approxEqual(fragment.oldStartPosition, strandGaps[i].startPos, 0.001)
+                    && approxEqual(fragment.oldEndPosition, strandGaps[i].endPos, 0.001))
+                {
+                    claimed[i] = true;
+                    matched = true;
+                    event.oldStrandIDs.push_back(fragment.oldStrandID);
+                    event.ecDNAsegments.push_back({strandGaps[i].startPos, strandGaps[i].endPos});
+                    event.remainingStrandIDs.push_back(remainingStrandIDForFragment);
+                    break;
+                }
+            }
+
+            if (!matched)
+            {
+                allMatched = false;
+                break;
+            }
+        }
+
+        if (!allMatched)
+        {
+            continue;
+        }
+
+        ecDNAevents.push_back(event);
+    }
+
+
     return ecDNAevents;
 }
+
+
+
+
+
+
 
 
 
