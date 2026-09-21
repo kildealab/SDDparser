@@ -148,6 +148,11 @@ clarity.
 4. A legend of symbols at the bottom of the karyogram to denote what all the symbols mean, particulary for inversions and ecDNA.
 5. So far, drawing is supported for long deletions, balanced inversions, balanced translocations, ecDNA, deletion-inversions, deletion-translocations,
 and deletion-insertions, chromoplexy and chromothripsis. 
+6. For chromoplexy and ecDNA leading to acentric strands composed of multiple foreign DNA fragments, they receive their own slots
+after the sex chromosomes. They are labeled such that the original chromosomes that compose the acentric strand are labeled and a '*' is 
+present to indicate it is a derivative, not an original chromosome strand. (see exampleSDR_with_dicentrics_cell0_karyogram_human.png).
+Note: the multi-foreign-fragment ecDNA are depicted pie-chart style, to represent 'how much' of each original
+chromosome is present in the new ecDNA fragment. 
 
 <picture align = "center">
 <img src="./SDRkaryogram_figure.svg" width = "100%" alt="Different mutation representations from irradiated DNA"><br>
@@ -158,8 +163,6 @@ and deletion-insertions, chromoplexy and chromothripsis.
 ## FURTHER KARYOGRAM PLOTTING WORK:
 1. Add a zoom in and out and a panning option to conserve image quality. 
 2. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
-3. Draw edge cases for ecDNA formed from multiple foreign acentric fragments.
-4. Draw edge cases for chromoplexy leading to the formation of acentric fragments.
 ... and much more.
 
 
@@ -173,7 +176,7 @@ Everything the library exposes lives in the `sddparser` namespace. Include the s
 #include <SDDparserLibrary.h>
 ```
 
-Link against `libSDDparser.a` and `cairo`:
+Link against `libSDDparser.a` and `cairo` (my_program is the name of the file that will include and run the SDDparser library - libSDDparser.a):
 
 ```
 g++ -std=c++17 -I/path/to/SDDparser/include -o my_program my_program.cpp \
@@ -275,7 +278,7 @@ for (const sddparser::Exposure& exposure : parser.getExposures())
 {
     std::vector<sddparser::Exposure> singleExposure = {exposure};
 
-    karyogram.generateKaryogram(
+    karyogram.generateSDDkaryogram(
         header.chromosome_sizes,
         header.cell_cycle_phase,
         header.dose_or_fluence,
@@ -309,8 +312,8 @@ for (const sddparser::SDRsubHeader& subHeader : parser.getSubHeaders())
 
 | Method | Description |
 |---|---|
-| `bool generateKaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, outputFilename)` | Draws a damage karyogram (SSB/DSB markers) for one exposure from SDD data. |
-| `bool generateSDRkaryogram(masterHeader, subHeader, humanGenome, outputFilename)` | Draws a structural-rearrangement karyogram (deletions, inversions, translocations, ecDNA, chromoplexy, chromothripsis, and more) for one cell from SDR data. |
+| `bool generateSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, outputFilename)` | Draws a damage karyogram (SSB/DSB markers) for one exposure from SDD data. |
+| `bool generateSDRkaryogram(masterHeader, subHeader, humanGenome, outputFilename)` | Draws a structural-rearrangement karyogram (deletions, inversions, translocations, ecDNA, chromoplexy, chromothripsis, and more) for one cell exposure from SDR data. |
 
 `humanGenome = true` draws real human centromere positions; `false` uses a generic centromere at the midpoint of each chromosome.
 
@@ -359,7 +362,7 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 
 -- ecDNA mutations:
 
-- Multiple ecDNA per chromosome strand
+- Multiple-fragment ecDNA per chromosome strand
 
 0; 54; 36/0/55.0/1, 36/70.0/88.0/0, 36/100.0/113.0/0; 1;
 
@@ -367,11 +370,19 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 
 0; 56; 36/88.0/100.0/0; 0;
 
-- Multiple deletions recombining into one larger ecDNA:
+- Multiple fragments combining into one larger ecDNA:
 
 0; 57; 15/0/30.0/1, 15/50.0/70.0/0, 15/90.0/106.9/0; 1;
 
 0; 58; 15/30.0/50.0/0, 15/70.0/90.0/0; 0;
+
+- Multi-foreign-fragment ecDNA (generalization of the previous two examples, and can be from multiple different chromosomes:
+
+0; 99; 14/0/60/1, 14/75/90/0, 14/100/113/0; 1;
+
+0; 100; 46/0/90/1, 46/130/165.2/0; 1;
+
+0; 101; 14/60/75/0, 14/90/100/0, 46/90/130/0; 0;
 
 
 -- Deletion-Inversion, deleted segment has centromere 
@@ -428,7 +439,6 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 0; 94; 17/83.5/30/0, 21/40/50/0; 1;
 
 0; 95; 20/66.6/20/1, 18/60/81/0; 1;
-
 
 - Chromoplexy case leading to one dicentric, one monocentric and one acentric:
 

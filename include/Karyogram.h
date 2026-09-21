@@ -108,6 +108,8 @@ private:
     void drawInversionChevron(cairo_t* cr, double centerX, double centerY, double size);
     // Draw symbol for ecDNA mutated segments found in SDR file.
     void drawCircularFragment(cairo_t* cr, double centerX, double centerY, double diameter, RGB color, bool drawOutline = true);
+    // Draw ecDNA mutated segment combined from multiple foreign strands in SDR file
+    void drawPieChartFragment(cairo_t* cr, double centerX, double centerY, double diameter, const std::vector<std::pair<RGB, double>>& wedges, bool drawOutline = true);
 
     // Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
     const CentromerePosition* getHumanCentromere(int chromosomeID);

@@ -21,7 +21,7 @@ Mutation Summary:
   Long Deletions: 2
   Balanced Inversions: 2
   Balanced Translocations: 3
-  Extrachromosomal DNA (ecDNA): 3
+  Extrachromosomal DNA (ecDNA): 4
   Deletion-Inversions: 1
   Deletion-Translocations: 2
   Deletion-Insertions: 1

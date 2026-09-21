@@ -66,15 +66,37 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     }
 
 
+    // ecDNA assembled from excised fragments of TWO OR MORE different original strands is
+    // acentric and doesn't "belong" to any one chromosome. Like the chromoplexy leftover
+    // pieces above, it gets its own dedicated slot instead of being grouped under whichever
+    // strand determineHomeStrandID() happens to fall back to. A same-origin ecDNA (every
+    // fragment from the same strand, however many gaps) is left alone here: isECDNAshape()
+    // already draws those correctly next to their home chromosome.
+    const std::vector<SDRecDNAevent> ecDNAevents = detectECDNA(subHeader, static_cast<int>(sizes[0]), masterHeader);
+
+    std::set<int> multiOriginECDNAnewStrandIDs; // excisedStrandID of every multi-origin ecDNA event.
+    for (const SDRecDNAevent& event : ecDNAevents)
+    {
+    	const std::set<int> distinctOrigins(event.oldStrandIDs.begin(), event.oldStrandIDs.end());
+
+        if (distinctOrigins.size() >= 2)
+        {
+            multiOriginECDNAnewStrandIDs.insert(event.excisedStrandID);
+        }
+    }
+
+
     for (const SDRdataRecord& record : subHeader.dataRecords)
     {
         if (record.fragments.empty())
         {
             continue;
         }
-	// This record's material is drawn only in the dedicated chromoplexy acentric slot below, leave
+	// This record's material is drawn only in the dedicated chromoplexy acentric slot below, 
+	// or the dedicated multi-foreign fragment ecDNA acentric slot, leave
 	// it out of its own chromosome's normal slot grouping so it isn't drawn twice.
-	else if (chromoplexyRecombinedNewStrandIDs.count(record.newStrandID))
+	else if (chromoplexyRecombinedNewStrandIDs.count(record.newStrandID) 
+		|| multiOriginECDNAnewStrandIDs.count(record.newStrandID))
 	{
 	    continue;
 	}
@@ -152,15 +174,20 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     const int lastRowUsedCols = drawableGroups - sexChromosomeRow * columns;
     const bool sexChromosomesFitInLastRow = (columns - lastRowUsedCols) >= 2;
 
-    // Chromoplexy acentric-recombination slots are drawn in their own row(s) after X and Y,
-    // packed the same way autosome slots are.
+    // Chromoplexy acentric-recombination slots and multi-origin ecDNA slots share ONE row
+    // sequence after X and Y. ecDNA slots continue filling any columns the chromoplexy slots
+    // left open in their last row before wrapping to a new row.
     const int chromoplexySlotCount = static_cast<int>(chromoplexyPlacements.size());
-    const int chromoplexyRows = (chromoplexySlotCount + columns - 1) / columns;
+    const int multiOriginECDNAslotCount = static_cast<int>(multiOriginECDNAnewStrandIDs.size());
+    // Combine acentric rows for both ecDNA and chromoplexy to pack into the same rows both mutations if there is space, otherwise 
+    // move on to new row.
+    const int combinedAcentricSlotCount = chromoplexySlotCount + multiOriginECDNAslotCount;
+    const int combinedAcentricRows = (combinedAcentricSlotCount + columns - 1) / columns;
     const int autosomeAndSexRows = sexChromosomesFitInLastRow ? rows : rows + 1;
-    const int chromoplexyStartRow = autosomeAndSexRows;
-    const double chromoplexyStartY = startY + chromoplexyStartRow * rowHeight;
+    const int acentricsStartRow = autosomeAndSexRows;
+    const double acentricsStartY = startY + acentricsStartRow * rowHeight;
 
-    imgHeight = static_cast<int>(startY + (autosomeAndSexRows + chromoplexyRows) * rowHeight + legendHeight + legendBottomMargin);
+    imgHeight = static_cast<int>(startY + (autosomeAndSexRows + combinedAcentricRows) * rowHeight + legendHeight + legendBottomMargin);
 
     const double maxRenderHeight = 180.0;
     const double chromosomeWidth = 20.0;
@@ -202,12 +229,12 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         {
             return clusterRecordsForDrawing(filterBaselineIfMutated(it->second, chromosomeCount), oldStrandID, mergedRecordStorage, masterHeader);
         }
-
+/*
         if (chromoplexyConsumedStrands.count(oldStrandID))
         {
             return {};
         }
-
+*/
         return synthesizeIntactRecordIfMissing(oldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
     };
 
@@ -414,8 +441,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
         // Concatenate every leftover record's fragments into one synthetic record. When the SDR file
         // already combined both partners' leftover pieces into a single record, this is just that
-        // record's own fragments (a no-op concatenation); when they're still two separate records,
-        // this joins them - either way, these are the loose, non-centromeric ends of the same 3-way
+        // record's own fragments (a concatenation); when they're still two separate records,
+        // this joins them. Either way, these are the loose, non-centromeric ends of the same 3+-way
         // rearrangement re-joining each other.
         SDRdataRecord combinedRecord{};
         combinedRecord.cellID = subHeader.cellID;
@@ -434,10 +461,10 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         const int col = static_cast<int>(p) % columns;
         const int row = static_cast<int>(p) / columns;
         const double slotCenterX = (col * colWidth) + (colWidth / 2.0);
-        const double slotPosY = chromoplexyStartY + row * rowHeight;
+        const double slotPosY = acentricsStartY + row * rowHeight;
 
         // homeOldStrandID is only used by drawStackedMutations()/computeMaxBarHeight() to test for
-        // named single-strand shapes (deletion, ecDNA, etc.) - this record mixes two different
+        // named single-strand shapes (deletion, ecDNA, etc.). This record mixes two different
         // strands' fragments, so none of those shapes can match regardless of which ID is passed.
         drawStackedMutations(cr, combinedRecords, slotCenterX, slotPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, combinedRecord.fragments.front().oldStrandID);
         const double slotLabelHeight = computeMaxBarHeight(combinedRecords, maxLengthMbp, maxRenderHeight, combinedRecord.fragments.front().oldStrandID, masterHeader);
@@ -464,6 +491,122 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 	cairo_show_text(cr, chromoplexyLabel.c_str());
     }
 
+
+
+    // ---------------------------------------------------
+    // Draw multi-origin ecDNA slots, one per event, packed
+    // into rows after the chromoplexy slots exactly like
+    // the autosome/chromoplexy slots are.
+    // ---------------------------------------------------
+    std::size_t ecDNAslotIndex = 0;
+
+    for (const SDRecDNAevent& event : ecDNAevents)
+    {
+        const std::set<int> distinctOrigins(event.oldStrandIDs.begin(), event.oldStrandIDs.end());
+
+        if (distinctOrigins.size() < 2)
+        {
+            continue; // Same-origin ecDNA is already drawn next to its home chromosome above.
+        }
+
+        const SDRdataRecord* circularRecord = nullptr;
+
+        for (const SDRdataRecord& record : subHeader.dataRecords)
+        {
+            if (record.newStrandID == event.excisedStrandID)
+            {
+                circularRecord = &record;
+                break;
+            }
+        }
+
+        if (circularRecord == nullptr)
+        {
+            continue; // Shouldn't happen - excisedStrandID came from detectECDNA() on this same subHeader.
+        }
+
+        const int slotPosition = chromoplexySlotCount + static_cast<int>(ecDNAslotIndex);
+        const int col = slotPosition % columns;
+        const int row = slotPosition / columns;
+        const double slotCenterX = (col * colWidth) + (colWidth / 2.0);
+        const double slotPosY = acentricsStartY + row * rowHeight;
+        ++ecDNAslotIndex;
+
+        double totalLengthMbp = 0.0;
+
+        for (const SDRfragment& fragment : circularRecord->fragments)
+        {
+            totalLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+        }
+
+        const double diameter = std::min(computeSDRbarHeight(totalLengthMbp, maxLengthMbp, maxRenderHeight), chromosomeWidth * 3.0);
+        const double centerY = slotPosY + diameter / 2.0;
+
+
+	// Sum each contributing strand's total length across however many segments it supplied
+        // (a strand with two gaps recombining into this ecDNA gets ONE wedge sized by their
+        // combined length, not two separate wedges), then build one wedge per strand, in the
+        // order each strand first appears on the circular record - same order the label below
+        // uses, so the wedge position and the label token line up.
+        std::map<int, double> lengthByStrand;
+
+        for (const SDRfragment& fragment : circularRecord->fragments)
+        {
+            lengthByStrand[fragment.oldStrandID] += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+        }
+
+        std::vector<std::pair<RGB, double>> wedges;
+        std::set<int> seenStrands;
+
+        for (const SDRfragment& fragment : circularRecord->fragments)
+        {
+            if (seenStrands.count(fragment.oldStrandID))
+            {
+                continue;
+            }
+
+            seenStrands.insert(fragment.oldStrandID);
+            wedges.push_back({ getColorForOriginalStrand(fragment.oldStrandID, masterHeader), lengthByStrand[fragment.oldStrandID] });
+        }
+
+        drawPieChartFragment(cr, slotCenterX, centerY, diameter, wedges, true);
+
+
+        // Label reads e.g. "chrA-chrB*", one "chr<oldStrandID>" token per DISTINCT contributing
+        // strand, in the order each strand first appears on the circular record, trailing "*"
+        // marking it as acentric. This names which chromosomes are involved, not
+        // how many pieces each gave.
+        std::string ecDNAlabel;
+        std::set<int> labeledStrands;
+
+        for (int strandID : event.oldStrandIDs)
+        {
+            if (labeledStrands.count(strandID))
+            {
+                continue;
+            }
+
+            labeledStrands.insert(strandID);
+
+            if (!ecDNAlabel.empty())
+            {
+                ecDNAlabel += "-";
+            }
+
+            ecDNAlabel += "chr" + std::to_string(strandID);
+        }
+
+        ecDNAlabel += "*";
+
+        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, 13.0);
+
+        cairo_text_extents_t ecDNAlabelExtents;
+        cairo_text_extents(cr, ecDNAlabel.c_str(), &ecDNAlabelExtents);
+        cairo_move_to(cr, slotCenterX - ecDNAlabelExtents.width / 2.0, slotPosY + diameter + 25.0);
+        cairo_show_text(cr, ecDNAlabel.c_str());
+    }
 
 
     // ---------------------------------------------
@@ -1665,6 +1808,81 @@ void Karyogram::drawCircularFragment(
 
 
 
+
+
+
+
+
+
+
+// Draws one wedge per {color, fraction} entry in order, each spanning fraction * 360 degrees of
+// the circle, so the assembled circle looks like a pie chart of each contributing strand's own
+// color, proportional to how much of the fragment's total length that strand contributed. The
+// wedge outlines against each other are always drawn (so the split between colors is visible even
+// when they're similar); drawOutline instead controls the outer boundary of the whole circle.
+void Karyogram::drawPieChartFragment(
+    cairo_t* cr,
+    double centerX,
+    double centerY,
+    double diameter,
+    const std::vector<std::pair<RGB, double>>& wedges,
+    bool drawOutline)
+{
+    const double radius = diameter / 2.0;
+
+    // A single-wedge (single-origin) circle needs no pie slicing at all, draw it as a plain
+    // filled circle, same as drawCircularFragment(), to avoid a stray radius line across it.
+    if (wedges.size() <= 1)
+    {
+        const RGB color = wedges.empty() ? RGB{0.5, 0.5, 0.5} : wedges.front().first;
+        drawCircularFragment(cr, centerX, centerY, diameter, color, drawOutline);
+        return;
+    }
+
+    double totalFraction = 0.0;
+
+    for (const auto& wedge : wedges)
+    {
+        totalFraction += wedge.second;
+    }
+
+    if (totalFraction <= 0.0)
+    {
+        return;
+    }
+
+    double startAngle = -M_PI / 2.0; // Start at the top of the circle (12 o'clock), like a conventional pie chart.
+
+    for (const auto& [color, fraction] : wedges)
+    {
+        const double sweepAngle = (fraction / totalFraction) * 2.0 * M_PI;
+        const double endAngle = startAngle + sweepAngle;
+
+        cairo_new_path(cr);
+        cairo_move_to(cr, centerX, centerY);
+        cairo_arc(cr, centerX, centerY, radius, startAngle, endAngle);
+        cairo_close_path(cr);
+
+        cairo_set_source_rgb(cr, color.r, color.g, color.b);
+        cairo_fill_preserve(cr);
+
+        // Thin line between wedges so adjacent similar colors stay visually distinguishable.
+        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_set_line_width(cr, 0.75);
+        cairo_stroke(cr);
+
+        startAngle = endAngle;
+    }
+
+    if (drawOutline)
+    {
+        cairo_new_path(cr);
+        cairo_arc(cr, centerX, centerY, radius, 0.0, 2.0 * M_PI);
+        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_set_line_width(cr, 1.5);
+        cairo_stroke(cr);
+    }
+}
 
 
 
