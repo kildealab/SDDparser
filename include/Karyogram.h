@@ -90,7 +90,7 @@ private:
     // The main draw chromosome function, accounting for individual chromosome sizes and centromere ranges and locations.
     void drawChromosome(cairo_t* cr, double x, double y, double height, double width, RGB color, double centromereStart, double centromereEnd);
     // The main draw mutated chromosome function, accounting additionally for foreign segments with different colors, inversion markers, white deletion segments.
-    void drawPaintedChromosome(cairo_t* cr, double x, double y, double height, double width, const std::vector<PaintedSegment>& segments, bool roundTopCap = true, bool roundBottomCap = true, bool drawOutline = true);
+    void drawPaintedFragment(cairo_t* cr, double x, double y, double height, double width, const std::vector<PaintedSegment>& segments, bool roundTopCap = true, bool roundBottomCap = true, bool drawOutline = true);
     // Function to help stack mutated segments onto original intact chromosomes with their original colors, determines positioning of the mutated segments and deleted segments
     void drawStackedMutations(cairo_t* cr, const std::vector<const SDRdataRecord*>& records, double slotCenterX, double posY, double chromosomeWidth, double maxLengthMbp, double maxRenderHeight, bool humanGenome, const SDRmasterHeader& masterHeader, int homeOldStrandID);
 
@@ -107,9 +107,11 @@ private:
     // Draw symbol for inverted segments arising from mutations in the SDR file
     void drawInversionChevron(cairo_t* cr, double centerX, double centerY, double size);
     // Draw symbol for ecDNA mutated segments found in SDR file.
-    void drawCircularFragment(cairo_t* cr, double centerX, double centerY, double diameter, RGB color, bool drawOutline = true);
+    void drawCircularFragment(cairo_t* cr, double centerX, double centerY, double diameter, RGB color);
     // Draw ecDNA mutated segment combined from multiple foreign strands in SDR file
-    void drawPieChartFragment(cairo_t* cr, double centerX, double centerY, double diameter, const std::vector<std::pair<RGB, double>>& wedges, bool drawOutline = true);
+    void drawPieChartFragment(cairo_t* cr, double centerX, double centerY, double diameter, const std::vector<std::pair<RGB, double>>& wedges);
+    // Draw the inner circle on ecDNA fragments to resemble a ring fragment.
+    void drawCircularFragmentInnerRing(cairo_t* cr, double centerX, double centerY, double outerDiameter);
 
     // Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
     const CentromerePosition* getHumanCentromere(int chromosomeID);
@@ -137,11 +139,11 @@ private:
     std::vector<const SDRdataRecord*> filterBaselineIfMutated(const std::vector<const SDRdataRecord*>& records, int numOriginalStrands);
 
     // Functions to alter the drawing of certain mutations depending on the specific mutation involved
-    bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);			// For long deletions
+    bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);				// For long deletions
     bool isECDNAshape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);				// For ecDNA mutations
-    bool isDeletionInversionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);		// For deletion-inversion mutations
-    bool isDeletionTranslocationDonorShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);	// For deletion-translocation mutations
-    bool isLoneGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);				// For deletion-insertion mutations
+    bool isDeletionInversionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);							// For deletion-inversion mutations
+    bool isDeletionTranslocationDonorShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);						// For deletion-translocation mutations
+    bool isLoneGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);									// For deletion-insertion mutations
 
     // Helper functions to stack mutated chromosome segments of different colors on top of the original segments and remove the correct amount of 
     // chromosome if a deletion occurs.

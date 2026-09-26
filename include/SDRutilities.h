@@ -42,12 +42,11 @@ inline int determineHomeStrandID(const SDRdataRecord& record)
     }
 
     if (centromereCount == 1)							// Only supports single-centromere records for determining home strand
-    {										// Otherwise, home strand is the first listed fragment old strand ID
+    {
         return centromereStrandID;
     }
 
-    // Zero or 2+ centromeres - ambiguous under today's single-slot
-    // model. Fall back to the original strand-ordering convention.
+    // Zero or 2+ centromeres, fall back to the original strand-ordering convention (first fragment old strand ID appearing in the data record is the home slot).
     return record.fragments.empty() ? -1 : record.fragments[0].oldStrandID;
 }
 
@@ -70,15 +69,14 @@ inline int determineHomeStrandID(const SDRdataRecord& record)
 
 
 // Mutated strands are only those with new strand IDs > numOriginalStrands.
-// EX: for the 46 human chromosomes with strand IDs (1-46), mutated strands
-// begin with new Strand ID > 46. This will be consistent across SDR files.
+// EX: for the 46 human chromosomes with strand IDs (1-46), mutated strands begin with new Strand ID > 46. This will be consistent across SDR files.
 inline bool isRearrangementCandidate(int newStrandID, int numOriginalStrands)
 {
-    return newStrandID >= numOriginalStrands;
+    return newStrandID > numOriginalStrands;
 }
 
 
-// 0.001 Mbp tolerance for long deletions, 10^-5 Mbp tolerance for balanced inversion/translocations.
+// Absolute-difference threshold check, 0.001 Mbp tolerance for long deletions, 10^-5 Mbp tolerance for balanced inversion/translocations.
 inline bool approxEqual(double a, double b, double tolerance)
 {
 
@@ -94,54 +92,45 @@ inline bool approxEqual(double a, double b, double tolerance)
 
 
 
-// Finds record pairs representing a dicentric+acentric outcome, now
-// generalized to records with any number of fragments (not just
-// exactly 2), covering translocations exchanging segments from the
-// middle of a chromosome, not just its ends.
+
+
+
+// Finds record pairs representing a dicentric+acentric outcome, now generalized to records with any number of fragments (not just
+// exactly 2), covering translocations exchanging segments from the middle of a chromosome, not just its ends.
 //
-// Within the dicentric candidate record, exactly two fragments must
-// carry a centromere, from two DIFFERENT original strands, every
-// other fragment in that record must be acentric and reference one
-// of those same two strands. The first listed centromere-bearing
-// fragment's strand becomes the dicentric record's own home strand;
-// the second becomes the paired acentric record's home strand. This
-// ordering is deliberate, whichever strand's fragment is listed first
-// is the one that "owns" the dicentric drawing.
+// Within the dicentric candidate record, exactly two fragments must carry a centromere, from two DIFFERENT original strands, every
+// other fragment in that record must be acentric and reference one of those same two strands. The first listed centromere-bearing
+// fragment's strand becomes the dicentric record's own home strand; the second becomes the paired acentric record's home strand. This
+// ordering is deliberate, whichever strand's fragment is listed first is the one that "owns" the dicentric drawing.
 inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
 {
     std::map<int, int> overrides;
-    std::set<int> claimedAcentricRecords;				// Sorts Acentric IDs in order
-    std::set<int> claimedExcisedRecords;				// Sorts excised fragment IDs and stores them
+    std::set<int> claimedAcentricRecords;				// newStrandIDs of acentric records already paired with a dicentric record, prevents the same acentric record being matched to more than one dicentric candidate.
+    std::set<int> claimedExcisedRecords;				// newStrandIDs of single-fragment deletion records already used to fill a gap for some earlier pair, prevents the same deletion being reused by a different pair.
 
     const std::vector<SDRdataRecord>& records = subHeader.dataRecords;
-    const double tolerance = 0.001;					// In Mbp, amount fo discrepancy allowed between fragment ends and gap positions
+    const double tolerance = 0.001;					// In Mbp, amount of discrepancy allowed between fragment ends and gap positions
 
-    // Given pooled fragments for ONE strand (from a dicentric+acentric
-    // pair), checks whether they (plus zero or more ADDITIONAL
-    // single-fragment excised records for that strand) exactly span
-    // its full declared length. This is what lets a deletion coexist
-    // with the translocation that created the dicentric/acentric pair.
-    // Only single-fragment excised pieces are matched (one deletion
-    // per gap), a multi-fragment excised piece with its own internal
-    // gaps isn't supported by this yet.
-    auto tryTileWithDeletions = [&](std::vector<SDRfragment> pooled, int strandID,
-                                     std::set<std::size_t> excludeIndices,
-                                     std::vector<std::size_t>& usedExcisedIndices) -> bool
+    // Given pooled fragments for ONE strand (from a dicentric+acentric pair), checks whether they (plus zero or more ADDITIONAL 
+    // single-fragment excised records for that strand) exactly span its full declared length. This is what lets a deletion coexist
+    // with the translocation that created the dicentric/acentric pair. Only single-fragment excised pieces are matched (one deletion
+    // per gap).
+    auto tryTileWithDeletions = [&](std::vector<SDRfragment> pooled, int strandID, std::set<std::size_t> excludeIndices, std::vector<std::size_t>& usedExcisedIndices) -> bool
     {
         const std::size_t sizeIndex = static_cast<std::size_t>(strandID);
-        if (sizeIndex >= masterHeader.intactChromosomeSizes.size())			// Ignore mutated chromosome entries, checking if intact chromosomes are spanned fully by the mutated segments within tolerance
+        if (sizeIndex >= masterHeader.intactChromosomeSizes.size())			// strandID must index a valid ORIGINAL chromosome size. Out of range means its full length is unknown, so quit and return false rather than guess.
         {
             return false;
         }
 
         const double fullSize = masterHeader.intactChromosomeSizes[sizeIndex];		// Size of chromosome in Mbp
-        if (fullSize <= 0.0)
+        if (fullSize <= 0.0)								// A zero/negative declared size can't be tiled against.
         {
             return false;
         }
 
-	// Sort all 'pooled' fragments in a dicentric entry according to their start and end positions. First listed fragment with a centromere becomes
-	// the home slot by which the dicentric chromosome will be drawn.
+	// Sort THIS STRAND's own pooled fragments (gathered from both the dicentric and acentric candidates, by the
+	// caller) by position, so the loop below can walk them in order and find the gaps between them.
         std::sort(pooled.begin(), pooled.end(), [](const SDRfragment& a, const SDRfragment& b)
         {
             return std::min(a.oldStartPosition, a.oldEndPosition) < std::min(b.oldStartPosition, b.oldEndPosition);
@@ -157,74 +146,76 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
 
         std::vector<Gap> gaps;
 
+
         const double firstStart = std::min(pooled.front().oldStartPosition, pooled.front().oldEndPosition);
 
-        if (firstStart > 0.0 && !approxEqual(firstStart, 0.0, tolerance))
+        if (firstStart > 0.0 && !approxEqual(firstStart, 0.0, tolerance))		// Leading gap, the pooled fragments don't reach back to position 0.
         {
             gaps.push_back({0.0, firstStart});
         }
 
-        for (std::size_t k = 0; k + 1 < pooled.size(); ++k)
+        for (std::size_t k = 0; k + 1 < pooled.size(); ++k)				// Walk consecutive pooled fragments looking for a gap between each pair.
         {
             const double higherPos = std::max(pooled[k].oldStartPosition, pooled[k].oldEndPosition);
             const double lowerPos = std::min(pooled[k + 1].oldStartPosition, pooled[k + 1].oldEndPosition);
 
-            if (approxEqual(higherPos, lowerPos, tolerance))
+            if (approxEqual(higherPos, lowerPos, tolerance))				// Fragments are contiguous within tolerance, no gap here.
             {
                 continue;
             }
 
-            if (lowerPos <= higherPos)
+            if (lowerPos <= higherPos)							// Fragments overlap or are out of order, not a valid tiling, reject the whole strand.
             {
                 return false;
             }
 
-            gaps.push_back({higherPos, lowerPos});
+            gaps.push_back({higherPos, lowerPos});					// Genuine gap between these two fragments.
         }
 
         const double lastEnd = std::max(pooled.back().oldStartPosition, pooled.back().oldEndPosition);
 
-        if (fullSize > lastEnd && !approxEqual(lastEnd, fullSize, tolerance))
+        if (fullSize > lastEnd && !approxEqual(lastEnd, fullSize, tolerance))		// Trailing gap, the pooled fragments don't reach the chromosome's true end.
         {
             gaps.push_back({lastEnd, fullSize});
         }
 
-        if (gaps.empty())				// Clean tiling already, no deletion involved.
+        if (gaps.empty())								// Clean tiling already, no deletion involved.
         {
             return true;
         }
 
-        std::vector<bool> gapMatched(gaps.size(), false);
 
-        for (std::size_t r = 0; r < records.size(); ++r)
+        std::vector<bool> gapMatched(gaps.size(), false);				// Tracks which gaps have been filled by a matching deletion record so far.
+
+        for (std::size_t r = 0; r < records.size(); ++r)				// Search every other record in the cell for a single-fragment deletion filling one of the gaps above.
         {
-            if (excludeIndices.count(r))
+            if (excludeIndices.count(r))						// Skip records already reserved: the dicentric/acentric records themselves, and any excised record already claimed elsewhere.
             {
                 continue;
             }
 
             const SDRdataRecord& candidate = records[r];
 
-            if (!candidate.linear || !isRearrangementCandidate(candidate.newStrandID, numOriginalStrands))
+            if (!candidate.linear || !isRearrangementCandidate(candidate.newStrandID, numOriginalStrands))	// A deletion's excised piece is its own plain LINEAR record (not a circular ecDNA fragment), and must be a genuine rearrangement.
             {
                 continue;
             }
 
-            if (candidate.fragments.size() != 1)
+            if (candidate.fragments.size() != 1)					// Only a single-fragment record can fill exactly one gap, a multi-fragment excised piece isn't matched here.
             {
                 continue;
             }
 
             const SDRfragment& fragment = candidate.fragments[0];
 
-            if (fragment.oldStrandID != strandID || fragment.oldStartPosition > fragment.oldEndPosition)
+            if (fragment.oldStrandID != strandID || fragment.oldStartPosition > fragment.oldEndPosition)	// Must reference this same strand, and not be inverted (a plain deletion has no orientation).
             {
                 continue;
             }
 
             for (std::size_t g = 0; g < gaps.size(); ++g)
             {
-                if (gapMatched[g])
+                if (gapMatched[g])							// Already filled, don't double-claim the same gap.
                 {
                     continue;
                 }
@@ -233,13 +224,13 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
                     approxEqual(fragment.oldEndPosition, gaps[g].endPos, tolerance))
                 {
                     gapMatched[g] = true;
-                    usedExcisedIndices.push_back(r);
+                    usedExcisedIndices.push_back(r);					// Remember which record filled this gap, so the caller can mark it claimed.
                     break;
                 }
             }
         }
 
-        for (bool matched : gapMatched)
+        for (bool matched : gapMatched)							// Every gap must be filled, otherwise the tiling of records to the original chromosomes invovled is incomplete.
         {
             if (!matched)
             {
@@ -251,19 +242,20 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
     };
 
 
-    for (std::size_t i = 0; i < records.size(); ++i)
+
+    for (std::size_t i = 0; i < records.size(); ++i)					// Outer loop: try every record as a potential DICENTRIC candidate.
     {
         const SDRdataRecord& dicentricCandidate = records[i];
 
-        if (!dicentricCandidate.linear || !isRearrangementCandidate(dicentricCandidate.newStrandID, numOriginalStrands))
+        if (!dicentricCandidate.linear || !isRearrangementCandidate(dicentricCandidate.newStrandID, numOriginalStrands))	// Must be a linear rearranged record.
         {
             continue;
         }
 
-        std::vector<int> centromereStrandsInOrder;
-        std::set<int> allStrandsInRecord;
+        std::vector<int> centromereStrandsInOrder;					// Strand ID of every centromere-bearing fragment, in the order they appear on the record.
+        std::set<int> allStrandsInRecord;						// Every distinct strand referenced anywhere in the record.
 
-        for (const SDRfragment& fragment : dicentricCandidate.fragments)
+        for (const SDRfragment& fragment : dicentricCandidate.fragments)		// Store strand IDs of all centromere bearing strands.
         {
             allStrandsInRecord.insert(fragment.oldStrandID);
 
@@ -273,20 +265,20 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
             }
         }
 
-        if (centromereStrandsInOrder.size() != 2)
+        if (centromereStrandsInOrder.size() != 2)					// We are looking for dicentrics here, the record must have exactly 2 centromeres.
         {
             continue;
         }
 
-        const int strandX = centromereStrandsInOrder[0];
-        const int strandY = centromereStrandsInOrder[1];
+        const int strandX = centromereStrandsInOrder[0];				// First listed centromere-bearing strand becomes home for the DICENTRIC record.
+        const int strandY = centromereStrandsInOrder[1];				// And the second listed centromere-bearing strand becomes home for the paired ACENTRIC record, once a valid match is confirmed below.
 
-        if (strandX == strandY || allStrandsInRecord.size() != 2)
+        if (strandX == strandY || allStrandsInRecord.size() != 2)			// The two centromeres must come from two DIFFERENT strands, and no fragment here may reference a third strand.
         {
             continue;
         }
 
-        for (std::size_t j = 0; j < records.size(); ++j)
+        for (std::size_t j = 0; j < records.size(); ++j)				// Inner loop: search for the ACENTRIC record that pairs with this dicentric candidate.
         {
             if (i == j)
             {
@@ -295,12 +287,12 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
 
             const SDRdataRecord& acentricCandidate = records[j];
 
-            if (claimedAcentricRecords.count(acentricCandidate.newStrandID))
+            if (claimedAcentricRecords.count(acentricCandidate.newStrandID))		// Already paired with a different dicentric candidate earlier in the outer loop, skip.
             {
                 continue;
             }
 
-            if (!acentricCandidate.linear || !isRearrangementCandidate(acentricCandidate.newStrandID, numOriginalStrands))
+            if (!acentricCandidate.linear || !isRearrangementCandidate(acentricCandidate.newStrandID, numOriginalStrands)) // Must be a rearranged record and linear, otherwise skip.
             {
                 continue;
             }
@@ -319,13 +311,14 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
                 }
             }
 
+	    // Must be fully acentric, and reference EXACTLY strandX and strandY, the two centromeres the dicentric record took.
             if (hasCentromereFlag || acentricStrands.size() != 2 || !acentricStrands.count(strandX) || !acentricStrands.count(strandY))
             {
                 continue;
             }
 
-            std::vector<SDRfragment> pooledX;
-            std::vector<SDRfragment> pooledY;
+            std::vector<SDRfragment> pooledX;						// Every fragment referencing strandX, from BOTH the dicentric and acentric candidates, checked below to see if together they tile strandX's full length.
+            std::vector<SDRfragment> pooledY;						// Same, for strandY.
 
             for (const SDRfragment& fragment : dicentricCandidate.fragments)
             {
@@ -337,11 +330,11 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
                 (fragment.oldStrandID == strandX ? pooledX : pooledY).push_back(fragment);
             }
 
-            std::set<std::size_t> excludeIndices = {i, j};
+            std::set<std::size_t> excludeIndices = {i, j};				// The dicentric and acentric records themselves are never valid deletion candidates to fill their own gaps.
 
             for (std::size_t r = 0; r < records.size(); ++r)
             {
-                if (claimedExcisedRecords.count(records[r].newStrandID))
+                if (claimedExcisedRecords.count(records[r].newStrandID))		// Also exclude deletion records already claimed by an earlier, different pair.
                 {
                     excludeIndices.insert(r);
                 }
@@ -349,30 +342,30 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
 
             std::vector<std::size_t> usedExcisedX;
 
-            if (!tryTileWithDeletions(pooledX, strandX, excludeIndices, usedExcisedX))
+            if (!tryTileWithDeletions(pooledX, strandX, excludeIndices, usedExcisedX))	// Confirm strandX's fragments (plus any matching deletion records) fully reconstruct strandX's original length.
             {
                 continue;
             }
 
             std::set<std::size_t> excludeForY = excludeIndices;
 
-            for (std::size_t idx : usedExcisedX)
+            for (std::size_t idx : usedExcisedX)					// Whatever strandX's tiling used can't be reused by strandY's tiling, each deletion record fills at most one gap, once.
             {
                 excludeForY.insert(idx);
             }
 
             std::vector<std::size_t> usedExcisedY;
 
-            if (!tryTileWithDeletions(pooledY, strandY, excludeForY, usedExcisedY))
+            if (!tryTileWithDeletions(pooledY, strandY, excludeForY, usedExcisedY))	// Same check for strandY.
             {
                 continue;
             }
 
-            overrides[dicentricCandidate.newStrandID] = strandX;
-            overrides[acentricCandidate.newStrandID] = strandY;
+            overrides[dicentricCandidate.newStrandID] = strandX;			// Confirmed match: the dicentric record draws under strandX's slot
+            overrides[acentricCandidate.newStrandID] = strandY;				// and the acentric record draws under strandY's slot.
             claimedAcentricRecords.insert(acentricCandidate.newStrandID);
 
-            for (std::size_t idx : usedExcisedX)
+            for (std::size_t idx : usedExcisedX)					// Mark every deletion record used by either strand's tiling as claimed, so a later pair can't reuse them.
             {
                 claimedExcisedRecords.insert(records[idx].newStrandID);
             }
@@ -382,7 +375,7 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
                 claimedExcisedRecords.insert(records[idx].newStrandID);
             }
 
-            break;
+            break;									// Found this dicentric candidate's match, stop searching acentric candidates for it.
         }
     }
 
@@ -399,34 +392,36 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
 
 
 
-// Detects the 3-strand chromoplexy shape that findDicentricAcentricHomeOverrides()
-// does NOT cover: strand A's centromeric piece fuses with strand B's centromeric
-// piece (dicentric), but instead of strand B's OTHER piece pairing back up with
-// strand A (which is what findDicentricAcentricHomeOverrides looks for), it
-// instead fuses onto a THIRD strand C's centromeric piece. The result is
-// monocentric overall (A keeps its own centromere via the dicentric record, C
-// keeps its own via the second record), and strand B has been fully consumed,
-// both of its pieces now live on strands A and C, with nothing left representing
+
+
+
+
+// Detects the 3-strand chromoplexy shape that findDicentricAcentricHomeOverrides() does NOT cover: strand A's centromeric piece fuses with strand B's centromeric
+// piece (dicentric), but instead of strand B's OTHER piece pairing back up with strand A (which is what findDicentricAcentricHomeOverrides looks for), it
+// instead fuses onto a THIRD strand C's centromeric piece. The result is monocentric overall (A keeps its own centromere via the dicentric record, C
+// keeps its own via the second record), and strand B has been fully consumed, both of its pieces now live on strands A and C, with nothing left representing
 // B on its own.
 //
-// Strand A's and strand C's own remaining acentric fragments (whatever did NOT
-// fuse with B) are the two "loose ends" of this same rearrangement and are
+// Strand A's and strand C's own remaining acentric fragments (whatever did NOT fuse with B) are the two "loose ends" of this same rearrangement and are
 // re-paired with each other here, to be drawn together in their own slot.
-inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecombinations(
-    const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
+//
+// Two scope limits, compared to findDicentricAcentricHomeOverrides: the dicentric record here must have EXACTLY 2 fragments (both centromeric, one per
+// strand), not "2 centromeres plus any number of extra acentric fragments", so a chromoplexy fusion combined with an additional deletion on strand A or
+// strand B isn't picked up here. And strand A's/strand C's own leftover piece must be a single, clean fragment (or a single already-combined record) that
+// exactly completes their length, there's no equivalent of tryTileWithDeletions() here to let extra deletion records fill in additional gaps.
+inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecombinations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
 {
     std::vector<SDRchromoplexyAcentricPlacement> placements;
     const std::vector<SDRdataRecord>& records = subHeader.dataRecords;
     const double tolerance = 0.001;
 
-    // Checks that fragment1 and fragment2 together exactly tile strandID's
-    // whole declared length with no gap and no overlap - i.e. that strandID
+    // Checks that fragment1 and fragment2 together exactly tile strandID's whole declared length with no gap and no overlap, i.e. that strandID
     // really has been fully consumed by exactly these two pieces.
     auto fragmentsSpanFullLength = [&](const SDRfragment& fragment1, const SDRfragment& fragment2, int strandID) -> bool
     {
         const std::size_t sizeIndex = static_cast<std::size_t>(strandID);
 
-        if (sizeIndex >= masterHeader.intactChromosomeSizes.size())
+        if (sizeIndex >= masterHeader.intactChromosomeSizes.size())				// Only care about intact chromosome sizes
         {
             return false;
         }
@@ -449,21 +444,19 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
             std::swap(lowerEnd, higherEnd);
         }
 
-        return approxEqual(lowerStart, 0.0, tolerance)
-            && approxEqual(lowerEnd, higherStart, tolerance)
-            && approxEqual(higherEnd, fullSize, tolerance);
+        return approxEqual(lowerStart, 0.0, tolerance) && approxEqual(lowerEnd, higherStart, tolerance) && approxEqual(higherEnd, fullSize, tolerance);
     };
 
-    for (std::size_t i = 0; i < records.size(); ++i)
+    for (std::size_t i = 0; i < records.size(); ++i)					// Outer loop: try every record as a potential DICENTRIC candidate (the strand A + strand B fusion).
     {
         const SDRdataRecord& dicentric = records[i];
 
-        if (!dicentric.linear || !isRearrangementCandidate(dicentric.newStrandID, numOriginalStrands) || dicentric.fragments.size() != 2)
+        if (!dicentric.linear || !isRearrangementCandidate(dicentric.newStrandID, numOriginalStrands) || dicentric.fragments.size() != 2)	// Exactly 2 fragments required, see the scope-limit note above.
         {
             continue;
         }
 
-        std::vector<int> centromereStrands;
+        std::vector<int> centromereStrands;						// Strand IDs of every centromere-bearing fragment in this record, in the order they appear.
 
         for (const SDRfragment& fragment : dicentric.fragments)
         {
@@ -475,12 +468,17 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
 
         if (centromereStrands.size() != 2 || centromereStrands[0] == centromereStrands[1])
         {
-            continue; // Not a two-different-strand dicentric fusion.
+            continue; 									// Not a two-different-strand dicentric fusion.
         }
 
-        const int strandA = centromereStrands[0];
-        const int strandB = centromereStrands[1];
+        const int strandA = centromereStrands[0];					// First-listed centromere-bearing strand.
+        const int strandB = centromereStrands[1];					// Second-listed centromere-bearing strand, the one that gets fully consumed.
 
+
+        // This function assigns no explicit home-strand override for the dicentric record itself, unlike  findDicentricAcentricHomeOverrides(). It relies on 
+	// determineHomeStrandID()'s own fallback rule (first fragment in the record, used when there are 2+ centromere flags) landing on strandA. That
+        // holds here specifically because dicentric.fragments has EXACTLY 2 entries and BOTH are centromere-flagged (enforced above), so "first fragment positionally" 
+	// and "first centromere-bearing fragment" (=strandA) are the same thing.
         const SDRfragment& fragmentA = (dicentric.fragments[0].oldStrandID == strandA) ? dicentric.fragments[0] : dicentric.fragments[1];
         const SDRfragment& fragmentB = (dicentric.fragments[0].oldStrandID == strandB) ? dicentric.fragments[0] : dicentric.fragments[1];
 
@@ -499,7 +497,7 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
                 continue;
             }
 
-            int strandC = -1;
+            int strandC = -1;								// Resolved below; unlike strandA/strandB, a record with exactly ONE centromere flag (this one) is unambiguous, so determineHomeStrandID() lands on strandC directly without relying on the fallback rule.
             int centromereCountHere = 0;
             const SDRfragment* fragmentBOther = nullptr;
             const SDRfragment* fragmentC = nullptr;
@@ -523,11 +521,9 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
                 }
             }
 
-            // Must be monocentric overall (strand C keeps exactly one centromere), must actually
-            // reference strand B, that B fragment must be the acentric half, and C must be a genuinely
+            // Must be monocentric overall (strand C keeps exactly one centromere), must actually reference strand B, that B fragment must be the acentric half, and C must be a genuinely
             // third strand, not A or B again.
-            if (centromereCountHere != 1 || strandC == -1 || strandC == strandA || strandC == strandB
-                || fragmentBOther == nullptr || fragmentBOther->hasCentromere || fragmentC == nullptr)
+            if (centromereCountHere != 1 || strandC == -1 || strandC == strandA || strandC == strandB || fragmentBOther == nullptr || fragmentBOther->hasCentromere || fragmentC == nullptr)
             {
                 continue;
             }
@@ -538,10 +534,8 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
                 continue;
             }
 
-            // Find strand A's and strand C's own leftover acentric fragments, whatever did NOT fuse
-            // with strand B, and confirm each, together with its partner's centromeric fragment from
-            // above, fully tiles its own strand's length. The SDR file may express these two leftover
-            // pieces either as ONE record that already combines both (fragments.size() == 2, one
+            // Find strand A's and strand C's own leftover acentric fragments, whatever did NOT fuse with strand B, and confirm each, together with its partner's centromeric fragment from
+            // above, fully tiles its own strand's length. The SDR file may express these two leftover pieces either as ONE record that already combines both (fragments.size() == 2, one
             // fragment per strand) or as two separate single-fragment records, one per strand.
             std::vector<int> leftoverNewStrandIDs;
 
@@ -559,8 +553,7 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
 
                 if (candidate.fragments.size() == 2)
                 {
-                    // Already-combined shape: one fragment must be strand A's leftover, the other
-                    // strand C's leftover, neither carrying a centromere.
+                    // Already-combined shape: one fragment must be strand A's leftover, the other strand C's leftover, neither carrying a centromere.
                     const SDRfragment* candidateA = nullptr;
                     const SDRfragment* candidateC = nullptr;
 
@@ -583,12 +576,10 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
                         }
                     }
 
-                    if (candidateA != nullptr && candidateC != nullptr
-                        && fragmentsSpanFullLength(fragmentA, *candidateA, strandA)
-                        && fragmentsSpanFullLength(*fragmentC, *candidateC, strandC))
+                    if (candidateA != nullptr && candidateC != nullptr && fragmentsSpanFullLength(fragmentA, *candidateA, strandA) && fragmentsSpanFullLength(*fragmentC, *candidateC, strandC))
                     {
                         leftoverNewStrandIDs = { candidate.newStrandID };
-                        break;
+                        break;							// First qualifying combined record wins, the data isn't expected to contain more than one valid match here.
                     }
                 }
             }
@@ -634,17 +625,17 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
                 }
             }
 
-            if (leftoverNewStrandIDs.empty())
+            if (leftoverNewStrandIDs.empty())						// Neither shape matched. Strand A's and strand C's own leftovers don't cleanly account for the rest of their length, so this isn't a valid chromoplexy placement.
             {
                 continue;
             }
 
             SDRchromoplexyAcentricPlacement placement{};
-            placement.consumedStrandID = strandB;
-            placement.leftoverNewStrandIDs = leftoverNewStrandIDs;
+            placement.consumedStrandID = strandB;					// Strand B is hidden entirely, it has no material of its own left.
+            placement.leftoverNewStrandIDs = leftoverNewStrandIDs;			// Strand A's and strand C's own leftover piece(s), re-paired into one combined drawing slot.
             placements.push_back(placement);
 
-            break; // Found this dicentric record's match, move on to the next candidate dicentric record.
+            break; 									// Found this dicentric record's match, move on to the next candidate dicentric record.
         }
     }
 
@@ -674,6 +665,7 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
 
 // Modified detectDeletions function to detect multiple deletions within a single strand. A strand with N deletions will contain N + 1 fragments in SDR data field 3, and will have
 // N + 1 data entries, 1 entry being the original strand with all the gaps, and N entries representing each deletion causing the gaps.
+// Function also handles terminal chromosome deletions at the beginning or end of chromosomes, so the deleted segment will lack two flanking fragments.
 inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
 {
 
@@ -772,7 +764,7 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
             }
             else if (fragments.size() == 1)					// Fragment size of 1 corresponds to the excised/deleted DNA fragment
             {
-		excisedCandidates.push_back({newStrandID, &fragments[0]});	// Store excised candidate fragment new Strand ID and corresponding old Strand ID.
+		excisedCandidates.push_back({newStrandID, &fragments[0]});	// Store excised candidate fragment new Strand ID and fragment pointer to implicitly reach oldStrandID.
 
             }
         }
@@ -794,12 +786,9 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
 	// Check if fragments are missing at the ends or the center
 	// -------------------------------------------------------- //
 
-	// The chromosome's true declared length is needed to detect a
-        // TERMINAL deletion, one touching position 0 or the chromosome's
-        // very end. A terminal deletion leaves no extra "remaining"
-        // fragment on that side (there's nothing before position 0, or
-        // after the chromosome's end, to remain). So the old rigid
-        // "N+1 remaining fragments for N deletions" assumption only
+	// The chromosome's true declared length is needed to detect a TERMINAL deletion, one touching position 0 or the chromosome's
+        // very end. A terminal deletion leaves no extra "remaining" fragment on that side (there's nothing before position 0, or
+        // after the chromosome's end, to remain). So the old rigid "N+1 remaining fragments for N deletions" assumption only
         // held when every deletion was strictly internal.
         const std::size_t sizeIndex = static_cast<std::size_t>(oldStrandID);
         const double chromosomeFullSizeMbp = (sizeIndex < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[sizeIndex] : 0.0;
@@ -850,8 +839,7 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
 
 
 
-	// Trailing gap from the last flanking fragment's end to the
-        // chromosome's true full length.
+	// Trailing gap from the last flanking fragment's end to the chromosome's true full length.
         if (chromosomeFullSizeMbp > 0.0)
         {
             const double lastFragmentEnd = flankingFragments->back().oldEndPosition;
@@ -868,10 +856,9 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
             continue;
         }
 
-	// Match each gap to the excised record whose fragment fills it
-        // exactly (within tolerance), and build one event per match.
+	// Match each gap to the excised record whose fragment fills it exactly (within tolerance), and build one event per match.
 	// Generalized check for strands with multiple deletions and gaps.
-        std::vector<bool> excisedClaimed(excisedCandidates.size(), false);	// Store whether the gaps in a record were found by fragments in other records
+        std::vector<bool> excisedClaimed(excisedCandidates.size(), false);	// Tracks which excised candidates have already been matched to a gap, so the same excised fragment can't be claimed twice.
         std::vector<SDRdeletionEvent> deletionEvents;				// Store the relevant information regarding strand IDs and fragments sizes
         bool allGapsMatched = true;
 
@@ -986,7 +973,7 @@ inline std::vector<SDRinversionEvent> detectInversions(const SDRsubHeader& subHe
                 continue;
             }
 
-            int reversedCount = 0;						// Use to make sure balanced inversion has exactly one reverse fragment, otherwise it is a different mutation.
+            int reversedCount = 0;						// Track how many fragments are reversed, only skip when none are reversed. Any >= 1 is valid
             for (const SDRfragment& fragment : fragments)			// Check all fragments in a given SDR data entry/record.
             {
                 if (isReversedFragment(fragment))				// Use helper function to check if the fragment start position > the end position.
@@ -1002,8 +989,8 @@ inline std::vector<SDRinversionEvent> detectInversions(const SDRsubHeader& subHe
 
             struct NormalizedFragment						// Normalize fragment position to account for potential old strand start positions being greater than old strand end positions
             {
-                double lowerPos;							// The lower fragment start position (closer to the start of the p arm)
-                double higherPos;							// The higher fragment end position (closer to the end of the q arm)
+                double lowerPos;						// The lower fragment start position (closer to the start of the p arm)
+                double higherPos;						// The higher fragment end position (closer to the end of the q arm)
                 bool reversed;							// Boolean to flag if the fragment is truly reverse/inverted.
             };
 
@@ -1012,11 +999,8 @@ inline std::vector<SDRinversionEvent> detectInversions(const SDRsubHeader& subHe
 
             for (const SDRfragment& fragment : fragments)			// Loop through each fragment in a data record/entry.
             {
-                normalized.push_back({						// Store in the normalized position the locations of the fragment start and end positions, and whether it is reversed using the isReversedFragment helper function.
-                    std::min(fragment.oldStartPosition, fragment.oldEndPosition),
-                    std::max(fragment.oldStartPosition, fragment.oldEndPosition),
-                    isReversedFragment(fragment)
-                });
+		// Store in the normalized position the locations of the fragment start and end positions, and whether it is reversed using the isReversedFragment helper function.
+                normalized.push_back({std::min(fragment.oldStartPosition, fragment.oldEndPosition), std::max(fragment.oldStartPosition, fragment.oldEndPosition), isReversedFragment(fragment)});
             }
 
 	    // Sort all normalized fragments in each old Strand ID group pair according to their old strand start positions.
@@ -1042,8 +1026,7 @@ inline std::vector<SDRinversionEvent> detectInversions(const SDRsubHeader& subHe
             }
 
 
-	    // Emit one event per reversed fragment found - N reversed
-            // fragments means N separate inversions on this strand.
+	    // Emit one event per reversed fragment found. N reversed fragments means N separate inversions on this strand.
             for (const NormalizedFragment& fragment : normalized)
             {
                 if (!fragment.reversed)
@@ -1126,13 +1109,13 @@ inline bool getTranslocationCandidateFragments(const SDRdataRecord& record, int 
 
 
 
-// Checks whether two fragments referencing the same old strand ID meet exactly at a shared boundary within tolerance - i.e. they
+// Checks whether two fragments referencing the same old strand ID meet exactly at a shared boundary within tolerance, i.e. they
 // are the two pieces resulting from a single break in that strand. If so, populates breakpoint with the position of that break.
 inline bool fragmentsShareBreakpoint(const SDRfragment& fragment1, const SDRfragment& fragment2, double& breakpoint)
 {
     double balTransTolerance = 0.00001; 						// Balanced translocation mutations can have a loss of up to <= 10 bases = 10^-5 Mbp.
 
-    if (fragment1.oldStrandID != fragment2.oldStrandID)					// The two fragments that are involved in balanced translocations cannot originate from the same original strand ID.
+    if (fragment1.oldStrandID != fragment2.oldStrandID)					// Both fragments must reference the same original strand. Checks whether they're the two pieces of a single break in that strand.
     {
         return false;
     }
@@ -1174,10 +1157,8 @@ inline bool fragmentsShareBreakpoint(const SDRfragment& fragment1, const SDRfrag
 // ------------------------------------------------------------------------------------ //
 
 
-// Generalized to detect translocations anywhere on a chromosome (not just at its ends),
-// and to correctly handle an exchanged piece that re-attaches in reversed orientation
-// (which looks locally like an inversion but isn't one, since it spans two strands).
-// Pools every fragment referencing a given old strand across BOTH candidate records,
+// Generalized to detect translocations anywhere on a chromosome (not just at its ends), and to correctly handle an exchanged piece that re-attaches in reversed orientation
+// (which looks locally like an inversion but isn't one, since it spans two strands). Pools every fragment referencing a given old strand across BOTH candidate records,
 // normalizes each to [min, max] (so reversed fragments sort correctly).
 inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
 {
@@ -1244,10 +1225,8 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
 
 	for (const SDRfragment& fragment : pooledFragments)				// Loop through all pooledFragments which group fragments according to old strand ID
         {
-            normalizedFragments.push_back({						// Store the fragments according to lower fragment position first,
-                std::min(fragment.oldStartPosition, fragment.oldEndPosition),		// higher fragment position second.
-                std::max(fragment.oldStartPosition, fragment.oldEndPosition)
-            });
+	    // Store the fragments according to lower fragment position first, higher fragment position second.
+            normalizedFragments.push_back({std::min(fragment.oldStartPosition, fragment.oldEndPosition), std::max(fragment.oldStartPosition, fragment.oldEndPosition)});
         }
 
 	// Sort normalizedFragments vector fragments in ascending order of position.
@@ -1397,35 +1376,26 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
 // Detects EXTRACHROMOSOMAL DNA (ecDNA) events within a single cell. //
 // ----------------------------------------------------------------- //
 
-// Identical fragment signature to the long deletion events with the added
-// indicator of data field 4 isLinear = 0 (for circular fragments).
-// Generalized to N independent ecDNA mutations, and for ecDNA made up of
-// multiple deleted fragments from the same original strand. Can have either
-// One remaining strand with N deletions and N+1 fragments, followed by
-// N records of ecDNA depicting the N ecDNA mutations, or followed by one or
+// Identical fragment signature to the long deletion events with the added indicator of data field 4 isLinear = 0 (for circular fragments).
+// Generalized to N independent ecDNA mutations, and for ecDNA made up of multiple deleted fragments from the same original strand. Can have either
+// One remaining strand with N deletions and N+1 fragments, followed by N records of ecDNA depicting the N ecDNA mutations, or followed by one or
 // multiple records with multiple fragments forming ecDNA.
 //
-// Also covers ecDNA assembled from excised fragments of TWO OR MORE
-// DIFFERENT original strands: each contributing strand still has its own
-// separate flanking/remaining record (the same deletion-shaped gap(s) as
-// the single-origin case), but some or all of their excised gap fragments
-// are combined onto ONE shared circular new strand instead of each getting
-// its own. A contributing strand may supply more than one of its own gap
-// fragments to that shared strand (oldStrandIDs/remainingStrandIDs then
-// repeat that strand once per matched segment, same as the same-origin
+// Also covers ecDNA assembled from excised fragments of TWO OR MORE DIFFERENT original strands: each contributing strand still has its own
+// separate flanking/remaining record (the same deletion-shaped gap(s) as the single-origin case), but some or all of their excised gap fragments
+// are combined onto ONE shared circular new strand instead of each getting its own. A contributing strand may supply more than one of its own gap
+// fragments to that shared strand (oldStrandIDs/remainingStrandIDs then repeat that strand once per matched segment, same as the same-origin
 // case), alongside fragments from other strands.
 inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
 {
     std::vector<SDRecDNAevent> ecDNAevents;					// Vector to store ecDNA event information (strand IDs, fragment lengths)
 
-    // Group every fragment in this cell by the old strand ID it
-    // references, remembering which new-strand record it came from.
+    // Group every fragment in this cell by the old strand ID it references, remembering which new-strand record it came from.
     // Unlike detectDeletions, the excised piece here is EXPECTED to be circular.
     std::map<int, std::vector<std::pair<const SDRdataRecord*, SDRfragment>>> groupOldStrand;
 
 
-    // Tracks each newStrandID's TRUE total fragment count across its whole
-    // record - used below to reject a candidate whose fragments are only
+    // Tracks each newStrandID's TRUE total fragment count across its whole record, used below to reject a candidate whose fragments are only
     // PARTLY from the old strand being examined.
     std::map<int, std::size_t> newStrandIDtotalFragments;
 
@@ -1453,12 +1423,10 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
         double endPos;
     };
 
-    // Populated as a side effect of the per-old-strand loop below, for every strand that has a
-    // valid remaining/flanking record - regardless of whether that strand also has any
-    // same-origin excised candidates of its own, and regardless of how many gaps it has. Used
-    // afterward to match multi-origin circular records, whose fragments reference several
-    // different old strands at once (and may reference the SAME old strand more than once, if
-    // that strand has multiple gaps).
+    // Populated as a side effect of the per-old-strand loop below, for every strand that has a valid remaining/flanking record, regardless of whether 
+    // that strand also has any same-origin excised candidates of its own, and regardless of how many gaps it has. Used
+    // afterward to match multi-origin circular records, whose fragments reference several different old strands at once (and may reference the SAME old 
+    // strand more than once, if that strand has multiple gaps).
     std::map<int, std::pair<int, std::vector<Gap>>> gapsByOldStrand;		// oldStrandID -> {remainingNewStrandID, gaps}
 
 
@@ -1517,7 +1485,7 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
                 remainingStrandID = newStrandID;
                 flankingFragments = &fragments;
             }
-            else if (!record->linear)						// Necessary format is one entry that is non-linear with one singular fragment referencing the same oldStrandID as the record with the two flanking fragments
+            else if (!record->linear)						// Necessary format is one entry that is non-linear with one or more fragments, all referencing the same oldStrandID
             {
 		// Every fragment in an ecDNA (excised) record must be acentric.
                 bool hasCentromereFlag = false;
@@ -1557,22 +1525,19 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
         std::vector<Gap> gaps;
 
 
-	// ----------------------------------------------------------- //
+	// ----------------------------------------------------------------------------- //
 	// Determine if the deleted segment is from the center or ends of the chromosome
-	// ----------------------------------------------------------- //
+	// ----------------------------------------------------------------------------- //
 
-	// A TERMINAL ecDNA excision (touching position 0 or the
-        // chromosome's true end) leaves no extra flanking fragment on
-        // that side, same as a terminal long deletion, checking
-        // against the chromosome's true declared length generalizes
+	// A TERMINAL ecDNA excision (touching position 0 or the chromosome's true end) leaves no extra flanking fragment on
+        // that side, same as a terminal long deletion, checking against the chromosome's true declared length generalizes
         // this beyond just gaps between listed fragments.
 
 	// Checks if deleted fragment is at the start of the chromosome
         const std::size_t sizeIndex = static_cast<std::size_t>(oldStrandID);
         const double chromosomeFullSizeMbp = (sizeIndex < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[sizeIndex] : 0.0;
 
-        if (chromosomeFullSizeMbp > 0.0 && !approxEqual(flankingFragments->front().oldStartPosition, 0.0, ecDNAtolerance)
-            && flankingFragments->front().oldStartPosition > 0.0)
+        if (chromosomeFullSizeMbp > 0.0 && !approxEqual(flankingFragments->front().oldStartPosition, 0.0, ecDNAtolerance) && flankingFragments->front().oldStartPosition > 0.0)
         {
             gaps.push_back({0.0, flankingFragments->front().oldStartPosition});
         }
@@ -1605,8 +1570,8 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
         }
 
 
-	// Remember this strand's gap shape, however many gaps it has, for the multi-origin
-	// matching pass below, regardless of whether it also has any same-origin excised candidates.
+	// Remember this strand's gap shape, however many gaps it has, for the multi-origin matching pass below, regardless of whether it also has 
+	// any same-origin excised candidates.
 	if (!gaps.empty())
 	{
 	    gapsByOldStrand[oldStrandID] = { remainingStrandID, gaps };
@@ -1619,8 +1584,7 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
         }
 
 
-	// Total fragments across all excised candidates must match the
-        // total number of gaps. Every gap must be filled by exactly one
+	// Total fragments across all excised candidates must match the total number of gaps. Every gap must be filled by exactly one
         // fragment, and every excised fragment must fill exactly one gap.
         std::size_t totalExcisedFragments = 0;
 
@@ -1648,7 +1612,7 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 
                 for (std::size_t i = 0; i < gaps.size(); ++i)			// Loop through the number of gaps in a given data record
                 {
-                    if (gapClaimed[i])						// If a gap was not found, skip this record
+                    if (gapClaimed[i])						// Already claimed by an earlier excised fragment, don't double-claim the same gap.
                     {
                         continue;
                     }
@@ -1677,9 +1641,8 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
                 break;
             }
 
-	    // All checks for mutation shape passed, store the mutation information. Every segment in a
-	    // same-origin event comes from this one oldStrandID/remainingStrandID, so both vectors just
-	    // repeat that single value once per matched segment.
+	    // All checks for mutation shape passed, store the mutation information. Every segment in the same-origin event comes from this 
+	    // one oldStrandID/remainingStrandID, so both vectors just repeat that single value once per matched segment.
 	    SDRecDNAevent event{};
             event.oldStrandIDs.assign(matchedSegments.size(), oldStrandID);
             event.ecDNAsegments = matchedSegments;
@@ -1689,7 +1652,7 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
             strandEvents.push_back(event);
         }
 
-	if (!allMatched)							// Some gap or fragment didn't match cleanly - reject the whole strand's grouping.
+	if (!allMatched)							// Some gap or fragment didn't match cleanly, reject the whole strand's grouping.
         {
             continue;
         }
@@ -1700,24 +1663,26 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 
     }
 
-
     // ---------------------------------------------------------------------------- //
     // -------------- Multi-foreign-fragment ecDNA detection section -------------- //
     // ---------------------------------------------------------------------------- //
 
-    // Circular records combining fragments from TWO OR MORE different original
-    // strands. Each contributing strand may supply ONE OR MORE of its own fragments (matched
-    // against that strand's own gap set computed above), not just a single fragment each. So a
-    // strand with several gaps can have more than one of them recombine into the same circular
-    // molecule, alongside fragments from other strands.
-    for (const SDRdataRecord& record : subHeader.dataRecords)
+    // Circular records combining fragments from TWO OR MORE different original strands. Each contributing strand may supply ONE OR MORE of its own fragments (matched
+    // against that strand's own gap set computed above), not just a single fragment each. So a strand with several gaps can have more than one of them recombine into the same circular
+    // piece, alongside fragments from other strands.
+    //
+    // A record can never be picked up by both this section and the same-origin loop above: the same-origin excisedCandidates check above requires 
+    // fragments.size() == newStrandIDtotalFragments[newStrandID], i.e. EVERY fragment on the record belongs to the one oldStrandID being grouped.
+    // A record spanning 2+ distinct strands fails that check under every oldStrandID grouping it touches, so it never ends up in excisedCandidates 
+    // and only ever gets evaluated here.
+    for (const SDRdataRecord& record : subHeader.dataRecords)			// Every record in the cell is a candidate circular ecDNA segment, checked independently of the per-strand loop above.
     {
-        if (record.linear || !isRearrangementCandidate(record.newStrandID, numOriginalStrands) || record.fragments.size() < 2)
+        if (record.linear || !isRearrangementCandidate(record.newStrandID, numOriginalStrands) || record.fragments.size() < 2)	// Must be circular (this IS the excised piece, not a flanking/remaining record), a genuine rearrangement, and have 2+ fragments to even possibly span multiple strands.
         {
             continue;
         }
 
-        std::set<int> distinctStrands;
+        std::set<int> distinctStrands;						// Every distinct original strand this circular record draws a fragment from.
 
         for (const SDRfragment& fragment : record.fragments)
         {
@@ -1726,26 +1691,27 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 
         if (distinctStrands.size() < 2)
         {
-            continue; 				// Only one contributing strand, already handled above for single-origin fragment ecDNA.
+            continue; 								// Only one contributing strand, already handled above for single-origin fragment ecDNA.
         }
 
-        // Track, per contributing strand, which of that strand's own gaps this record has already
-        // claimed, so two fragments from the same strand can't both match the same gap.
+        // Track, per contributing strand, which of that strand's own gaps this record has already claimed, so two fragments from the same 
+        // strand can't both match the same gap.
         std::map<int, std::vector<bool>> claimedByStrand;
 
         for (int strandID : distinctStrands)
         {
             const auto strandIt = gapsByOldStrand.find(strandID);
+	    // No known gap shape for this strand at all yields an EMPTY claim vector, so any fragment from it will fail to match below rather than crash.
             claimedByStrand[strandID] = std::vector<bool>(strandIt != gapsByOldStrand.end() ? strandIt->second.second.size() : 0, false);
         }
 
-        SDRecDNAevent event{};
+        SDRecDNAevent event{};							// Built up fragment-by-fragment below; oldStrandIDs/ecDNAsegments/remainingStrandIDs stay index-aligned with each other.
         event.excisedStrandID = record.newStrandID;
-        bool allMatched = true;
+        bool allMatched = true;							// Every fragment on this record must match a real gap, or the whole record is rejected.
 
         for (const SDRfragment& fragment : record.fragments)			// Keep the record's own fragment order in the assembled event.
         {
-            if (fragment.hasCentromere)
+            if (fragment.hasCentromere)						// Every fragment in an ecDNA circular record must be acentric, a centromere here means this isn't a genuine excised gap fragment.
             {
                 allMatched = false;
                 break;
@@ -1753,27 +1719,26 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 
             const auto strandIt = gapsByOldStrand.find(fragment.oldStrandID);
 
-            if (strandIt == gapsByOldStrand.end())
+            if (strandIt == gapsByOldStrand.end())				// This fragment's strand has no known gap shape at all (no valid remaining/flanking record was found for it above), so there's nothing to verify it against.
             {
                 allMatched = false;
                 break;
             }
 
-            const int remainingStrandIDForFragment = strandIt->second.first;
-            const std::vector<Gap>& strandGaps = strandIt->second.second;
+            const int remainingStrandIDForFragment = strandIt->second.first;	// newStrandID of this fragment's own strand's remaining/flanking record.
+            const std::vector<Gap>& strandGaps = strandIt->second.second;	// Every gap previously computed for this fragment's own strand.
             std::vector<bool>& claimed = claimedByStrand[fragment.oldStrandID];
 
             bool matched = false;
 
-            for (std::size_t i = 0; i < strandGaps.size(); ++i)
+            for (std::size_t i = 0; i < strandGaps.size(); ++i)			// Look for one of this fragment's OWN strand's gaps that matches its position and hasn't been claimed yet.
             {
-                if (claimed[i])
+                if (claimed[i])							// Already filled by an earlier fragment on this same record, don't double-claim it.
                 {
                     continue;
                 }
 
-                if (approxEqual(fragment.oldStartPosition, strandGaps[i].startPos, 0.001)
-                    && approxEqual(fragment.oldEndPosition, strandGaps[i].endPos, 0.001))
+                if (approxEqual(fragment.oldStartPosition, strandGaps[i].startPos, 0.001) && approxEqual(fragment.oldEndPosition, strandGaps[i].endPos, 0.001))
                 {
                     claimed[i] = true;
                     matched = true;
@@ -1784,19 +1749,19 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
                 }
             }
 
-            if (!matched)
+            if (!matched)							// This fragment doesn't correspond to any of its own strand's known gaps, reject the whole record.
             {
                 allMatched = false;
                 break;
             }
         }
 
-        if (!allMatched)
+        if (!allMatched)							// Some fragment failed to match, this record isn't a valid multi-origin ecDNA shape.
         {
             continue;
         }
 
-        ecDNAevents.push_back(event);
+        ecDNAevents.push_back(event);						// Every fragment matched a distinct gap of its own strand, this is a confirmed multi-origin ecDNA event.
     }
 
 
@@ -1818,17 +1783,13 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 
 
 
-
 // ---------------------------------------------------------------- //
 // Function to detect DELETION-INVERSION mutations in a single cell //
 // ---------------------------------------------------------------- //
 
-// One new-strand record contains three fragments from the same old
-// strand: two in normal orientation and one reversed. A second
-// new-strand record contains a single fragment from the same old
-// strand - the deleted segment. Unlike a plain balanced inversion,
-// the three fragments are NOT fully contiguous: there is exactly one
-// gap among them (where the deletion occurred), and that gap must
+// One new-strand record contains three fragments from the same old strand: two in normal orientation and one reversed. A second
+// new-strand record contains a single fragment from the same old strand = the deleted segment. Unlike a plain balanced inversion,
+// the three fragments are NOT fully contiguous: there is exactly one gap among them (where the deletion occurred), and that gap must
 // exactly match the second record's excised fragment (within tolerance).
 inline std::vector<SDRdeletionInversionEvent> detectDeletionInversions(
     const SDRsubHeader& subHeader,						// Loop through the SDR subheaders to get the data records for each cell
@@ -1916,22 +1877,18 @@ inline std::vector<SDRdeletionInversionEvent> detectDeletionInversions(
 
         struct NormalizedFragment							// Local structure to order the fragments
         {
-            double low;					// Stores the lower of the two positions of the fragment (not necessarily the start position in an inverted fragment)
-            double high;				// Stores the higher of the two positions of the fragment (not necessarily the end position in an inversion)
+            double low;									// Stores the lower of the two positions of the fragment (not necessarily the start position in an inverted fragment)
+            double high;								// Stores the higher of the two positions of the fragment (not necessarily the end position in an inversion)
             bool reversed;
         };
 
-        std::vector<NormalizedFragment> normalizedFragment;					// Fragment not necessarily structured with start and end location, but by lower position value and higher position value
-        normalizedFragment.reserve(3);								// Reserve at least 3 elements for normalized fragment
+        std::vector<NormalizedFragment> normalizedFragment;				// Fragment not necessarily structured with start and end location, but by lower position value and higher position value
+        normalizedFragment.reserve(3);							// Reserve at least 3 elements for normalized fragment
 
 	// Reorder all fragments in terms of start and end locations (inversions become uninverted to sort properly)
         for (const SDRfragment& fragment : *threeFragments)
         {
-            normalizedFragment.push_back({
-                std::min(fragment.oldStartPosition, fragment.oldEndPosition),
-                std::max(fragment.oldStartPosition, fragment.oldEndPosition),
-                isReversedFragment(fragment)
-            });
+            normalizedFragment.push_back({std::min(fragment.oldStartPosition, fragment.oldEndPosition), std::max(fragment.oldStartPosition, fragment.oldEndPosition), isReversedFragment(fragment)});
         }
 
 	// Sort all fragments in order of their start positions in ascending order.
@@ -1942,18 +1899,18 @@ inline std::vector<SDRdeletionInversionEvent> detectDeletionInversions(
 
         // Check the two boundaries between the three sorted fragments -> exactly one should have a gap (the deletion), the other
         // should be contiguous.
-        double gapStart = 0.0;						// In the record with the three fragments, record where the deletion started and ended
+        double gapStart = 0.0;								// In the record with the three fragments, record where the deletion started and ended
         double gapEnd = 0.0;
-        int gapCount = 0;						// Count number of gaps
-        bool overlapFound = false;					// Check if gap overlaps with a fragment in another new strand record (where the excised fragment is)
+        int gapCount = 0;								// Count number of gaps
+        bool overlapFound = false;							// Check if gap overlaps with a fragment in another new strand record (where the excised fragment is)
         for (std::size_t i = 0; i + 1 < normalizedFragment.size(); ++i)
         {
-            if (approxEqual(normalizedFragment[i].high, normalizedFragment[i + 1].low, delInvTolerance))	// Contiguous - no gap here. Skip this record
+            if (approxEqual(normalizedFragment[i].high, normalizedFragment[i + 1].low, delInvTolerance))	// Contiguous, no gap here. Skip this boundary pair
             {
                 continue;
             }
 
-            if (normalizedFragment[i + 1].low <= normalizedFragment[i].high)			// Overlapping, not a gap - invalid shape. Skip this record
+            if (normalizedFragment[i + 1].low <= normalizedFragment[i].high)			// Overlapping, not a gap, invalid shape. Skip this boundary pair
             {
                 overlapFound = true;
                 break;
@@ -1964,13 +1921,13 @@ inline std::vector<SDRdeletionInversionEvent> detectDeletionInversions(
             ++gapCount;
         }
 
-        if (overlapFound || gapCount != 1)							// Need there to be an overlap found and exactly one gap
+        if (overlapFound || gapCount != 1)							// Reject if any overlap was found, or if there wasn't exactly one gap. Del-Inv needs a single clean gap with no overlaps.
         {
             continue;
         }
 
-        if (!approxEqual(excisedFragment.oldStartPosition, gapStart, delInvTolerance) ||	// If gap does not align with excised fragment within tolerance, skip this record
-            !approxEqual(excisedFragment.oldEndPosition, gapEnd, delInvTolerance))
+	// If gap does not align with excised fragment within tolerance, skip this boundary pair
+        if (!approxEqual(excisedFragment.oldStartPosition, gapStart, delInvTolerance) || !approxEqual(excisedFragment.oldEndPosition, gapEnd, delInvTolerance))
         {
             continue;
         }
@@ -2012,7 +1969,7 @@ inline std::vector<SDRdeletionInversionEvent> detectDeletionInversions(
 
 
 // Checks whether two fragments referencing the same old strand ID have a genuine gap between them (rather than meeting cleanly at a
-// breakpoint) - i.e. material between them is missing. If so, populates gapStart/gapEnd with the gap's bounds.
+// breakpoint), i.e. material between them is missing. If so, populates gapStart/gapEnd with the gap's bounds.
 inline bool fragmentsHaveGap(const SDRfragment& fragment1, const SDRfragment& fragment2, double& gapStart, double& gapEnd)
 {
     const double delTolerance = 0.001; 				// Tolerance for base pair positioning mismatch for deletions is 0.001 Mbp = 1000 bp or less
@@ -2027,25 +1984,23 @@ inline bool fragmentsHaveGap(const SDRfragment& fragment1, const SDRfragment& fr
         return false;
     }
 
-    // If fragment 1 end is less than fragment 2 start and the positions are approximately equal, then a gap exists and compute the gap
-    if (fragment1.oldEndPosition < fragment2.oldStartPosition &&
-        !approxEqual(fragment1.oldEndPosition, fragment2.oldStartPosition, delTolerance))
+    // If fragment 1 end is less than fragment 2 start and the positions are not approximately equal, then a genuine gap exists and compute the gap
+    if (fragment1.oldEndPosition < fragment2.oldStartPosition && !approxEqual(fragment1.oldEndPosition, fragment2.oldStartPosition, delTolerance))
     {
         gapStart = fragment1.oldEndPosition;
         gapEnd = fragment2.oldStartPosition;
         return true;
     }
 
-    // If fragment 2 end is less than fragment 1 start and the positions are approximately equal, then a gap exists and compute the gap
-    if (fragment2.oldEndPosition < fragment1.oldStartPosition &&
-        !approxEqual(fragment2.oldEndPosition, fragment1.oldStartPosition, delTolerance))
+    // If fragment 2 end is less than fragment 1 start and the positions are not approximately equal, then a genuine gap exists and compute the gap
+    if (fragment2.oldEndPosition < fragment1.oldStartPosition && !approxEqual(fragment2.oldEndPosition, fragment1.oldStartPosition, delTolerance))
     {
         gapStart = fragment2.oldEndPosition;
         gapEnd = fragment1.oldStartPosition;
         return true;
     }
 
-    // If th two fragment ends are not approximately equal and one fragment's end is not less than the other fragment's start, no fragment gap
+    // Otherwise, no gap
     return false;
 }
 
@@ -2063,16 +2018,11 @@ inline bool fragmentsHaveGap(const SDRfragment& fragment1, const SDRfragment& fr
 // Function to detect DELETION-TRANSLOCATIONS in a single cell     //
 // --------------------------------------------------------------- //
 
-// Two candidate records, each with exactly 2 fragments from 2 different old strands
-// (linear, any orientation, a reversed fragment represents an inverted exchange, e.g.
-// one forming a dicentric/acentric pair, and is not itself a reason to reject). For each
-// of the two strands involved, the two records' fragments for that strand are compared
-// using NORMALIZED [min,max] bounds (so a reversed fragment's boundaries are still
-// checked correctly, unlike a raw oldStart/oldEnd comparison): if they touch exactly,
-// that strand is "clean" (no deletion); if BOTH strands are clean, this is a plain
-// balanced translocation, handled elsewhere. If exactly one strand has a genuine gap
-// instead, a third record (single fragment, from the gapped strand, non-reversed,
-// exactly filling the gap) confirms a deletion-translocation.
+// Two candidate records, each with exactly 2 fragments from 2 different old strands (linear, any orientation, a reversed fragment represents an inverted exchange, e.g.
+// one forming a dicentric/acentric pair, and is not itself a reason to reject). For each of the two strands involved, the two records' fragments for that strand are compared
+// using NORMALIZED [min,max] bounds (so a reversed fragment's boundaries are still checked correctly, unlike a raw oldStart/oldEnd comparison): if they touch exactly,
+// that strand is "clean" (no deletion); if BOTH strands are clean, this is a plain balanced translocation, handled elsewhere. If exactly one strand has a genuine gap
+// instead, a third record (single fragment, from the gapped strand, non-reversed, exactly filling the gap) confirms a deletion-translocation.
 
 inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
 {
@@ -2097,15 +2047,10 @@ inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(c
         return !byStrand.empty();
     };
 
-    // Checks whether the pooled fragments for one strand (normalized,
-    // sorted) tile [0, fullSize] exactly "clean". If there's exactly
-    // ONE gap among them (and the pooled fragments still start at 0
-    // and end at fullSize), returns false with hasGap set, the
-    // deletion candidate for that strand. Any other shape (doesn't
-    // start at 0, more than one gap, an overlap) is rejected outright.
-    auto checkStrandTiling = [&](std::vector<SDRfragment> pooled, int strandID,
-                              std::vector<double>& breakpointsOut,
-                              bool& hasGap, double& gapStart, double& gapEnd) -> bool
+    // Checks whether the pooled fragments for one strand (normalized, sorted) tile [0, fullSize] exactly "clean". If there's exactly
+    // ONE gap among them (and the pooled fragments still start at 0 and end at fullSize), returns false with hasGap set, the
+    // deletion candidate for that strand. Any other shape (doesn't start at 0, more than one gap, an overlap) is rejected outright.
+    auto checkStrandTiling = [&](std::vector<SDRfragment> pooled, int strandID, std::vector<double>& breakpointsOut, bool& hasGap, double& gapStart, double& gapEnd) -> bool
     {
     	breakpointsOut.clear();
     	hasGap = false;
@@ -2172,8 +2117,7 @@ inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(c
             gapEnd = lowerFragmentPos;
     	}
 
-    	// Trailing gap: after the last fragment (a deletion touching the
-    	// chromosome's very end).
+    	// Trailing gap: after the last fragment (a deletion touching the chromosome's very end).
     	const double lastGapHigher = std::max(pooled.back().oldStartPosition, pooled.back().oldEndPosition);
 
     	if (fullSize > lastGapHigher && !approxEqual(lastGapHigher, fullSize, tolerance))
@@ -2217,15 +2161,15 @@ inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(c
             }
 
             std::vector<int> firstStrands;					// Vector storing the IDs of the fragments making up the first data record
-            for (auto& [strandID, fragments] : firstStrandGroup) 
-	    { 
-		firstStrands.push_back(strandID); 
+            for (auto& [strandID, fragments] : firstStrandGroup)
+	    {
+		firstStrands.push_back(strandID);
 	    }
 
             std::vector<int> secondStrands;					// Vector storing the IDs of the fragments making up the second data record
-            for (auto& [strandID, fragments] : secondStrandGroup) 
-	    { 
-		secondStrands.push_back(strandID); 
+            for (auto& [strandID, fragments] : secondStrandGroup)
+	    {
+		secondStrands.push_back(strandID);
 	    }
 
 	    // If the old strand IDs in both records are not exaclty the same, this shape is invalid, skip this record
@@ -2361,14 +2305,10 @@ inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(c
 // ------------------------------------------------------------------------------------ //
 
 // A deletion-insertion event is characterized by two new-strand records:
-// 1) A "donor" record: two fragments from the same old strand ID, with a real gap
-// between them (identical shape to a plain long deletion's "remaining" piece).
-// 2) A "recipient" record: three fragments - two from a DIFFERENT old strand ID that
-// are themselves contiguous (the recipient's own material, split by the insertion),
-// and one FOREIGN fragment (from the donor's old strand ID) sitting between them,
-// whose position exactly matches the donor's gap.
-// Unlike a balanced translocation, only ONE segment moves - the donor loses material
-// with nothing coming back, and the recipient's own material is fully retained, just
+// 1) A "donor" record: two fragments from the same old strand ID, with a real gap between them (identical shape to a plain long deletion's "remaining" piece).
+// 2) A "recipient" record: three fragments - two from a DIFFERENT old strand ID that are themselves contiguous (the recipient's own material, split by the insertion),
+// and one FOREIGN fragment (from the donor's old strand ID) sitting between them, whose position exactly matches the donor's gap.
+// Unlike a balanced translocation, only ONE segment moves, the donor loses material with nothing coming back, and the recipient's own material is fully retained, just
 // split by the inserted piece.
 inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDRsubHeader& subHeader, int numOriginalStrands)
 {
@@ -2507,8 +2447,7 @@ inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDR
             }
 
 	    // The gap left by the deletion must match within tolerance the ends of the flanking fragments
-            if (!approxEqual(foreignFragment->oldStartPosition, segmentStart, tolerance) ||
-                !approxEqual(foreignFragment->oldEndPosition, segmentEnd, tolerance))
+            if (!approxEqual(foreignFragment->oldStartPosition, segmentStart, tolerance) || !approxEqual(foreignFragment->oldEndPosition, segmentEnd, tolerance))
             {
                 continue;                                                  	// Foreign fragment must match the donor's deleted segment exactly
             }
@@ -2561,10 +2500,8 @@ inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDR
 // Function to detect CHROMOPLEXY events in SDR file
 // ------------------------------------------------------------------------------------ //
 
-// Builds a graph where each old strand ID is a node. For every rearranged record, every
-// PAIR of distinct old strand IDs referenced by its fragments gets an edge, regardless
-// of whether that record matches any specific named mutation shape (translocation,
-// deletion-translocation, etc.). Any connected component spanning 3 or more distinct
+// Builds a graph where each old strand ID is a node. For every rearranged record, every PAIR of distinct old strand IDs referenced by its fragments gets an edge, regardless
+// of whether that record matches any specific named mutation shape (translocation, deletion-translocation, etc.). Any connected component spanning 3 or more distinct
 // strands is reported as one chromoplexy event.
 inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
 {
@@ -2611,8 +2548,7 @@ inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& su
     };
 
 
-    // For every rearranged record, track which distinct old strand IDs
-    // it references - and union every pair found together.
+    // For every rearranged record, track which distinct old strand IDs it references and union every pair found together.
     std::vector<std::pair<int, std::set<int>>> recordStrandSets; 			// {newStrandID, {distinct old strand IDs}}
 
     for (const SDRdataRecord& record : subHeader.dataRecords)				// Loop through all SDR data records per cell
@@ -2649,7 +2585,7 @@ inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& su
     }
 
 
-    // as you iterate all strands, every strand sharing the same root ends up collected together in one set — and using a set rather than a vector means 
+    // as you iterate all strands, every strand sharing the same root ends up collected together in one set, and using a set rather than a vector means 
     // duplicates (from path-compressed lookups) just don't matter.
     std::map<int, std::set<int>> componentsByRoot;					// maps one arbitrary representative strand the full set of every strand connected to it.
 
@@ -2724,13 +2660,10 @@ inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& su
 // Function to detect CHROMOTHRIPSIS events in SDR file
 // ------------------------------------------------------------------------------------ //
 
-// Same underlying strand-connectivity graph as detectChromoplexy(), built from raw
-// fragment data, so clustering doesn't depend on any named mutation shape. Components of
-// size 3+ are skipped (chromoplexy's territory). For components of size 1 or 2, rather
-// than counting named detected mutation events , this counts the TOTAL number of data-field-3 fragments across every
-// rearranged record touching the cluster's strand(s), a direct measure of how many
-// pieces the strand(s) were actually broken into, regardless of shape. Only counts the 
-// remaining fragments in the original strand, not the excised pieces, as a
+// Same underlying strand-connectivity graph as detectChromoplexy(), built from raw fragment data, so clustering doesn't depend on any named mutation shape. Components of
+// size 3+ are skipped (chromoplexy's territory). For components of size 1 or 2, rather than counting named detected mutation events , this counts the TOTAL 
+// number of data-field-3 fragments across every rearranged record touching the cluster's strand(s), a direct measure of how many
+// pieces the strand(s) were actually broken into, regardless of shape. Only counts the remaining fragments in the original strand, not the excised pieces, as a
 // clearer metric for the number of rearrangements that occurred in a strand.
 inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHeader& subHeader, int numOriginalStrands, int minFragmentCount = 10)
 {
@@ -2769,12 +2702,10 @@ inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHead
     };
 
 
-    // Map from old strand ID -> set of newStrandIDs (records) whose
-    // fragments touch it, whether intra-strand-only or inter-strand.
+    // Map from old strand ID -> set of newStrandIDs (records) whose fragments touch it, whether intra-strand-only or inter-strand.
     std::map<int, std::set<int>> recordsByStrand;
 
-    // Map from newStrandID -> the record's own total fragment count, so
-    // each record's fragments are only ever tallied once even if it
+    // Map from newStrandID -> the record's own total fragment count, so each record's fragments are only ever tallied once even if it
     // touches multiple strands in a cluster.
     std::map<int, std::size_t> fragmentCountByNewStrandID;
 
@@ -2821,7 +2752,7 @@ inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHead
         }
     }
 
-    // Map the new Strand ID to the old Strand IDs of the fragments that make it up
+    // Maps one arbitrary representative strand to the full set of every strand connected to it.
     std::map<int, std::set<int>> componentsByRoot;
 
     for (auto& [strandID, strandParent] : parent)
@@ -2837,12 +2768,9 @@ inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHead
             continue; // 3+ strands, chromoplexy's territory, not chromothripsis.
         }
 
-        // Any record with 2+ fragments is a "major" surviving piece and
-        // counts in full, whether it's a single-strand remaining piece
-        // (like a deletion's) or a recombined multi-strand derivative
-        // (like a translocation/chromothripsis product). A record with
-        // exactly 1 fragment is always a trivial excised byproduct
-        // (true for every excised/circular shape our detectors define)
+        // Any record with 2+ fragments is a "major" surviving piece and counts in full, whether it's a single-strand remaining piece
+        // (like a deletion's) or a recombined multi-strand derivative (like a translocation/chromothripsis product). A record with
+        // exactly 1 fragment is always a trivial excised byproduct (true for every excised/circular shape our detectors define)
         // and gets excluded.
         std::set<int> majorNewStrandIDs;
 

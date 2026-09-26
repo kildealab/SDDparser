@@ -39,23 +39,23 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     }
 
 
-    // Group all data records based on their original strand ID (of their first listed fragment) and thus their chromosome region on the karyogram
+    // All data records grouped by their determined home strand (the centromere-bearing fragment when unambiguous, 
+    // overridden for dicentric/acentric pairs, falling back to the first listed fragment otherwise)
     std::map<int, std::vector<const SDRdataRecord*>> recordsByOriginalStrand;
     // Use to merge aberrant fragments onto a single chromosome in karyogram
     std::vector<SDRdataRecord> mergedRecordStorage;
-    mergedRecordStorage.reserve(subHeader.dataRecords.size()); // Safe upper bound.
+    mergedRecordStorage.reserve(subHeader.dataRecords.size()); 				// Safe upper bound.
 
     // Store maps of chromosome IDs for dicentric and acentric chromosomes to be drawn in their corresponding remaining home slots.
     const std::map<int, int> dicentricAcentricOverrides = findDicentricAcentricHomeOverrides(subHeader, static_cast<int>(sizes[0]), masterHeader);
 
 
-    // Chromoplexy-specific shape: an original strand fully consumed by fusing onto two OTHER
-    // strands' centromeres (one piece each) gets hidden from its own slot entirely, and its two
-    // partners' own leftover acentric pieces are drawn together in one new slot after X and Y.
+    // Chromoplexy-specific shape: an original strand fully consumed by fusing onto two OTHER strands' centromeres (one piece each) gets hidden 
+    // from its own slot entirely, and its two partners' own leftover acentric pieces are drawn together in one new slot after X and Y.
     const std::vector<SDRchromoplexyAcentricPlacement> chromoplexyPlacements = findChromoplexyAcentricRecombinations(subHeader, static_cast<int>(sizes[0]), masterHeader);
 
     std::set<int> chromoplexyConsumedStrands;
-    std::set<int> chromoplexyRecombinedNewStrandIDs; // newStrandIDs now drawn ONLY in the dedicated chromoplexy slot, not in their own chromosome's slot.
+    std::set<int> chromoplexyRecombinedNewStrandIDs; 					// newStrandIDs now drawn ONLY in the dedicated chromoplexy slot, not in their own chromosome's slot.
     for (const SDRchromoplexyAcentricPlacement& placement : chromoplexyPlacements)
     {
         chromoplexyConsumedStrands.insert(placement.consumedStrandID);
@@ -66,15 +66,13 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     }
 
 
-    // ecDNA assembled from excised fragments of TWO OR MORE different original strands is
-    // acentric and doesn't "belong" to any one chromosome. Like the chromoplexy leftover
-    // pieces above, it gets its own dedicated slot instead of being grouped under whichever
-    // strand determineHomeStrandID() happens to fall back to. A same-origin ecDNA (every
-    // fragment from the same strand, however many gaps) is left alone here: isECDNAshape()
-    // already draws those correctly next to their home chromosome.
+    // ecDNA assembled from excised fragments of TWO OR MORE different original strands is acentric and doesn't "belong" to any one chromosome. 
+    // Like the chromoplexy leftover pieces above, it gets its own dedicated slot instead of being grouped under whichever
+    // strand determineHomeStrandID() happens to fall back to. A same-origin ecDNA (everyfragment from the same strand, however many gaps) is 
+    // left alone here: isECDNAshape() already draws those correctly next to their home chromosome.
     const std::vector<SDRecDNAevent> ecDNAevents = detectECDNA(subHeader, static_cast<int>(sizes[0]), masterHeader);
 
-    std::set<int> multiOriginECDNAnewStrandIDs; // excisedStrandID of every multi-origin ecDNA event.
+    std::set<int> multiOriginECDNAnewStrandIDs; 					// excisedStrandID of every multi-origin ecDNA event.
     for (const SDRecDNAevent& event : ecDNAevents)
     {
     	const std::set<int> distinctOrigins(event.oldStrandIDs.begin(), event.oldStrandIDs.end());
@@ -92,11 +90,9 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         {
             continue;
         }
-	// This record's material is drawn only in the dedicated chromoplexy acentric slot below, 
-	// or the dedicated multi-foreign fragment ecDNA acentric slot, leave
-	// it out of its own chromosome's normal slot grouping so it isn't drawn twice.
-	else if (chromoplexyRecombinedNewStrandIDs.count(record.newStrandID) 
-		|| multiOriginECDNAnewStrandIDs.count(record.newStrandID))
+	// This record's material is drawn only in the dedicated chromoplexy acentric slot below, or the dedicated multi-foreign fragment ecDNA 
+	// acentric slot, leave it out of its own chromosome's normal slot grouping so it isn't drawn twice.
+	else if (chromoplexyRecombinedNewStrandIDs.count(record.newStrandID) || multiOriginECDNAnewStrandIDs.count(record.newStrandID))
 	{
 	    continue;
 	}
@@ -107,7 +103,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             const auto overrideIt = dicentricAcentricOverrides.find(record.newStrandID);
             const int homeStrandID = (overrideIt != dicentricAcentricOverrides.end()) ? overrideIt->second : determineHomeStrandID(record);
 
-	    // Grouping drawings to home strand which is whichever strand has the centromere, not the first fragment in the list, unless no centromere in the record, then falls back to first fragment in the list.
+	    // Grouping drawings to home strand which is whichever strand has the centromere, not the first fragment in the list, unless no centromere in the record, 
+	    // then falls back to first fragment in the list.
             recordsByOriginalStrand[homeStrandID].push_back(&record);
         }
     }
@@ -174,9 +171,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     const int lastRowUsedCols = drawableGroups - sexChromosomeRow * columns;
     const bool sexChromosomesFitInLastRow = (columns - lastRowUsedCols) >= 2;
 
-    // Chromoplexy acentric-recombination slots and multi-origin ecDNA slots share ONE row
-    // sequence after X and Y. ecDNA slots continue filling any columns the chromoplexy slots
-    // left open in their last row before wrapping to a new row.
+    // Chromoplexy acentric-recombination slots and multi-origin ecDNA slots share ONE row sequence after X and Y. ecDNA slots continue filling any 
+    // columns the chromoplexy slots left open in their last row before wrapping to a new row.
     const int chromoplexySlotCount = static_cast<int>(chromoplexyPlacements.size());
     const int multiOriginECDNAslotCount = static_cast<int>(multiOriginECDNAnewStrandIDs.size());
     // Combine acentric rows for both ecDNA and chromoplexy to pack into the same rows both mutations if there is space, otherwise 
@@ -211,11 +207,10 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     drawSDRsummary(cr, masterHeader, subHeader);
 
 
-    // Resolves the records to draw for a given original strand's slot: its own
-    // rearranged records if any exist, a synthesized intact baseline if it was
-    // never touched, or nothing at all if a chromoplexy fusion elsewhere fully
-    // consumed it (in that case, drawing a synthesized "intact" baseline would
-    // be actively wrong, the strand no longer exists on its own).
+    // Resolves the records to draw for a given original strand's slot: its own rearranged records if any exist, or a synthesized intact baseline if it was
+    // never touched, or nothing if consumed by chromoplexy rearrangement. This check has to run before the map lookup below,
+    // a fully-consumed strand still has its own trivial baseline entry in recordsByOriginalStrand (nothing else references that strand 
+    // to trigger filterBaselineIfMutated), so checking 'found in the map' first would let that baseline slip through as a false intact chromosome.
     auto resolveSlotRecords = [&](int oldStrandID) -> std::vector<const SDRdataRecord*>
     {
 	if (chromoplexyConsumedStrands.count(oldStrandID))
@@ -229,21 +224,15 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         {
             return clusterRecordsForDrawing(filterBaselineIfMutated(it->second, chromosomeCount), oldStrandID, mergedRecordStorage, masterHeader);
         }
-/*
-        if (chromoplexyConsumedStrands.count(oldStrandID))
-        {
-            return {};
-        }
-*/
+
         return synthesizeIntactRecordIfMissing(oldStrandID, subHeader.cellID, masterHeader, intactRecordStorage);
     };
 
 
 
-    // --------------------------------------------------
-    // Draw each numbered chromosome slot depending on 
-    // chromosome sizes layout, X and Y will be drawn later
-    // --------------------------------------------------
+    // ----------------------------------------------------------------------------------------------------
+    // Draw each numbered chromosome slot depending on chromosome sizes layout, X and Y will be drawn later
+    // ----------------------------------------------------------------------------------------------------
     for (int i = 0; i < drawableGroups; ++i)
     {
         int firstOldStrandID = 0;
@@ -318,12 +307,11 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 	// Non-homologous chromosome sizes layout specified by the user in the SDR header (simpler, do not need to adjust gap between homologs for possible long deletions)
         else
         {
-	    // resolveSlotRecords() clusters mutated records, falls back to a synthesized intact
-            // baseline for untouched strands, and leaves the slot empty for a strand fully
-            // consumed by a chromoplexy fusion elsewhere.
+	    // resolveSlotRecords() clusters mutated records, falls back to a synthesized intact baseline for untouched strands, and leaves the slot 
+	    // empty for a strand fully consumed by a chromoplexy fusion elsewhere.
             const std::vector<const SDRdataRecord*> filtered = resolveSlotRecords(firstOldStrandID);
 
-            if (!filtered.empty())		// If data present, draw the mutation and label it
+            if (!filtered.empty())						// If data present, draw the mutation and label it
             {
                 drawStackedMutations(cr, filtered, groupCenterX, posY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, firstOldStrandID);
                 labelHeight = computeMaxBarHeight(filtered, maxLengthMbp, maxRenderHeight, firstOldStrandID, masterHeader);
@@ -344,10 +332,9 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
 
 
-    // ---------------------------------------------------
-    // Drawing X and Y groups, placed at the end of last row 
-    // if there's room, otherwise they're given their own row.
-    // ---------------------------------------------------
+    // -------------------------------------------------------------------------------------------------------------
+    // Drawing X and Y groups, placed at the end of last row if there's room, otherwise they're given their own row.
+    // -------------------------------------------------------------------------------------------------------------
     if (chromosomeCount >= 2)
     {
 	// Determine positions of X and Y chromosomes depeding on the number of chromosomes specified.
@@ -368,6 +355,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             xChromCol = 1;
         }
 
+	// Y and X are always the last two entries in the chromosome list, in that order, this ordering convention is required, not incidental 
+	// (see humanCentromeres in KaryogramLayout.cpp)
         int yOldStrandID = chromosomeCount - 1;
         int xOldStrandID = chromosomeCount;
 
@@ -375,9 +364,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         double xCenterPosX = (xChromCol * colWidth) + (colWidth / 2.0);
 
 
-	// resolveSlotRecords() clusters mutated records, falls back to a synthesized intact baseline
-	// for an untouched sex chromosome, and leaves the slot empty if a chromoplexy fusion
-	// elsewhere fully consumed it.
+	// resolveSlotRecords() clusters mutated records, falls back to a synthesized intact baseline for an untouched sex chromosome, and leaves the 
+	// slot empty if a chromoplexy fusion elsewhere fully consumed it.
         const std::vector<const SDRdataRecord*> yRecords = resolveSlotRecords(yOldStrandID);
 
         double yLabelHeight = maxRenderHeight;
@@ -411,11 +399,9 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     }
 
 
-    // ---------------------------------------------------
-    // Draw chromoplexy acentric-recombination slots, one
-    // per placement, packed into rows after X and Y exactly
-    // like the autosome slots are.
-    // ---------------------------------------------------
+    // ------------------------------------------------------------------------------------------------------------------------------------
+    // Draw chromoplexy acentric-recombination slots, one per placement, packed into rows after X and Y exactly like the autosome slots are.
+    // ------------------------------------------------------------------------------------------------------------------------------------
     for (std::size_t p = 0; p < chromoplexyPlacements.size(); ++p)
     {
         const SDRchromoplexyAcentricPlacement& placement = chromoplexyPlacements[p];
@@ -436,17 +422,16 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
         if (leftoverRecords.empty())
         {
-            continue; // Shouldn't happen - findChromoplexyAcentricRecombinations() only returns newStrandIDs it found in this same subHeader.
+	    // Shouldn't happen, findChromoplexyAcentricRecombinations() only returns newStrandIDs it found in this same subHeader.
+            continue;
         }
 
-        // Concatenate every leftover record's fragments into one synthetic record. When the SDR file
-        // already combined both partners' leftover pieces into a single record, this is just that
-        // record's own fragments (a concatenation); when they're still two separate records,
-        // this joins them. Either way, these are the loose, non-centromeric ends of the same 3+-way
-        // rearrangement re-joining each other.
+        // Concatenate every leftover record's fragments into one synthetic record. When the SDR file already combined both partners' leftover pieces 
+	// into a single record, this is just that record's own fragments (a concatenation); when they're still two separate records,
+        // this joins them. Either way, these are the loose, non-centromeric ends of the same 3+-way rearrangement re-joining each other.
         SDRdataRecord combinedRecord{};
         combinedRecord.cellID = subHeader.cellID;
-        combinedRecord.newStrandID = leftoverRecords.front()->newStrandID; // Representative ID, used only for the drawn label.
+        combinedRecord.newStrandID = leftoverRecords.front()->newStrandID; 		// Representative ID, used only for the drawn label.
         combinedRecord.linear = true;
 
         for (const SDRdataRecord* leftoverRecord : leftoverRecords)
@@ -463,9 +448,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         const double slotCenterX = (col * colWidth) + (colWidth / 2.0);
         const double slotPosY = acentricsStartY + row * rowHeight;
 
-        // homeOldStrandID is only used by drawStackedMutations()/computeMaxBarHeight() to test for
-        // named single-strand shapes (deletion, ecDNA, etc.). This record mixes two different
-        // strands' fragments, so none of those shapes can match regardless of which ID is passed.
+        // homeOldStrandID is only used by drawStackedMutations()/computeMaxBarHeight() to test for named single-strand shapes (deletion, ecDNA, etc.). 
+	// This record mixes two different strands' fragments, so none of those shapes can match regardless of which ID is passed.
         drawStackedMutations(cr, combinedRecords, slotCenterX, slotPosY, chromosomeWidth, maxLengthMbp, maxRenderHeight, humanGenome, masterHeader, combinedRecord.fragments.front().oldStrandID);
         const double slotLabelHeight = computeMaxBarHeight(combinedRecords, maxLengthMbp, maxRenderHeight, combinedRecord.fragments.front().oldStrandID, masterHeader);
 
@@ -493,11 +477,9 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
 
 
-    // ---------------------------------------------------
-    // Draw multi-origin ecDNA slots, one per event, packed
-    // into rows after the chromoplexy slots exactly like
-    // the autosome/chromoplexy slots are.
-    // ---------------------------------------------------
+    // ------------------------------------------------------------------------------------------------------------------------------------------
+    // Draw multi-origin ecDNA slots, one per event, packed into rows after the chromoplexy slots exactly like the autosome/chromoplexy slots are.
+    // ------------------------------------------------------------------------------------------------------------------------------------------
     std::size_t ecDNAslotIndex = 0;
 
     for (const SDRecDNAevent& event : ecDNAevents)
@@ -506,7 +488,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
         if (distinctOrigins.size() < 2)
         {
-            continue; // Same-origin ecDNA is already drawn next to its home chromosome above.
+            continue; 									// Same-origin ecDNA is already drawn next to its home chromosome above.
         }
 
         const SDRdataRecord* circularRecord = nullptr;
@@ -522,7 +504,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
         if (circularRecord == nullptr)
         {
-            continue; // Shouldn't happen - excisedStrandID came from detectECDNA() on this same subHeader.
+            continue; 									// Shouldn't happen, excisedStrandID came from detectECDNA() on this same subHeader.
         }
 
         const int slotPosition = chromoplexySlotCount + static_cast<int>(ecDNAslotIndex);
@@ -543,10 +525,8 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
         const double centerY = slotPosY + diameter / 2.0;
 
 
-	// Sum each contributing strand's total length across however many segments it supplied
-        // (a strand with two gaps recombining into this ecDNA gets ONE wedge sized by their
-        // combined length, not two separate wedges), then build one wedge per strand, in the
-        // order each strand first appears on the circular record - same order the label below
+	// Sum each contributing strand's total length across however many segments it supplied (a strand with two gaps recombining into this ecDNA gets ONE wedge sized by their
+        // combined length, not two separate wedges), then build one wedge per strand, in the order each strand first appears on the circular record, same order the label below
         // uses, so the wedge position and the label token line up.
         std::map<int, double> lengthByStrand;
 
@@ -569,13 +549,11 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
             wedges.push_back({ getColorForOriginalStrand(fragment.oldStrandID, masterHeader), lengthByStrand[fragment.oldStrandID] });
         }
 
-        drawPieChartFragment(cr, slotCenterX, centerY, diameter, wedges, true);
+        drawPieChartFragment(cr, slotCenterX, centerY, diameter, wedges);
 
 
-        // Label reads e.g. "chrA-chrB*", one "chr<oldStrandID>" token per DISTINCT contributing
-        // strand, in the order each strand first appears on the circular record, trailing "*"
-        // marking it as acentric. This names which chromosomes are involved, not
-        // how many pieces each gave.
+        // Label reads e.g. "chrA-chrB*", one "chr<oldStrandID>" token per DISTINCT contributing strand, in the order each strand first appears on the 
+	// circular record, trailing "*" marking it as acentric. This names which chromosomes are involved, not how many pieces each gave.
         std::string ecDNAlabel;
         std::set<int> labeledStrands;
 
@@ -636,13 +614,13 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
 
 
-void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on the karyogram , including the new fragments the chromosome is composed of
+void Karyogram::drawPaintedFragment(			// Function to draw the individual fragments making up the chromosomes on the karyogram and the excised linear fragments (circular fragments handled later)
     cairo_t* cr,
     double x, 						// X position of the painted segment
     double y, 						// Y position of the painted segment
     double height, 					// Height of the chromosome
     double width, 					// Width of the chromosome
-    const std::vector<PaintedSegment>& segments,	// Painted segment vector to add the aberrant strands on the original chromosomes to depict strcutural variations
+    const std::vector<PaintedSegment>& segments,	// Painted segment vector to add the aberrant strands on the original chromosomes to depict structural variations
     bool roundTopCap,					// Whether the top edge gets a rounded telomere cap or a flat cut edge
     bool roundBottomCap,				// Whether the bottom edge gets a rounded telomere cap or a flat cut edge
     bool drawOutline)					// Whether the shape should have a black outline, default to true
@@ -659,21 +637,21 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     // --------------------------------------------------
     // Determine centromere locations
     // --------------------------------------------------
-    struct CentromereSpan				// Local struct only available for the SDR chromosome drawings
+    struct CentromereSpan									// Local struct only available for the SDR chromosome drawings
     {
-        double centromereTopY;				// Centromere top height in pixels
-        double centromereBottomY;			// Centromere bottom height in pixels
+        double centromereTopY;									// Centromere top height in pixels
+        double centromereBottomY;								// Centromere bottom height in pixels
     };
 
     std::vector<CentromereSpan> centromereSpans;
     for (const PaintedSegment& segment : segments)
     {
-        if (segment.hasCentromere)			// Check if fragments/strands have a centromere
+        if (segment.hasCentromere)								// Check if fragments/strands have a centromere
         {
-            CentromereSpan span{};			// Initialize the CentromereSpan vector span
+            CentromereSpan span{};								// Initialize the CentromereSpan vector span
             span.centromereTopY = y + height * segment.centromereStartFraction;			// Top of centromere in pixels
             span.centromereBottomY = y + height * segment.centromereEndFraction;		// Bottom of centromere in pixels
-            centromereSpans.push_back(span);		// Store this centromere's geometry
+            centromereSpans.push_back(span);							// Store this centromere's geometry
         }
     }
 
@@ -688,8 +666,7 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     const double constrictionAmount = 2.0;
 
 
-    // Trace the outer capsule outline - with a constriction notch at each centromere position
-    // along the multiple fragments making up a mutated chromosome
+    // Trace the outer capsule outline with a constriction notch at each centromere position along the multiple fragments making up a mutated chromosome
     const auto traceCapsulePath = [&]()
     {
         cairo_new_path(cr);
@@ -742,12 +719,12 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     };
 
 
-    traceCapsulePath(); // build it once, for the clip
+    traceCapsulePath(); 									// build it once, for the clip
 
 
-    // --------------------------------------
+    // --------------------------------------------------------
     // Fill each painted segment, clipped to the capsule shape
-    // --------------------------------------
+    // --------------------------------------------------------
     cairo_save(cr);
     cairo_clip_preserve(cr);
 
@@ -755,19 +732,18 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     {
         const double segmentTop = y + height * segment.startFraction;
         const double segmentBottom = y + height * segment.endFraction;
-//        const double minSegmentHeightForChevron = 8.0;
 
         cairo_set_source_rgb(cr, segment.color.r, segment.color.g, segment.color.b);
         cairo_rectangle(cr, x, segmentTop, width, segmentBottom - segmentTop);
         cairo_fill(cr);
 
-        if (segment.isReversed) //&& (segmentBottom - segmentTop) >= minSegmentHeightForChevron)        // Check for balanced inversion
+        if (segment.isReversed) 	        						// Check for balanced inversion
         {
             const double segmentHeight = segmentBottom - segmentTop;
             const double chevronSize = std::min(width * 0.5, segmentHeight);
             const double chevronCenterY = (segmentTop + segmentBottom) / 2.0;
 
-            drawInversionChevron(cr, x + width / 2.0, chevronCenterY, chevronSize);                  // Inversion marker to depict balanced inversions
+            drawInversionChevron(cr, x + width / 2.0, chevronCenterY, chevronSize);		// Inversion marker to depict balanced inversions
         }
 
     }
@@ -775,9 +751,9 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     cairo_restore(cr);
 
 
-    // --------------------------------------
+    // ------------------------------------------------
     // Segment boundaries and reversed segment markers
-    // --------------------------------------
+    // ------------------------------------------------
     // Draw white segments on chromosomes where deletions occurred instead of truncating the chromosome, for clarity.
     const auto isWhiteColor = [](const RGB& color)
     {
@@ -809,7 +785,7 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
 
     for (const PaintedSegment& segment : segments)
     {
-        if (!segment.isReversed)						// For non-balanced inversion mutations
+        if (!segment.isReversed)						// Skip non-reversed segments, only reversed ones get the boundary-line markers below
         {
             continue;
         }
@@ -833,7 +809,7 @@ void Karyogram::drawPaintedChromosome(			// Function to draw the chromosomes on 
     // --------------------------------------
     if (drawOutline)
     {
-        traceCapsulePath(); // rebuild - the fills above consumed the original path
+        traceCapsulePath(); // Rebuild. The fills above consumed the original path
 
         cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
         cairo_set_line_width(cr, 1.5);
@@ -916,15 +892,13 @@ void Karyogram::drawStackedMutations(
 
     if (isLoneGap && originalSizeMbp > 0.0)
     {
-        // Same gap-drawing treatment as a plain deletion's remaining
-        // piece - buildDeletionRemainingSegments() already inserts a
-        // white gap wherever consecutive sorted fragments don't touch,
-        // regardless of whether an excised counterpart exists.
+        // Same gap-drawing treatment as a plain deletion's remaining piece, buildDeletionRemainingSegments() already inserts a
+        // white gap wherever consecutive sorted fragments don't touch, regardless of whether an excised counterpart exists.
         const double barHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
         const double barX = slotCenterX - totalWidth / 2.0;
         const std::vector<PaintedSegment> segments = buildDeletionRemainingSegments(*records[0], homeOldStrandID, humanGenome, masterHeader);
 
-        drawPaintedChromosome(cr, barX, posY, barHeight, chromosomeWidth, segments);
+        drawPaintedFragment(cr, barX, posY, barHeight, chromosomeWidth, segments);
         return;
     }
 
@@ -932,12 +906,9 @@ void Karyogram::drawStackedMutations(
 
     if (isDeletionTranslocationDonorShape(records, homeOldStrandID))
     {
-        // The recombined molecule carries no gap - the deleted region
-        // simply isn't part of it, which is already correct. It draws
-        // exactly like an ordinary translocation derivative: plain
-        // fragments, scaled to its own actual length, no white-gap or
-        // full-original-length treatment. The excised piece gets the
-        // same flat-cap treatment as any other deletion's excised piece.
+        // The recombined molecule carries no gap - the deleted region simply isn't part of it, which is already correct. It draws
+        // exactly like an ordinary translocation derivative: plain fragments, scaled to its own actual length, no white-gap or
+        // full-original-length treatment. The excised piece gets the same flat-cap treatment as any other deletion's excised piece.
         const SDRdataRecord* recombinedRecord = nullptr;
         const SDRdataRecord* excisedRecord = nullptr;
 
@@ -982,7 +953,7 @@ void Karyogram::drawStackedMutations(
 	const double recombinedBarHeight = computeSDRbarHeight(recombinedLengthMbp, maxLengthMbp, maxRenderHeight); 
 	const std::vector<PaintedSegment> recombinedSegments = buildPaintedSegments(*recombinedRecord, humanGenome, masterHeader);
 
-	drawPaintedChromosome(cr, columnX1, posY, recombinedBarHeight, chromosomeWidth, recombinedSegments);
+	drawPaintedFragment(cr, columnX1, posY, recombinedBarHeight, chromosomeWidth, recombinedSegments);
 
         const SDRfragment& excisedFragment = excisedRecord->fragments[0];
         const double fragLower = std::min(excisedFragment.oldStartPosition, excisedFragment.oldEndPosition);
@@ -996,7 +967,7 @@ void Karyogram::drawStackedMutations(
         const double excisedBarHeight = computeSDRbarHeight(excisedLengthMbp, maxLengthMbp, maxRenderHeight);
         const std::vector<PaintedSegment> excisedSegments = buildPaintedSegments(*excisedRecord, humanGenome, masterHeader);
 
-        drawPaintedChromosome(cr, columnX2, posY, excisedBarHeight, chromosomeWidth, excisedSegments, roundTopCap, roundBottomCap, false);
+        drawPaintedFragment(cr, columnX2, posY, excisedBarHeight, chromosomeWidth, excisedSegments, roundTopCap, roundBottomCap, false);
 
         return;
 
@@ -1035,14 +1006,12 @@ void Karyogram::drawStackedMutations(
         {
 	    remainingBarHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
             const std::vector<PaintedSegment> segments = buildDeletionRemainingSegments(*remainingRecord, homeOldStrandID, humanGenome, masterHeader);
-            drawPaintedChromosome(cr, remainingBarX, posY, remainingBarHeight, chromosomeWidth, segments);
+            drawPaintedFragment(cr, remainingBarX, posY, remainingBarHeight, chromosomeWidth, segments);
         }
 
 
-	// Stack every excised piece vertically in the second column, each
-        // sized as the SAME fraction of remainingBarHeight that its
-        // length is of the original chromosome - this guarantees an
-        // excised piece's height always matches its white gap's height
+	// Stack every excised piece vertically in the second column, each sized as the SAME fraction of remainingBarHeight that its
+        // length is of the original chromosome. This guarantees an excised piece's height always matches its white gap's height
         // exactly, since both derive from the same reference height.
         const double verticalGap = 6.0;
         double excisedY = posY;
@@ -1060,13 +1029,16 @@ void Karyogram::drawStackedMutations(
                 }
 
 		const double equivalentLinearHeight = (excisedLengthMbp / originalSizeMbp) * remainingBarHeight;
-                double diameter = equivalentLinearHeight;		// Once again, scale diameter of ecDNA segment to the length of the fragment, not its circumference (which is more accurate). If desired to scale to circumference, divide by M_PI (less clear visually, but more accurate).
+		// Scale diameter of ecDNA segment to the length of the fragment, not its circumference (which is more accurate). 
+		// If desired to scale to circumference, divide by M_PI (less clear visually, but more accurate).
+                double diameter = equivalentLinearHeight;
                 diameter = std::min(diameter, chromosomeWidth * 3.0);
 
                 const double centerY = excisedY + diameter / 2.0;
-                const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
+                // Correct because genuinely mixed-origin circular records are filtered out upstream via multiOriginECDNAnewStrandIDs before reaching this fallback.
+		const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
 
-                drawCircularFragment(cr, excisedColumnCenterX, centerY, diameter, color, false);
+                drawCircularFragment(cr, excisedColumnCenterX, centerY, diameter, color);
 
                 excisedY += diameter + verticalGap;
 	    }
@@ -1085,7 +1057,7 @@ void Karyogram::drawStackedMutations(
 
             	const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader);
 
-            	drawPaintedChromosome(cr, excisedBarX, excisedY, excisedBarHeight, chromosomeWidth, segments, roundTopCap, roundBottomCap, false);
+            	drawPaintedFragment(cr, excisedBarX, excisedY, excisedBarHeight, chromosomeWidth, segments, roundTopCap, roundBottomCap, false);
 
             	excisedY += excisedBarHeight + verticalGap;
 	    }
@@ -1093,15 +1065,11 @@ void Karyogram::drawStackedMutations(
         return;
     }
 
-    // --------------------------------------------------
-    // Multiple records, none matching a named shape - shattered/
-    // collapsed-concatenation case (chromothripsis-style). One base
-    // record (most fragments) drawn plainly, every other piece sized
-    // exactly to its own length (no floor) and stacked vertically,
-    // wrapping into additional columns rather than growing past
-    // maxRenderHeight into the next karyogram row.
-    // --------------------------------------------------
 
+
+    // Multiple records, none matching a named shape - shattered/collapsed-concatenation case (chromothripsis-style). One base
+    // record (most fragments) drawn plainly, every other piece sized exactly to its own length (no floor) and stacked vertically,
+    // wrapping into additional columns rather than growing past maxRenderHeight into the next karyogram row.
     if (records.size() > 1)
     {
         const SDRdataRecord* baseRecord = nullptr;
@@ -1144,14 +1112,12 @@ void Karyogram::drawStackedMutations(
 
 	    if (baseIsSingleStrand && baseRecord->fragments.size() >= 2)
             {
-                // Pure single-strand case - reuse the same function
-                // plain multi-deletion already uses, position-sorted
+                // Pure single-strand case - reuse the same function plain multi-deletion already uses, position-sorted
                 // and robust to file-listing order.
                 baseSegments = buildDeletionRemainingSegments(*baseRecord, homeOldStrandID, humanGenome, masterHeader);
 
-                // buildDeletionRemainingSegments scales by the chromosome's
-                // full original size, not just the fragment+gap sum -
-                // match that here so the bar height stays consistent.
+                // buildDeletionRemainingSegments scales by the chromosome's full original size, not just the fragment+gap sum.
+                // Match that here so the bar height stays consistent.
                 if (sizeIndex < masterHeader.intactChromosomeSizes.size())
                 {
                     baseLengthMbp = masterHeader.intactChromosomeSizes[sizeIndex];
@@ -1160,18 +1126,15 @@ void Karyogram::drawStackedMutations(
 
 	    else
             {
-                // Mixed-strand case (material exchanged between two
-                // chromosomes), fragment positions live in different
-                // coordinate systems, so buildDeletionRemainingSegments'
-                // sorting assumption doesn't hold. Walks fragments in
-                // file order instead, inserting white gaps only between
-                // immediately-adjacent HOME-strand fragments.
+                // Mixed-strand case (material exchanged between two chromosomes), fragment positions live in different
+                // coordinate systems, so buildDeletionRemainingSegments' sorting assumption doesn't hold. Walks fragments in
+                // file order instead, inserting white gaps only between immediately-adjacent HOME-strand fragments.
                 baseSegments = buildMixedStrandSegmentsWithGaps(*baseRecord, homeOldStrandID, humanGenome, masterHeader, baseLengthMbp);
             }
 
             const double baseHeight = computeSDRbarHeight(baseLengthMbp, maxLengthMbp, maxRenderHeight);
 
-            drawPaintedChromosome(cr, baseX, posY, baseHeight, chromosomeWidth, baseSegments);
+            drawPaintedFragment(cr, baseX, posY, baseHeight, chromosomeWidth, baseSegments);
         }
 
         const double verticalGap = 6.0;
@@ -1203,12 +1166,9 @@ void Karyogram::drawStackedMutations(
                 }
             }
 
-            // A piece that is PURELY home-strand material represents a
-            // simple deleted/excised segment (nothing exchanged with
-            // another chromosome), gets the same "no outline"
-            // treatment as a plain deletion's excised piece. A piece
-            // carrying foreign material represents an exchange, not a
-            // deletion, so it keeps its outline.
+            // A piece that is PURELY home-strand material represents a simple deleted/excised segment (nothing exchanged with
+            // another chromosome), gets the same "no outline" treatment as a plain deletion's excised piece. A piece
+            // carrying foreign material represents an exchange, not a deletion, so it keeps its outline.
             bool isPureHomeStrand = true;
 
             for (const SDRfragment& fragment : record->fragments)
@@ -1224,14 +1184,14 @@ void Karyogram::drawStackedMutations(
 
             if (!record->linear)
             {
-                // Circular (ecDNA-like) piece, draw as a circle, same
-                // diameter convention as the plain ecDNA branch (scaled
+                // Circular (ecDNA-like) piece, draw as a circle, same diameter convention as the plain ecDNA branch (scaled
                 // directly to fragment length, capped at 3x chromosomeWidth).
                 const double diameter = std::min(pieceHeight, chromosomeWidth * 3.0);
                 const double centerY = columnY + diameter / 2.0;
+		// Correct because genuinely mixed-origin circular records are filtered out upstream via multiOriginECDNAnewStrandIDs before reaching this fallback.
                 const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
 
-                drawCircularFragment(cr, columnX + chromosomeWidth / 2.0, centerY, diameter, color, drawOutline);
+                drawCircularFragment(cr, columnX + chromosomeWidth / 2.0, centerY, diameter, color);
             }
             else
             {
@@ -1250,7 +1210,7 @@ void Karyogram::drawStackedMutations(
 
                 const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader);
 
-                drawPaintedChromosome(cr, columnX, columnY, pieceHeight, chromosomeWidth, segments, roundTopCap, roundBottomCap, drawOutline);
+                drawPaintedFragment(cr, columnX, columnY, pieceHeight, chromosomeWidth, segments, roundTopCap, roundBottomCap, drawOutline);
             }
         }
 
@@ -1258,26 +1218,26 @@ void Karyogram::drawStackedMutations(
     }
 
 
-    // --------------------------------------------------
+    // ---------------------------------------------------------------------------
     // Everything else keeps the existing one-column-per-record horizontal layout.
-    // --------------------------------------------------
+    // ---------------------------------------------------------------------------
 
     // Determine where to draw the abberrant strands and how large to draw them
-    double barX = slotCenterX - totalWidth / 2.0;                          // Aberrant strand X position
+    double barX = slotCenterX - totalWidth / 2.0;                          			// Aberrant strand X position
 
     for (const SDRdataRecord* record : records)
     {
-        double lengthMbp = 0.0;                                            // Convert Mbp lengths to pixel sizes
+        double lengthMbp = 0.0;                                            			// Convert Mbp lengths to pixel sizes
         for (const SDRfragment& fragment : record->fragments)
         {
-            lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);// Determine new rearranged strand length
+            lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);	// Determine new rearranged strand length
         }
 
-        double barHeight = computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight); // Determine the height of the aberrant strand
+        double barHeight = computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight); 	// Determine the height of the aberrant strand
         const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader); // Store all the segments associated with a given data record to be built and drawn
 
-        drawPaintedChromosome(cr, barX, posY, barHeight, chromosomeWidth, segments);        // Draw the chromosome with the rearranged fragments
-        barX += chromosomeWidth + stackGap;                                // Adjust the position of the aberrant strand fragment x position
+        drawPaintedFragment(cr, barX, posY, barHeight, chromosomeWidth, segments);        	// Draw the chromosome with the rearranged fragments
+        barX += chromosomeWidth + stackGap;                                			// Adjust the position of the aberrant strand fragment x position
     }
 
 }
@@ -1357,16 +1317,14 @@ std::vector<PaintedSegment> Karyogram::buildPaintedSegments(
                     }
                     else
                     {
-                        // Reversed fragment - genomic direction is flipped relative to
-                        // the visual (top-to-bottom) direction of the drawn segment.
+                        // Reversed fragment - genomic direction is flipped relative to the visual (top-to-bottom) direction of the drawn segment.
                         localFractionStart = 1.0 - (overlapEndMbp - fragMinMbp) / fragmentLengthMbp;
                         localFractionEnd = 1.0 - (overlapStartMbp - fragMinMbp) / fragmentLengthMbp;
                     }
                 }
                 else
                 {
-                    // hasCentromere is set but our lookup doesn't actually overlap this
-                    // fragment's range (e.g. table/data mismatch) - fall back to a
+                    // hasCentromere is set but our lookup doesn't actually overlap this fragment's range (e.g. table/data mismatch). Fall back to a
                     // point at the fragment's midpoint rather than drawing nothing.
                     localFractionStart = 0.5;
                     localFractionEnd = 0.5;
@@ -1399,10 +1357,8 @@ std::vector<PaintedSegment> Karyogram::buildPaintedSegments(
 
 
 
-// Builds painted segments for the "remaining" (2-fragment) half of a
-// long deletion, scaled to the ORIGINAL chromosome's full length
-// rather than this record's own reduced total - so the deleted
-// region shows up as a distinct white gap rather than disappearing.
+// Builds painted segments for the "remaining" (2-or-more-fragment) half of a long deletion, scaled to the ORIGINAL chromosome's full length
+// rather than this record's own reduced total - so the deleted region shows up as a distinct white gap rather than disappearing.
 std::vector<PaintedSegment> Karyogram::buildDeletionRemainingSegments(
     const SDRdataRecord& record,
     int homeOldStrandID,
@@ -1412,12 +1368,9 @@ std::vector<PaintedSegment> Karyogram::buildDeletionRemainingSegments(
     std::vector<PaintedSegment> segments;
 
 
-    // This function must only ever be called on a record already
-    // confirmed by isDeletionShape/isECDNAshape/isDeletionInversionShape
-    // to have EVERY fragment from the home strand. It assumes all
-    // fragment positions share one coordinate system and sorts them
-    // directly. A record mixing in foreign translocated fragments
-    // must never be routed here.
+    // This function must only ever be called on a record already confirmed by isDeletionShape/isECDNAshape/isDeletionInversionShape
+    // to have EVERY fragment from the home strand. It assumes all fragment positions share one coordinate system and sorts them
+    // directly. A record mixing in foreign translocated fragments must never be routed here.
 
     if (record.fragments.size() < 2)
     {
@@ -1493,8 +1446,7 @@ std::vector<PaintedSegment> Karyogram::buildDeletionRemainingSegments(
     const double delTolerance = 0.001;
 
 
-    // Leading white gap if the first fragment doesn't start at
-    // position 0, a terminal deletion removed the chromosome's start.
+    // Leading white gap if the first fragment doesn't start at position 0, a terminal deletion removed the chromosome's start.
     const double firstFragmentStart = std::min(fragments.front().oldStartPosition, fragments.front().oldEndPosition);
 
     if (firstFragmentStart > 0.0 && !approxEqual(firstFragmentStart, 0.0, delTolerance))
@@ -1533,8 +1485,7 @@ std::vector<PaintedSegment> Karyogram::buildDeletionRemainingSegments(
     }
 
 
-    // Trailing white gap if the last fragment doesn't end at the
-    // chromosome's true full length, a terminal deletion removed the end.
+    // Trailing white gap if the last fragment doesn't end at the chromosome's true full length, a terminal deletion removed the end.
     const double lastFragmentEnd = std::max(fragments.back().oldStartPosition, fragments.back().oldEndPosition);
 
     if (originalSizeMbp > lastFragmentEnd && !approxEqual(lastFragmentEnd, originalSizeMbp, delTolerance))
@@ -1571,22 +1522,17 @@ std::vector<PaintedSegment> Karyogram::buildDeletionRemainingSegments(
 
 
 
-// Builds painted segments for a base record that may mix home-strand
-// fragments with foreign (exchanged) ones - walks fragments in FILE
-// ORDER (not sorted by position, since foreign fragments live in a
-// different chromosome's coordinate system entirely). A white gap is
-// inserted ONLY between two immediately-adjacent HOME-strand fragments
-// that don't touch - real lost material. No gap is ever inserted
-// around a foreign fragment, since that material is still physically
-// present on the molecule, just relocated from elsewhere. Also
-// allows the pure single-strand case (every fragment home) with the
-// same logic, since every adjacent pair is then a home-home check.
+// Builds painted segments for a base record that may mix home-strand fragments with foreign (exchanged) ones. Walks fragments in FILE
+// ORDER (not sorted by position, since foreign fragments live in a different chromosome's coordinate system entirely). A white gap is
+// inserted ONLY between two immediately-adjacent HOME-strand fragments that don't touch, real lost material. No gap is ever inserted
+// around a foreign fragment, since that material is still physically present on the molecule, just relocated from elsewhere. Also
+// allows the pure single-strand case (every fragment home) with the same logic, since every adjacent pair is then a home-home check.
 std::vector<PaintedSegment> Karyogram::buildMixedStrandSegmentsWithGaps(
     const SDRdataRecord& record,
     int homeOldStrandID,
     bool humanGenome,
     const SDRmasterHeader& masterHeader,
-    double& outTotalLengthMbp)
+    double& outTotalLengthMbp)								// Total length of chromosome plus the new fragment (can be larger than the original chromosome length)
 {
     std::vector<PaintedSegment> segments;
     outTotalLengthMbp = 0.0;
@@ -1601,7 +1547,7 @@ std::vector<PaintedSegment> Karyogram::buildMixedStrandSegmentsWithGaps(
     struct PlannedPiece
     {
         bool isGap;
-        const SDRfragment* fragment; // valid if !isGap
+        const SDRfragment* fragment; 							// valid if !isGap
         double lengthMbp;
     };
 
@@ -1711,11 +1657,13 @@ std::vector<PaintedSegment> Karyogram::buildMixedStrandSegmentsWithGaps(
 
                     if (!segment.isReversed)
                     {
+			// Centromere range on the local fragment as a fraction of the fragment length
                         localFractionStart = (overlapStartMbp - fragMinMbp) / fragmentLengthMbp;
                         localFractionEnd = (overlapEndMbp - fragMinMbp) / fragmentLengthMbp;
                     }
                     else
                     {
+			// Reversed fragment, genomic direction is flipped relative to the visual (top-to-bottom) direction of the drawn segment.
                         localFractionStart = 1.0 - (overlapEndMbp - fragMinMbp) / fragmentLengthMbp;
                         localFractionEnd = 1.0 - (overlapStartMbp - fragMinMbp) / fragmentLengthMbp;
                     }
@@ -1780,15 +1728,13 @@ void Karyogram::drawInversionChevron(					// Function to draw a marker to denote
 
 
 
-// Draws an ecDNA fragment as a filled circle rather than a bar -
-// visually distinct from every other (linear) piece on the karyogram.
+// Draws an ecDNA fragment as a filled circle rather than a bar visually distinct from every other (linear) piece on the karyogram.
 void Karyogram::drawCircularFragment(
     cairo_t* cr, 
     double centerX, 
     double centerY, 
     double diameter, 
-    RGB color, 
-    bool drawOutline)
+    RGB color)
 {
     const double radius = diameter / 2.0;
 
@@ -1798,12 +1744,8 @@ void Karyogram::drawCircularFragment(
     cairo_set_source_rgb(cr, color.r, color.g, color.b);
     cairo_fill_preserve(cr);
 
-    if (drawOutline)
-    {
-        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-        cairo_set_line_width(cr, 1.5);
-        cairo_stroke(cr);
-    }
+    drawCircularFragmentInnerRing(cr, centerX, centerY, diameter);
+
 }
 
 
@@ -1815,27 +1757,23 @@ void Karyogram::drawCircularFragment(
 
 
 
-// Draws one wedge per {color, fraction} entry in order, each spanning fraction * 360 degrees of
-// the circle, so the assembled circle looks like a pie chart of each contributing strand's own
-// color, proportional to how much of the fragment's total length that strand contributed. The
-// wedge outlines against each other are always drawn (so the split between colors is visible even
-// when they're similar); drawOutline instead controls the outer boundary of the whole circle.
+// Draws one wedge per {color, fraction} entry in order, each spanning fraction * 360 degrees of the circle, so the assembled circle looks like a pie chart of each contributing strand's own
+// color, proportional to how much of the fragment's total length that strand contributed. The wedge outlines against each other are always drawn (so the split between colors is visible even
+// when they're similar).
 void Karyogram::drawPieChartFragment(
     cairo_t* cr,
     double centerX,
     double centerY,
     double diameter,
-    const std::vector<std::pair<RGB, double>>& wedges,
-    bool drawOutline)
+    const std::vector<std::pair<RGB, double>>& wedges)
 {
     const double radius = diameter / 2.0;
 
-    // A single-wedge (single-origin) circle needs no pie slicing at all, draw it as a plain
-    // filled circle, same as drawCircularFragment(), to avoid a stray radius line across it.
+    // A single-wedge (single-origin) circle needs no pie slicing at all, draw it as a plain filled circle, same as drawCircularFragment(), to avoid a stray radius line across it.
     if (wedges.size() <= 1)
     {
         const RGB color = wedges.empty() ? RGB{0.5, 0.5, 0.5} : wedges.front().first;
-        drawCircularFragment(cr, centerX, centerY, diameter, color, drawOutline);
+        drawCircularFragment(cr, centerX, centerY, diameter, color);
         return;
     }
 
@@ -1851,7 +1789,7 @@ void Karyogram::drawPieChartFragment(
         return;
     }
 
-    double startAngle = -M_PI / 2.0; // Start at the top of the circle (12 o'clock), like a conventional pie chart.
+    double startAngle = -M_PI / 2.0; 							// Start at the top of the circle (12 o'clock), like a conventional pie chart.
 
     for (const auto& [color, fraction] : wedges)
     {
@@ -1874,14 +1812,8 @@ void Karyogram::drawPieChartFragment(
         startAngle = endAngle;
     }
 
-    if (drawOutline)
-    {
-        cairo_new_path(cr);
-        cairo_arc(cr, centerX, centerY, radius, 0.0, 2.0 * M_PI);
-        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-        cairo_set_line_width(cr, 1.5);
-        cairo_stroke(cr);
-    }
+    drawCircularFragmentInnerRing(cr, centerX, centerY, diameter);
+
 }
 
 
@@ -1894,10 +1826,32 @@ void Karyogram::drawPieChartFragment(
 
 
 
-// Computes per-excised-piece heights (no floor, unlike computeSDRbarHeight)
-// and how many vertical-stack columns are needed so no column exceeds
-// maxColumnHeight. Shared between computeSlotWidth() (spacing) and
-// drawStackedMutations() (actual drawing) so both always agree on layout.
+// Draws the small white, black-outlined inner circle that creates the "ring" appearance for ecDNA fragments - half the diameter of the
+// outer circle, centered on top of it.
+void Karyogram::drawCircularFragmentInnerRing(cairo_t* cr, double centerX, double centerY, double outerDiameter)
+{
+    const double innerRadius = outerDiameter / 4.0; 				// Half the outer DIAMETER = half the outer RADIUS.
+
+    cairo_new_path(cr);
+    cairo_arc(cr, centerX, centerY, innerRadius, 0.0, 2.0 * M_PI);
+
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    cairo_fill(cr);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+// Computes per-excised-piece heights (no floor, unlike computeSDRbarHeight) and how many vertical-stack columns are needed so no column exceeds
+// maxColumnHeight. Shared between computeSlotWidth() (spacing) and drawStackedMutations() (actual drawing) so both always agree on layout.
 int Karyogram::computeExcisedColumnLayout(
     const std::vector<const SDRdataRecord*>& excisedRecords,
     double maxLengthMbp,
@@ -1935,6 +1889,7 @@ int Karyogram::computeExcisedColumnLayout(
     {
         const double additionalHeight = columnHasContent ? (verticalGap + pieceHeight) : pieceHeight;
 
+	// Increase the number of columns for excised/acentric fragments if they exist, and increase it by the required additional height 
         if (columnHasContent && (columnUsedHeight + additionalHeight) > maxColumnHeight)
         {
             ++columns;
@@ -1966,8 +1921,7 @@ int Karyogram::computeExcisedColumnLayout(
 
 
 
-// The same height-scaling formula drawStackedMutations uses per bar -
-// pulled out so label positioning can reuse it without duplicating
+// The same height-scaling formula drawStackedMutations uses per bar. Pulled out so label positioning can reuse it without duplicating
 // the clamp logic.
 double Karyogram::computeSDRbarHeight(
     double lengthMbp, 								// Length of the bar fragment
@@ -1992,8 +1946,7 @@ double Karyogram::computeSDRbarHeight(
 
 
 
-// Tallest bar among a slot's (possibly stacked) records - used to
-// position that slot's label just below whatever actually got drawn.
+// Tallest bar among a slot's (possibly stacked) records, used to position that slot's label just below whatever actually got drawn.
 double Karyogram::computeMaxBarHeight(
     const std::vector<const SDRdataRecord*>& records, 				// Access the fragment sizes
     double maxLengthMbp, 							// Max length in Mbp of the chromosomes for normalization
@@ -2007,8 +1960,7 @@ double Karyogram::computeMaxBarHeight(
     }
 
 
-    // These are the same special shapes that can cause the
-    // remaining chromosome to be drawn at its ORIGINAL height
+    // These are the same special shapes that can cause the remaining chromosome to be drawn at its ORIGINAL height
     // rather than its reduced fragment length.
     const bool isDeletion = isDeletionShape(records, homeOldStrandID, masterHeader);
 
@@ -2019,8 +1971,7 @@ double Karyogram::computeMaxBarHeight(
     const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);
 
 
-    // For deletion-like chromosome drawings, the remaining
-    // chromosome is drawn using the full original chromosome
+    // For deletion-like chromosome drawings, the remaining chromosome is drawn using the full original chromosome
     // length, with the deleted material represented as a white gap.
     if (isDeletion || isECDNA || isDeletionInversion || isLoneGap)
     {
@@ -2037,7 +1988,7 @@ double Karyogram::computeMaxBarHeight(
         }
     }
 
-    
+
     // Normal case: determine the tallest actual record.
     double tallest = 0.0;
 
@@ -2071,12 +2022,9 @@ double Karyogram::computeMaxBarHeight(
 
 
 
-// Function to determine how wide a slot's drawing will actually
-// be - used both by drawStackedMutations() itself (to position things)
-// and by generateSDRkaryogram() (to space homologs apart correctly).
-// Returns the total width; outColumn2Width is set to the second
-// column's width for deletion-like/ecDNA shapes (chromosomeWidth
-// otherwise, unused by the caller in that case).
+// Function to determine how wide a slot's drawing will actually be, used both by drawStackedMutations() itself (to position things)
+// and by generateSDRkaryogram() (to space homologs apart correctly). Returns the total width; outColumn2Width is set to the second
+// column's width for deletion-like/ecDNA shapes (chromosomeWidth otherwise, unused by the caller in that case).
 double Karyogram::computeSlotWidth(
     const std::vector<const SDRdataRecord*>& records,
     int homeOldStrandID,
@@ -2106,8 +2054,7 @@ double Karyogram::computeSlotWidth(
 
     if (isLoneGap && originalSizeMbp > 0.0)
     {
-        // Only one column - the remaining piece, drawn at full original
-        // length. No excised counterpart lives in this slot to reserve
+        // Only one column - the remaining piece, drawn at full original length. No excised counterpart lives in this slot to reserve
         // a second column for.
         return chromosomeWidth;
     }
@@ -2115,8 +2062,7 @@ double Karyogram::computeSlotWidth(
 
     if (isDeletionTranslocationDonorShape(records, homeOldStrandID))
     {
-        // Two plain columns, both chromosomeWidth-wide - the recombined
-        // piece isn't scaled to full-original-length, so no ecDNA-style
+        // Two plain columns, both chromosomeWidth-wide, the recombined piece isn't scaled to full-original-length, so no ecDNA-style
         // diameter accounting is needed here.
         return 2 * chromosomeWidth + stackGap;
     }
@@ -2172,10 +2118,8 @@ double Karyogram::computeSlotWidth(
     }
 
 
-    // Multiple records, none matching a named shape - this is the
-    // shattered/collapsed-concatenation case (chromothripsis-style):
-    // one base record (most fragments) plus N unrelated leftover
-    // pieces, none of which decompose into a recognized shape.
+    // Multiple records, none matching a named shape, this is the shattered/collapsed-concatenation case (chromothripsis-style):
+    // one base record (most fragments) plus N unrelated leftover pieces, none of which decompose into a recognized shape.
     if (records.size() > 1)
     {
         const SDRdataRecord* baseRecord = nullptr;
@@ -2202,7 +2146,7 @@ double Karyogram::computeSlotWidth(
         std::vector<double> pieceHeights;
         const int numColumns = computeExcisedColumnLayout(otherRecords, maxLengthMbp, maxRenderHeight, maxRenderHeight, verticalGap, pieceHeights);
 
-        outColumn2Width = chromosomeWidth; // Each stacked column is one chromosomeWidth wide.
+        outColumn2Width = chromosomeWidth; 					// Each stacked column is one chromosomeWidth wide.
 
         return chromosomeWidth + stackGap + static_cast<double>(numColumns) * chromosomeWidth + static_cast<double>(std::max(0, numColumns - 1)) * stackGap;
     }
@@ -2230,12 +2174,9 @@ double Karyogram::computeSlotWidth(
 
 
 
-// Synthesizes a plain, unmutated baseline record for an original
-// strand that has NO data records at all in the SDR file - e.g. a
-// file that only lists mutated strands, omitting trivial "nothing
-// happened here" entries for every untouched chromosome. Without
-// this, such a strand's slot would be left completely blank on the
-// karyogram instead of showing a correctly-sized intact chromosome.
+// Synthesizes a plain, unmutated baseline record for an original strand that has NO data records at all in the SDR file, e.g. a
+// file that only lists mutated strands, omitting trivial "nothing happened here" entries for every untouched chromosome. Without
+// this, such a strand's slot would be left completely blank on the karyogram instead of showing a correctly-sized intact chromosome.
 std::vector<const SDRdataRecord*> Karyogram::synthesizeIntactRecordIfMissing(
     int oldStrandID,
     int cellID,
@@ -2252,14 +2193,14 @@ std::vector<const SDRdataRecord*> Karyogram::synthesizeIntactRecordIfMissing(
 
     SDRdataRecord record{};
     record.cellID = cellID;
-    record.newStrandID = oldStrandID; // Matches the file's own baseline convention (newStrandID == oldStrandID when unmutated)
+    record.newStrandID = oldStrandID;				 // Matches the file's own baseline convention (newStrandID == oldStrandID when unmutated)
     record.linear = true;
 
     SDRfragment fragment{};
     fragment.oldStrandID = oldStrandID;
     fragment.oldStartPosition = 0.0;
     fragment.oldEndPosition = sizeMbp;
-    fragment.hasCentromere = true; // Matches real baseline records, which always flag the whole chromosome as centromere-bearing
+    fragment.hasCentromere = true; 				// Matches real baseline records, which always flag the whole chromosome as centromere-bearing
 
     record.fragments.push_back(fragment);
 
@@ -2278,10 +2219,8 @@ std::vector<const SDRdataRecord*> Karyogram::synthesizeIntactRecordIfMissing(
 
 
 
-// If a slot contains any genuine mutation-derived record (newStrandID
-// >= numOriginalStrands), drop any leftover baseline/unmutated record
-// for that same original strand - only the resulting mutated strand(s)
-// should be drawn, not the untouched original alongside them.
+// If a slot contains any genuine mutation-derived record (newStrandID > numOriginalStrands), drop any leftover baseline/unmutated record
+// for that same original strand - only the resulting mutated strand(s) should be drawn, not the untouched original alongside them.
 std::vector<const SDRdataRecord*> Karyogram::filterBaselineIfMutated(
     const std::vector<const SDRdataRecord*>& records,					// Access SDR data records to assess which records contain mutated strands and which are intact
     int numOriginalStrands)								// Use to assess when the mutated SDR data records begin
@@ -2333,19 +2272,15 @@ std::vector<const SDRdataRecord*> Karyogram::filterBaselineIfMutated(
 
 
 
-// The first record's full fragment list is the base structure. 
-// For every subsequent record, its own home-strand fragment(s) 
-// tell us what portion of the original chromosome that record actually 
-// retains. 
-// The base structure gets truncated down to fit within that retained range (keeping only the
-// overlapping part of each base fragment, dropping any base fragment
-// with no overlap at all). The subsequent record's FOREIGN fragments
-// are then tacked on at the end.
+// The first record's full fragment list is the base structure. For every subsequent record, its own home-strand fragment(s) 
+// tell us what portion of the original chromosome that record actually retains.
+// The base structure gets truncated down to fit within that retained range (keeping only the overlapping part of each base fragment, dropping any base 
+// fragment with no overlap at all). The subsequent record's FOREIGN fragments are then tacked on at the end.
 SDRdataRecord Karyogram::concatenateRecordsForDrawing(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID)
 {
     SDRdataRecord merged{};
     merged.cellID = records.front()->cellID;
-    merged.newStrandID = records.front()->newStrandID; // Representative ID, used only for the drawn label.
+    merged.newStrandID = records.front()->newStrandID; 					// Representative ID, used only for the drawn label.
     merged.linear = records.front()->linear;
 
     std::vector<SDRfragment> baseFragments(records.front()->fragments.begin(), records.front()->fragments.end());
@@ -2375,7 +2310,7 @@ SDRdataRecord Karyogram::concatenateRecordsForDrawing(const std::vector<const SD
 
                 if (overlapHi <= overlapLo)
                 {
-                    continue; // No overlap with the retained range - fully dropped.
+                    continue; 							// No overlap with the retained range, fully dropped.
                 }
 
                 // Truncate to just the overlapping portion, preserving orientation.
@@ -2430,7 +2365,9 @@ SDRdataRecord Karyogram::concatenateRecordsForDrawing(const std::vector<const SD
 
 
 
-
+// Decides whether a slot's multiple records should be merged into one synthetic drawing (via concatenateRecordsForDrawing) or left as separate pieces. 
+// Named shapes (deletion, ecDNA, deletion-inversion, deletion-translocation-donor) are returned untouched, since drawStackedMutations() has its own 
+// dedicated layout for each. Everything else attempts the merge, but falls back to the original records if the result comes out degenerate.
 std::vector<const SDRdataRecord*> Karyogram::clusterRecordsForDrawing(
     const std::vector<const SDRdataRecord*>& records,
     int homeOldStrandID,
@@ -2464,10 +2401,8 @@ std::vector<const SDRdataRecord*> Karyogram::clusterRecordsForDrawing(
         firstRecordLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
     }
 
-    // If concatenation collapsed to (near) nothing relative to the base
-    // record it started from, the merge assumptions this function was
-    // built for don't hold for this group - fall back to drawing every
-    // record separately instead of returning a degenerate result.
+    // If concatenation collapsed to (near) nothing relative to the base record it started from, the merge assumptions this function was
+    // built for don't hold for this group - fall back to drawing every record separately instead of returning a degenerate result.
     if (firstRecordLengthMbp > 0.0 && (mergedLengthMbp / firstRecordLengthMbp) < 0.1)
     {
         return records;
@@ -2477,6 +2412,8 @@ std::vector<const SDRdataRecord*> Karyogram::clusterRecordsForDrawing(
 
     return { &mergedStorage.back() };
 }
+
+
 
 
 } // namespace sddparser

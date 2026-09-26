@@ -386,41 +386,41 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
 
     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-    cairo_set_font_size(cr, 18.0);
+    cairo_set_font_size(cr, 20.0);
 
     const double firstRowY = summaryY + 30.0;
     const double secondRowY = summaryY + 68.0;
     const double thirdRowY = summaryY + 106.0;
     const double fourthRowY = summaryY + 144.0;
 
-    cairo_move_to(cr, summaryX + 15.0, firstRowY);
-    cairo_show_text(cr, ("Cell ID: " + std::to_string(subHeader.cellID)).c_str());
-
-    cairo_move_to(cr, summaryX + 277.5, firstRowY);
-    cairo_show_text(cr, ("Long Deletions: " + std::to_string(deletions.size())).c_str());
-
-    cairo_move_to(cr, summaryX + 570.0, firstRowY);
-    cairo_show_text(cr, ("Balanced Inversions: " + std::to_string(inversions.size())).c_str());
+    cairo_move_to(cr, summaryX + 420.0, firstRowY);
+    cairo_show_text(cr, ("Cell ID - " + std::to_string(subHeader.cellID)).c_str());
 
     cairo_move_to(cr, summaryX + 15.0, secondRowY);
+    cairo_show_text(cr, ("Long Deletions: " + std::to_string(deletions.size())).c_str());
+
+    cairo_move_to(cr, summaryX + 300.0, secondRowY);
+    cairo_show_text(cr, ("Balanced Inversions: " + std::to_string(inversions.size())).c_str());
+
+    cairo_move_to(cr, summaryX + 615.0, secondRowY);
     cairo_show_text(cr, ("Balanced Translocations: " + std::to_string(translocations.size())).c_str());
 
-    cairo_move_to(cr, summaryX + 277.5, secondRowY);
+    cairo_move_to(cr, summaryX + 15.0, thirdRowY);
     cairo_show_text(cr, ("ecDNA: " + std::to_string(ecDNA.size())).c_str());
 
-    cairo_move_to(cr, summaryX + 570.0, secondRowY);
+    cairo_move_to(cr, summaryX + 300.0, thirdRowY);
     cairo_show_text(cr, ("Deletion-Inversions: " + std::to_string(deletionInversion.size())).c_str());
 
-    cairo_move_to(cr, summaryX + 15.0, thirdRowY);
+    cairo_move_to(cr, summaryX + 615.0, thirdRowY);
     cairo_show_text(cr, ("Deletion-Translocations: " + std::to_string(deletionTranslocation.size())).c_str());
 
-    cairo_move_to(cr, summaryX + 277.5, thirdRowY);
+    cairo_move_to(cr, summaryX + 15.0, fourthRowY);
     cairo_show_text(cr, ("Deletion-Insertions: " + std::to_string(deletionInsertion.size())).c_str());
 
-    cairo_move_to(cr, summaryX + 570.0, thirdRowY);
+    cairo_move_to(cr, summaryX + 300.0, fourthRowY);
     cairo_show_text(cr, ("Chromoplexy: " + std::to_string(chromoplexy.size())).c_str());
 
-    cairo_move_to(cr, summaryX + 15.0, fourthRowY);
+    cairo_move_to(cr, summaryX + 615.0, fourthRowY);
     cairo_show_text(cr, ("Chromothripsis: " + std::to_string(chromothripsis.size())).c_str());
 
 }
@@ -437,7 +437,7 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
 void Karyogram::drawSDRlegend(cairo_t* cr, double legendY)
 {
     const double legendX = 50.0;
-    const double legendWidth = 900.0;
+    const double legendWidth = 930.0;
     const double legendHeight = 70.0;
     const double borderPaddingX = 15.0;
     const double borderPaddingY = 10.0;
@@ -452,7 +452,7 @@ void Karyogram::drawSDRlegend(cairo_t* cr, double legendY)
 
     cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
     cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-    cairo_set_font_size(cr, 16.0);
+    cairo_set_font_size(cr, 20.0);
 
     cairo_font_extents_t fontExtents;
     cairo_font_extents(cr, &fontExtents);
@@ -551,19 +551,17 @@ void Karyogram::drawSDRlegend(cairo_t* cr, double legendY)
 
 
     // --------------------------------------------------
-    // ecDNA symbol - same circular shape used on the karyogram itself
+    // ecDNA symbol - same ring shape used on the karyogram itself
     // --------------------------------------------------
     const double ecDNAX = 850.0;
-    const double ecDNADiameter = 14.0;
+    const double ecDNADiameter = 28.0;
 
     cairo_new_path(cr);
 
     drawCircularFragment(cr, ecDNAX, legendCenterY, ecDNADiameter, chromosomeColor);
 
     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
-    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-    cairo_set_font_size(cr, 16.0);
-    cairo_move_to(cr, ecDNAX + 12.0, textBaseline);
+    cairo_move_to(cr, ecDNAX + 18.0, textBaseline);
     cairo_show_text(cr, "ecDNA");
 
 }
