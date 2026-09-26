@@ -155,7 +155,7 @@ Note: the multi-foreign-fragment ecDNA are depicted pie-chart style, to represen
 chromosome is present in the new ecDNA fragment. 
 
 <picture align = "center">
-<img src="./SDRkaryogram_figure.svg" width = "100%" alt="Different mutation representations from irradiated DNA"><br>
+<img src="./SDRkaryogram.svg" width = "100%" alt="Different mutation representations from irradiated DNA"><br>
 <em> Depicting common DNA structural variations that arise from ionizing radiation.</em>
 </picture>
 
