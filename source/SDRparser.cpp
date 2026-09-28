@@ -25,11 +25,12 @@ bool SDRparser::parseFile(							// Main parser function that parses the SDR fil
         return false;
     }
 
-    // Clear previous parsed data in case the same parser
-    // object is reused.
+    // Clear previous parsed data in case the same parser object is reused.
     masterHeader = SDRmasterHeader{};
     subHeaders.clear();
     hasPendingLine = false;			// Reset in case parser object gets reused across files.
+    currentLineNumber = 0;
+    currentLineText.clear();
 
     try						// Try/catch for extra layer of safety
     {
@@ -72,6 +73,7 @@ bool SDRparser::parseFile(							// Main parser function that parses the SDR fil
     catch (const std::exception& error)							// If problem arises while parsing, return general error
     {
 	std::cerr << "ERROR: Unexpected error while parsing SDR file '" << filename << "': " << error.what() << "\n";
+	printErrorLocation();
 	return false;
     }
 
@@ -125,7 +127,7 @@ bool SDRparser::parseMasterHeader(
 
  std::string line;
 
-    while (std::getline(file, line))						// Loop through every SDR file line
+    while (nextLine(file, line))						// Loop through every SDR file line
     {
         line = trim(line);
 
@@ -143,7 +145,8 @@ bool SDRparser::parseMasterHeader(
 
         if (delimiterPos == std::string::npos)					// If delimiter not found exit with error
         {
-            std::cerr << "Error: Invalid SDR master header line: " << line << "\n";
+            std::cerr << "Error: Invalid SDR master header line (expected 'field, value;').\n";
+	    printErrorLocation();
             return false;
         }
 
@@ -174,6 +177,7 @@ bool SDRparser::parseMasterHeader(
 	    catch (const std::exception& error)							// If invalid value encountered, exit with error.
 	    {
 		std::cerr << "ERROR: Invalid 'Intact Chromosome Sizes' value in SDR master header: " << value << " (" << error.what() << ")\n";
+		printErrorLocation();
 		return false;
 	    }
 
@@ -181,11 +185,12 @@ bool SDRparser::parseMasterHeader(
         else
         {
             std::cerr << "Warning: Unknown SDR master header field: " << field << "\n";
+	    printErrorLocation();
         }
     }
 
     std::cerr << "Error: SDR master header terminator was not found." << "\n"; 		    // Reached EOF without finding the master-header terminator.
-
+    printEndOfFileLocation();
     return false;
 }
 
@@ -228,7 +233,8 @@ bool SDRparser::parseSubHeader(
 
 	if (delimiterPos == std::string::npos)						// If delimiter not found, exit with error
 	{
-	    std::cerr << "ERROR: Invalid SDR subheader line: " << line << "\n";
+	    std::cerr << "ERROR: Invalid SDR subheader line (expected 'field, value;').\n";
+	    printErrorLocation();
 	    return false;
 	}
 
@@ -245,6 +251,7 @@ bool SDRparser::parseSubHeader(
 	    if (values.size() != 1)							// Each subheader should present data for only one cell ID.
 	    {
 		std::cerr << "ERROR: Invalid Cell ID in SDR subheader.\n";
+		printErrorLocation();
 		return false;
 	    }
 
@@ -255,6 +262,7 @@ bool SDRparser::parseSubHeader(
 	    catch (const std::exception& error)
 	    {
 		std::cerr << "ERROR: Invalid 'Cell ID' value in SDR subheader: " << value << " (" << error.what() << ")\n";
+		printErrorLocation();
 	    	return false;
 	    }
 
@@ -263,8 +271,7 @@ bool SDRparser::parseSubHeader(
 	{
 	    if (value.empty())
 	    {
-		// Not measured, leave mutatedChromosomeSizes as its
-        	// default-constructed empty map.
+		// Not measured, leave mutatedChromosomeSizes as its default-constructed empty map.
 	    }
 
 	    else if (!parseMutatedChromosomeSizes(value, subHeader.mutatedChromosomeSizes))		// Use helper function parseMutatedChromosomeSizes to see if the entries are formatted correctly.
@@ -277,8 +284,7 @@ bool SDRparser::parseSubHeader(
 	{
 	    if (value.empty())
 	    {
-		// Not measured - leave intactStrandIDs as its
-        	// default-constructed empty vector.
+		// Not measured - leave intactStrandIDs as its default-constructed empty vector.
 	    }
 	    else
 	    {
@@ -289,6 +295,7 @@ bool SDRparser::parseSubHeader(
 	    	catch (const std::exception& error)
  	    	{
 		    std::cerr << "ERROR: Invalid 'Intact Strands ID' value in SDR subheader: " << value << " (" << error.what() << ")\n";
+		    printErrorLocation();
 		    return false;
 	    	}
 	    }
@@ -309,6 +316,7 @@ bool SDRparser::parseSubHeader(
 		catch (const std::exception& error)
 		{
 		    std::cerr << "ERROR: Invalid 'Total DSB count' value in SDR subheader: " << value << " (" << error.what() << ")\n";
+		    printErrorLocation();
 		    return false;
 		}
 	    }
@@ -328,13 +336,15 @@ bool SDRparser::parseSubHeader(
 		catch (const std::exception& error)
 		{
 		    std::cerr << "ERROR: Invalid 'Total Misrepair Count' value in SDR subheader: " << value << " (" << error.what () << ")\n";
+		    printErrorLocation();
 		    return false;
 		}
 	    }
 	}
 	else if (field == "medras-mc log")
 	{
-	    if (value.empty())
+
+/*	    if (value.empty())
     	    {
         	// Not measured, leave medrasMClog as its default-constructed empty vector.
     	    }
@@ -347,19 +357,24 @@ bool SDRparser::parseSubHeader(
 	    	catch (const std::exception& error)
 	    	{
 		    std::cerr << "ERROR: Invalid 'MEDRAS-MC Log' value in SDR subheader: " << value << " (" << error.what() << ")\n";
+		    printErrorLocation();
 		    return false;
-	    	}
+		}
 	    }
+*/
+		subHeader.medrasMClog = value;
+
 	}
 	else										// If unknown subheader key encountered, exit with error.
 	{
 	    std::cerr << "Warning: Unknown SDR subheader field: " << field << "\n";
+	    printErrorLocation();
 	}
 
     }
 
     std::cerr << "ERROR: SDR data section was not found for cell " << subHeader.cellID << "\n"; // If ***data - cell not found, return error.
-
+    printEndOfFileLocation();
     return false;
 }
 
@@ -407,7 +422,8 @@ bool SDRparser::parseCellData(
 	}
 	catch (const std::exception& error)
 	{
-	    std::cerr << "ERROR: Invalid SDR data record: " << line << " (" << error.what() << ")\n";
+	    std::cerr << "ERROR: Invalid SDR data record (" << error.what() << ")\n";
+	    printErrorLocation();
 	    return false;
 	}
 
@@ -448,6 +464,7 @@ bool SDRparser::parseDataRecord(
     if (fields.size() != 4)								// SDR data fields must have exactly four fields, otherwise error.
     {
 	std::cerr << "ERROR: Invalid SDR data record, 4 fields expected.\n";
+	printErrorLocation();
 	return false;
     }
 
@@ -460,7 +477,8 @@ bool SDRparser::parseDataRecord(
 
     if (cellIDvals.size() != 1 || strandIDvals.size() != 1)				// Field 1 and 2 must each have exactly one element
     {
-	std::cerr << "ERROR: Invalid cell ID / new strand ID in SDR data record.\n";
+	std::cerr << "ERROR: Invalid cell ID / new strand ID in SDR data record. \n";
+	printErrorLocation();
 	return false;
     }
 
@@ -495,6 +513,7 @@ bool SDRparser::parseDataRecord(
     if (record.fragments.empty())
     {
 	std::cerr << "ERROR: SDR data record has no fragments.\n";			// If no fragments found, exit with error.
+	printErrorLocation();
 	return false;
     }
 
@@ -507,6 +526,7 @@ bool SDRparser::parseDataRecord(
     if (isLinearVals.size() != 1 || (isLinearVals[0] != 0 && isLinearVals[0] != 1))	// Field 4 must be of size 1 and can only be a value of either 0 or 1
     {
 	std::cerr << "ERROR: Invalid linear/circular flag in SDR data record Field 4.\n";
+	printErrorLocation();
 	return false;
     }
 
@@ -534,6 +554,7 @@ bool SDRparser::parseMutatedChromosomeSizes(
     if (contents.size() < 2 || contents.front() != '{' || contents.back() != '}')	// If not formatted correctly, error
     {
 	std::cerr << "ERROR: Invalid Mutated Chromosome Sizes format: " << value << "\n";
+	printErrorLocation();
 	return false;
     }
 
@@ -554,6 +575,7 @@ bool SDRparser::parseMutatedChromosomeSizes(
 	if (delimiterPos == std::string::npos)						// If no delimiter ':' found or incorrect delimiter, exit with error.
 	{
 	    std::cerr << "ERROR: Invalid mutated chromosome size entry: " << entry << "\n";
+	    printErrorLocation();
 	    return false;
 	}
 
@@ -561,7 +583,8 @@ bool SDRparser::parseMutatedChromosomeSizes(
 	const std::string chromSize = trim(entry.substr(delimiterPos + 1));		// Chromosome sizes are after the ':' delimiter
 	if (chromID.empty() || chromSize.empty())					// If either are empty, exit with error
 	{
-	    std::cerr << "ERROR: Invalid muated chromosome size entry " << entry << "\n";
+	    std::cerr << "ERROR: Invalid muated chromosome size entry: " << entry << "\n";
+	    printErrorLocation();
 	    return false;
 	}
 
@@ -576,6 +599,7 @@ bool SDRparser::parseMutatedChromosomeSizes(
 	catch (const std::exception& error)
 	{
 	    std::cerr << "ERROR: Invalid mutated  chromosome size entry: " << entry << " (" << error.what() << ")\n";
+	    printErrorLocation();
 	    return false;
 	}
 
@@ -583,6 +607,7 @@ bool SDRparser::parseMutatedChromosomeSizes(
 	if (IDs.size() != 1 || sizes.size() != 1)					// Each pair should have 1 chrom ID and 1 chrom size, otherwise, error.
 	{
 	    std::cerr << "ERROR: Could not parse mutated chromosome size entry: " << entry << "\n";
+	    printErrorLocation();
 	    return false;
 	}
 
@@ -612,6 +637,7 @@ bool SDRparser::parseFragment(
     if (subfields.size() != 4)								// Require exactly four subfields delimited by '/' in field 3, otherwise error.
     {
         std::cerr << "ERROR: Invalid SDR fragment (expected 4 subfields): " << text << "\n";
+	printErrorLocation();
         return false;
     }
 
@@ -624,6 +650,7 @@ bool SDRparser::parseFragment(
     if (oldStrandIDvals.size() != 1 || startVals.size() != 1 || endVals.size() != 1 || centromereVals.size() != 1)
     {
         std::cerr << "ERROR: Could not parse SDR fragment: " << text << "\n";
+	printErrorLocation();
         return false;
     }
 
@@ -631,6 +658,7 @@ bool SDRparser::parseFragment(
     if (centromereVals[0] != 0 && centromereVals[0] != 1)
     {
         std::cerr << "ERROR: Invalid has-centromere flag in SDR fragment: " << text << "\n";
+	printErrorLocation();
         return false;
     }
 
@@ -844,17 +872,20 @@ bool SDRparser::nextLine(
     {
         line = pendingLine;
         hasPendingLine = false;
+	++currentLineNumber;        					// Re-counting the line that pushBackLine() un-counted
+        currentLineText = line;
         return true;
     }
 
-    return static_cast<bool>(std::getline(file, line));
+    if (std::getline(file, line))
+    {
+        ++currentLineNumber;
+        currentLineText = line;
+        return true;
+    }
+
+    return false;
 }
-
-
-
-
-
-
 
 
 
@@ -863,7 +894,23 @@ void SDRparser::pushBackLine(
 {
     pendingLine = line;
     hasPendingLine = true;
+    --currentLineNumber;						// The caller hasn't consumed this line yet
 }
+
+
+void SDRparser::printErrorLocation() const
+{
+    std::cerr << "  --> SDR file line " << currentLineNumber << ": " << trim(currentLineText) << "\n";
+}
+
+
+void SDRparser::printEndOfFileLocation() const
+{
+    std::cerr << "  --> reached end of SDR file after line " << currentLineNumber << "\n";
+}
+
+
+
 
 
 } // namespace sddparser

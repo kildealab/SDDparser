@@ -35,6 +35,12 @@ private:
     bool nextLine(std::ifstream& file, std::string& line);
     void pushBackLine(const std::string& line);
 
+    // Tracks which SDR file line is being processed, so error messages can point to it.
+    int currentLineNumber = 0;          // 1-indexed line most recently returned by nextLine()
+    std::string currentLineText;        // Raw text of that line
+    void printErrorLocation() const;    // Prints "  --> SDR file line N: <text>"
+    void printEndOfFileLocation() const;// For errors that happen when the file ends unexpectedly
+
     bool parseMasterHeader(std::ifstream& file);				// Master header parsing.
 
     bool parseSubHeader(std::ifstream& file, SDRsubHeader& subHeader);		// Cell subheader parsing.

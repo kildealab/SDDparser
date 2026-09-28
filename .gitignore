@@ -22,3 +22,6 @@ libSDDparser.a
 
 # Ignore figures for AQPMC symposium
 aqpmc*
+
+# Ignore the SDR files from Zhenlun's github
+Zhenlun\ SDRs/

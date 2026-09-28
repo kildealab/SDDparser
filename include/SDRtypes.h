@@ -51,7 +51,7 @@ struct SDRsubHeader
     int totalDSBcount;					// A blank value in SDR subheader means not measured, not an error
     int totalMisrepairCount;
 
-    std::vector<int> medrasMClog;
+    std::string medrasMClog;
 
     std::vector<SDRdataRecord> dataRecords;		// All SDR data records belonging to this cell.
 
