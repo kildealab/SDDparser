@@ -373,6 +373,8 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     const std::vector<SDRdeletionInsertionEvent> deletionInsertion = detectDeletionInsertions(subHeader, numOriginalStrands);
     const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRchromothripsisEvent> chromothripsis = detectChromothripsis(subHeader, numOriginalStrands);
+    const std::vector<SDRchromosomeRingEvent> chromosomeRings = detectChromosomeRings(subHeader, numOriginalStrands);
+    const std::vector<SDRdicentricEvent> dicentrics = detectDicentrics(subHeader, numOriginalStrands);
 
     const double summaryX = 50.0;
     const double summaryY = 25.0;
@@ -393,8 +395,14 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     const double thirdRowY = summaryY + 106.0;
     const double fourthRowY = summaryY + 144.0;
 
-    cairo_move_to(cr, summaryX + 420.0, firstRowY);
-    cairo_show_text(cr, ("Cell ID - " + std::to_string(subHeader.cellID)).c_str());
+    cairo_move_to(cr, summaryX + 15.0, firstRowY);
+    cairo_show_text(cr, ("Cell ID: " + std::to_string(subHeader.cellID)).c_str());
+
+    cairo_move_to(cr, summaryX + 300.0, firstRowY);
+    cairo_show_text(cr, ("Chromosome Rings: " + std::to_string(chromosomeRings.size())).c_str());
+
+    cairo_move_to(cr, summaryX + 615.0, firstRowY);
+    cairo_show_text(cr, ("Dicentrics: " + std::to_string(dicentrics.size())).c_str());
 
     cairo_move_to(cr, summaryX + 15.0, secondRowY);
     cairo_show_text(cr, ("Long Deletions: " + std::to_string(deletions.size())).c_str());

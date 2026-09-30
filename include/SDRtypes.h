@@ -241,4 +241,39 @@ struct SDRchromothripsisEvent
 
 
 
+
+
+
+
+// Represents a detected ring chromosome: a circular record that still
+// carries a centromere, distinct from ecDNA (circular, but WITHOUT a
+// centromere). Can be made up of fragments from more than one original
+// strand (a fused, multi-chromosome ring).
+struct SDRchromosomeRingEvent
+{
+    int newStrandID;                        // The new strand ID of this circular, centromere-bearing record
+    std::vector<int> involvedOldStrandIDs;  // Every distinct original strand contributing material, in first-appearance order
+    int centromereOldStrandID;              // Which original strand's centromere this ring retained
+};
+
+
+
+
+
+
+
+
+// Represents a detected dicentric chromosome: a single linear record
+// carrying two centromeres from two different original strands.
+struct SDRdicentricEvent
+{
+    int newStrandID;             // The new strand ID of this dicentric record
+    int centromereStrandAid;     // Original strand ID of the FIRST centromere-bearing fragment
+    int centromereStrandBid;     // Original strand ID of the SECOND centromere-bearing fragment
+    std::vector<int> involvedOldStrandIDs;  // Every distinct original strand contributing material (centromere-bearing or not), in first-appearance order
+
+
+};
+
+
 #endif

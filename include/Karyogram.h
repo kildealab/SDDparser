@@ -112,6 +112,8 @@ private:
     void drawPieChartFragment(cairo_t* cr, double centerX, double centerY, double diameter, const std::vector<std::pair<RGB, double>>& wedges);
     // Draw the inner circle on ecDNA fragments to resemble a ring fragment.
     void drawCircularFragmentInnerRing(cairo_t* cr, double centerX, double centerY, double outerDiameter);
+    // Draw ring chromosome fragment
+    void drawRingFragment(cairo_t* cr, double centerX, double centerY, double diameter, RGB color, double centromereStartFraction, double centromereEndFraction);
 
     // Returns a chromosome's corresponding centromere start and end locations to draw the centromere ellipse on the karyogram.
     const CentromerePosition* getHumanCentromere(int chromosomeID);
@@ -144,6 +146,7 @@ private:
     bool isDeletionInversionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);							// For deletion-inversion mutations
     bool isDeletionTranslocationDonorShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);						// For deletion-translocation mutations
     bool isLoneGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);									// For deletion-insertion mutations
+    bool isChromosomeRingShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);	// For chromosome ring mutations
 
     // Helper functions to stack mutated chromosome segments of different colors on top of the original segments and remove the correct amount of 
     // chromosome if a deletion occurs.

@@ -154,6 +154,10 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     // Karyogram dimensions
     // --------------------------------------------------
 
+    // Fixed layout constants for the whole karyogram image. imgWidth/columns/rowHeight/startY control
+    // the grid every slot is positioned within (changing them requires re-checking the row/column math
+    // throughout this function); maxRenderHeight/chromosomeWidth/homologGap are purely visual sizing and
+    // safe to adjust independently.
     const int imgWidth = 1000;
     const int columns = 4;
     const double colWidth = static_cast<double>(imgWidth) / columns;
@@ -185,9 +189,9 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
 
     imgHeight = static_cast<int>(startY + (autosomeAndSexRows + combinedAcentricRows) * rowHeight + legendHeight + legendBottomMargin);
 
-    const double maxRenderHeight = 180.0;
-    const double chromosomeWidth = 20.0;
-    const double homologGap = 18.0;
+    const double maxRenderHeight = 180.0;					// Visual cap on how tall a single bar/circle renders, safe to tune.
+    const double chromosomeWidth = 20.0;					// Visual width of a single bar/column, safe to tune.
+    const double homologGap = 18.0;						// Visual gap between left/right homolog slots, safe to tune.
 
     // Draw karyogram layout
     cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, imgWidth, imgHeight);
@@ -879,14 +883,14 @@ void Karyogram::drawStackedMutations(
     const bool isECDNA = isECDNAshape(records, homeOldStrandID, masterHeader);
     const bool isDeletionInversion = isDeletionInversionShape(records, homeOldStrandID);
     const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);			// For deletion-insertion mutation shape
-
+    const bool isChromosomeRing = isChromosomeRingShape(records, homeOldStrandID, masterHeader);
 
     const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
     const double originalSizeMbp = (sizeIndex < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[sizeIndex] : 0.0;
 
-    // Determine width of karyogram
+    // Determine width of a given homologous pair drawing slot
     const double stackGap = 6.0;
-    double column2Width = chromosomeWidth;
+    double column2Width = chromosomeWidth;					// Default for shapes with only one column; overwritten below for deletion-like/ecDNA shapes with a second column.
     const double totalWidth = computeSlotWidth(records, homeOldStrandID, chromosomeWidth, maxLengthMbp, maxRenderHeight, masterHeader, column2Width);
 
 
@@ -903,22 +907,109 @@ void Karyogram::drawStackedMutations(
     }
 
 
+    if (isChromosomeRing && originalSizeMbp > 0.0)
+    {
+        const SDRdataRecord* ringRecord = nullptr;
+        std::vector<const SDRdataRecord*> excisedRecords;
+
+        for (const SDRdataRecord* record : records)
+        {
+            if (!record->linear)
+            {
+                ringRecord = record;
+            }
+            else
+            {
+                excisedRecords.push_back(record);
+            }
+        }
+
+        if (ringRecord == nullptr)
+        {
+            return;
+        }
+
+        // Column 1: the two excised ends, stacked separately at the
+        // original chromosome's slot position.
+        const double barX = slotCenterX - totalWidth / 2.0;
+        const double verticalGap = 6.0;
+        double excisedY = posY;
+        const double delTolerance = 0.001;
+
+        for (const SDRdataRecord* record : excisedRecords)
+        {
+            const SDRfragment& fragment = record->fragments[0];
+            const double fragLower = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+            const double fragHigher = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+            const double pieceLengthMbp = fragHigher - fragLower;
+
+            const bool roundTopCap = approxEqual(fragLower, 0.0, delTolerance);
+            const bool roundBottomCap = approxEqual(fragHigher, originalSizeMbp, delTolerance);
+
+            const double pieceBarHeight = computeSDRbarHeight(pieceLengthMbp, maxLengthMbp, maxRenderHeight);
+            const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader);
+
+            drawPaintedFragment(cr, barX, excisedY, pieceBarHeight, chromosomeWidth, segments, roundTopCap, roundBottomCap, false);
+
+            excisedY += pieceBarHeight + verticalGap;
+        }
+
+        // Column 2: the ring itself, sized to its own length.
+        double ringLengthMbp = 0.0;
+
+        for (const SDRfragment& fragment : ringRecord->fragments)
+        {
+            ringLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+        }
+
+        const double remainingBarHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
+        const double equivalentLinearHeight = (ringLengthMbp / originalSizeMbp) * remainingBarHeight;
+        const double ringDiameter = std::min(equivalentLinearHeight, chromosomeWidth * 3.0);
+
+        const double ringColumnCenterX = barX + chromosomeWidth + stackGap + column2Width / 2.0;
+        const double ringCenterY = posY + ringDiameter / 2.0;
+
+        const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
+
+        double centromereStartFraction = 0.0;
+        double centromereEndFraction = 0.0;
+        double centromereStartBP = 0.0;
+        double centromereEndBP = 0.0;
+
+        if (ringLengthMbp > 0.0 && getCentromereForOriginalStrand(homeOldStrandID, humanGenome, masterHeader, centromereStartBP, centromereEndBP))
+        {
+            const SDRfragment& ringFragment = ringRecord->fragments[0];
+            const double fragLow = std::min(ringFragment.oldStartPosition, ringFragment.oldEndPosition);
+
+            centromereStartFraction = (centromereStartBP / 1000000.0 - fragLow) / ringLengthMbp;
+            centromereEndFraction = (centromereEndBP / 1000000.0 - fragLow) / ringLengthMbp;
+        }
+
+        drawRingFragment(cr, ringColumnCenterX, ringCenterY, ringDiameter, color, centromereStartFraction, centromereEndFraction);
+
+        return;
+    }
+
 
     if (isDeletionTranslocationDonorShape(records, homeOldStrandID))
     {
-        // The recombined molecule carries no gap - the deleted region simply isn't part of it, which is already correct. It draws
+        // The recombined molecule carries no gap, the deleted region simply isn't part of it, which is already correct. It draws
         // exactly like an ordinary translocation derivative: plain fragments, scaled to its own actual length, no white-gap or
         // full-original-length treatment. The excised piece gets the same flat-cap treatment as any other deletion's excised piece.
         const SDRdataRecord* recombinedRecord = nullptr;
         const SDRdataRecord* excisedRecord = nullptr;
 
+	// Tell the two records apart by fragment origin: the one carrying at least one foreign
+	// (non-home-strand) fragment is the recombined derivative; the one made up entirely of home-strand
+	// fragments is the excised piece.
         for (const SDRdataRecord* record : records)
         {
             bool hasForeign = false;
 
+	    // The deletion translocation donor must contain at least one foreign fragment
             for (const SDRfragment& fragment : record->fragments)
             {
-                if (fragment.oldStrandID != homeOldStrandID)
+                if (fragment.oldStrandID != homeOldStrandID)			// The origin of the fragment must be different than the location it was drawn in.
                 {
                     hasForeign = true;
                     break;
@@ -935,24 +1026,28 @@ void Karyogram::drawStackedMutations(
             }
         }
 
+	// Deletion-translocation donor requires a recombined record containing original and foreign fragments, and an excised record.
 	if (recombinedRecord == nullptr || excisedRecord == nullptr)
         {
             return;
         }
 
+	// Determine the horizontal positions to draw the left and right homologs of the chromosome
         const double columnX1 = slotCenterX - totalWidth / 2.0;
         const double columnX2 = columnX1 + chromosomeWidth + stackGap;
 
+	// Calculate change in chromosome new length after the translocation occurs
         double recombinedLengthMbp = 0.0;
-
 	for (const SDRfragment& fragment : recombinedRecord->fragments)
         {
             recombinedLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
         }
 
-	const double recombinedBarHeight = computeSDRbarHeight(recombinedLengthMbp, maxLengthMbp, maxRenderHeight); 
+	// Convert bar height of a chromosome in Mbp to a height in pixels on the image
+	const double recombinedBarHeight = computeSDRbarHeight(recombinedLengthMbp, maxLengthMbp, maxRenderHeight);
 	const std::vector<PaintedSegment> recombinedSegments = buildPaintedSegments(*recombinedRecord, humanGenome, masterHeader);
 
+	// Draw all the original and foreign fragments at a given chromosome slot
 	drawPaintedFragment(cr, columnX1, posY, recombinedBarHeight, chromosomeWidth, recombinedSegments);
 
         const SDRfragment& excisedFragment = excisedRecord->fragments[0];
@@ -960,13 +1055,16 @@ void Karyogram::drawStackedMutations(
         const double fragHigher = std::max(excisedFragment.oldStartPosition, excisedFragment.oldEndPosition);
         const double excisedLengthMbp = fragHigher - fragLower;
 
-        const double delTolerance = 0.001;
+        const double delTolerance = 0.001;					// 0.001 Mbp = 1000 bp
+	// Booleans to decide if the deleted segment was at a chromosome end, and if it should draw a rounded cap to indicate the deletion occurred at an end.
         const bool roundTopCap = approxEqual(fragLower, 0.0, delTolerance);
         const bool roundBottomCap = (originalSizeMbp > 0.0) ? approxEqual(fragHigher, originalSizeMbp, delTolerance) : false;
 
+	// Calculate the height of the deletion in pixels and build the deleted fragment beside the chromosome it originated from
         const double excisedBarHeight = computeSDRbarHeight(excisedLengthMbp, maxLengthMbp, maxRenderHeight);
         const std::vector<PaintedSegment> excisedSegments = buildPaintedSegments(*excisedRecord, humanGenome, masterHeader);
 
+	// Draw the deleted segment at the set location beside its original chromosome
         drawPaintedFragment(cr, columnX2, posY, excisedBarHeight, chromosomeWidth, excisedSegments, roundTopCap, roundBottomCap, false);
 
         return;
@@ -974,7 +1072,7 @@ void Karyogram::drawStackedMutations(
     }
 
 
-
+    // For simple deletion shapes where no foreign fragments are introduced into the original chromosome (unlike delTrans and delIns)
     if ((isDeletion || isDeletionInversion || isECDNA) && originalSizeMbp > 0.0)
     {
 	const SDRdataRecord* remainingRecord = nullptr;
@@ -1188,8 +1286,11 @@ void Karyogram::drawStackedMutations(
                 // directly to fragment length, capped at 3x chromosomeWidth).
                 const double diameter = std::min(pieceHeight, chromosomeWidth * 3.0);
                 const double centerY = columnY + diameter / 2.0;
+
 		// Correct because genuinely mixed-origin circular records are filtered out upstream via multiOriginECDNAnewStrandIDs before reaching this fallback.
-                const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
+                // A record that slipped through with foreign fragments would be
+		// miscolored here, since nothing local to this line checks the record's actual fragment origins.
+		const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
 
                 drawCircularFragment(cr, columnX + chromosomeWidth / 2.0, centerY, diameter, color);
             }
@@ -1650,6 +1751,7 @@ std::vector<PaintedSegment> Karyogram::buildMixedStrandSegmentsWithGaps(
                 const double overlapStartMbp = std::max(centromereStartMbp, fragMinMbp);
                 const double overlapEndMbp = std::min(centromereEndMbp, fragMaxMbp);
 
+		// Clamp the centromere span to the portion actually contained within this fragment.
                 if (overlapEndMbp > overlapStartMbp)
                 {
                     double localFractionStart;
@@ -1850,6 +1952,101 @@ void Karyogram::drawCircularFragmentInnerRing(cairo_t* cr, double centerX, doubl
 
 
 
+// Draws a chromosome ring: a colored circle (same fill and inner white
+// ring as drawCircularFragment(), but WITH a visible black outline, so
+// the centromere constriction notch actually reads against it) with a
+// pinched constriction at 12 o'clock marking the centromere, and a
+// grey centromere ellipse centered there. The SAME shape
+// drawPaintedFragment() draws for linear chromosomes, just rotated 90
+// degrees: its long axis runs radially (up/down at 12 o'clock) instead
+// of tangentially (along the bar).
+void Karyogram::drawRingFragment(
+    cairo_t* cr,
+    double centerX,
+    double centerY,
+    double diameter,
+    RGB color,
+    double centromereStartFraction,
+    double centromereEndFraction)
+{
+    const double radius = diameter / 2.0;
+    const double innerRadius = diameter / 4.0;
+    const double topAngle = -M_PI / 2.0; 					// 12 o'clock, same convention as drawPieChartFragment().
+
+    const double constrictionArcLength = 7.0; 					// Matches drawPaintedFragment()'s constrictionHeight.
+    const double constrictionAmount = 2.0; 					// Matches drawPaintedFragment()'s inward pinch depth.
+    const double notchHalfAngle = (constrictionArcLength / 2.0) / radius; 	// Shared by both circles, so the two notches line up at the same angular position.
+
+    const auto traceNotchedCircle = [&](double circleRadius, double pinchRadius)
+    {
+        cairo_new_path(cr);
+        cairo_arc(cr, centerX, centerY, circleRadius, topAngle + notchHalfAngle, topAngle - notchHalfAngle + 2.0 * M_PI);
+
+        const double pinchX = centerX + pinchRadius * std::cos(topAngle);
+        const double pinchY = centerY + pinchRadius * std::sin(topAngle);
+
+        cairo_line_to(cr, pinchX, pinchY); 					// In to the pinch point...
+        cairo_close_path(cr); 							// ...and back out to close the notch.
+    };
+
+    // Outer colored band, pinched INWARD (toward center) at 12 o'clock.
+    traceNotchedCircle(radius, radius - constrictionAmount);
+
+    cairo_set_source_rgb(cr, color.r, color.g, color.b);
+    cairo_fill_preserve(cr);
+
+    cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+    cairo_set_line_width(cr, 1.5);
+    cairo_stroke(cr);
+
+    const double innerPinchRadius = std::min(radius, innerRadius + constrictionAmount); 	// Pinches OUTWARD into the colored band, meeting the outer ring's own inward pinch partway, clamped so it can't cross past the outer boundary.
+
+    traceNotchedCircle(innerRadius, innerPinchRadius);
+
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    cairo_fill_preserve(cr);
+
+    cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+    cairo_set_line_width(cr, 1.5);
+    cairo_stroke(cr);
+
+    // Grey centromere mark, spanning the full width of the colored band
+    // (outer edge to inner edge), centered at the band's radial
+    // midpoint - still at 12 o'clock, still rotated 90 degrees from the
+    // linear version (long axis radial instead of tangential).
+    const double bandThickness = radius - innerRadius;
+    const double bandMidRadius = (radius + innerRadius) / 2.0;
+
+    const double centromereFraction = std::max(0.0, centromereEndFraction - centromereStartFraction);
+    const double tangentialWidth = std::max(5.0, centromereFraction * M_PI * diameter);
+    const double radialHeight = bandThickness;
+
+    const double markCenterX = centerX + bandMidRadius * std::cos(topAngle);
+    const double markCenterY = centerY + bandMidRadius * std::sin(topAngle);
+
+    cairo_save(cr);
+    cairo_translate(cr, markCenterX, markCenterY);
+    cairo_scale(cr, tangentialWidth / 2.0, radialHeight / 2.0);
+    cairo_arc(cr, 0.0, 0.0, 1.0, 0.0, 2.0 * M_PI);
+    cairo_restore(cr);
+
+    cairo_set_source_rgb(cr, 0.6, 0.6, 0.6);
+    cairo_fill(cr);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Computes per-excised-piece heights (no floor, unlike computeSDRbarHeight) and how many vertical-stack columns are needed so no column exceeds
 // maxColumnHeight. Shared between computeSlotWidth() (spacing) and drawStackedMutations() (actual drawing) so both always agree on layout.
 int Karyogram::computeExcisedColumnLayout(
@@ -1881,6 +2078,9 @@ int Karyogram::computeExcisedColumnLayout(
         return 0;
     }
 
+    // Greedy first-fit packing: keep adding pieces to the current column as long as they fit within
+    // maxColumnHeight; once the next piece would overflow it, start a new column instead. Pieces are
+    // packed in the order given (not re-sorted), so column balance depends on caller ordering.
     int columns = 1;
     double columnUsedHeight = 0.0;
     bool columnHasContent = false;
@@ -2045,6 +2245,8 @@ double Karyogram::computeSlotWidth(
     const bool isECDNA = isECDNAshape(records, homeOldStrandID, masterHeader);
     const bool isDeletionInversion = isDeletionInversionShape(records, homeOldStrandID);
     const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);
+    const bool isChromosomeRing = isChromosomeRingShape(records, homeOldStrandID, masterHeader);
+
 
     const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
     const double originalSizeMbp = (sizeIndex < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[sizeIndex] : 0.0;
@@ -2054,9 +2256,42 @@ double Karyogram::computeSlotWidth(
 
     if (isLoneGap && originalSizeMbp > 0.0)
     {
-        // Only one column - the remaining piece, drawn at full original length. No excised counterpart lives in this slot to reserve
+        // Only one column, the remaining piece, drawn at full original length. No excised counterpart lives in this slot to reserve
         // a second column for.
         return chromosomeWidth;
+    }
+
+
+    if (isChromosomeRing && originalSizeMbp > 0.0)
+    {
+        const SDRdataRecord* ringRecord = nullptr;
+
+        for (const SDRdataRecord* record : records)
+        {
+            if (!record->linear)
+            {
+                ringRecord = record;
+                break;
+            }
+        }
+
+        double ringLengthMbp = 0.0;
+
+        if (ringRecord != nullptr)
+        {
+            for (const SDRfragment& fragment : ringRecord->fragments)
+            {
+                ringLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+            }
+        }
+
+        const double remainingBarHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
+        const double equivalentLinearHeight = (ringLengthMbp / originalSizeMbp) * remainingBarHeight;
+        const double ringDiameter = std::min(equivalentLinearHeight, chromosomeWidth * 3.0);
+
+        outColumn2Width = std::max(chromosomeWidth, ringDiameter);
+
+        return chromosomeWidth + stackGap + outColumn2Width;
     }
 
 
@@ -2380,7 +2615,8 @@ std::vector<const SDRdataRecord*> Karyogram::clusterRecordsForDrawing(
     }
 
     if (isDeletionShape(records, homeOldStrandID, masterHeader) || isECDNAshape(records, homeOldStrandID, masterHeader)
-        || isDeletionInversionShape(records, homeOldStrandID) || isDeletionTranslocationDonorShape(records, homeOldStrandID))
+        || isDeletionInversionShape(records, homeOldStrandID) || isDeletionTranslocationDonorShape(records, homeOldStrandID)
+	|| isChromosomeRingShape(records, homeOldStrandID, masterHeader))
     {
         return records;
     }

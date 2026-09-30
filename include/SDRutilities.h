@@ -392,6 +392,90 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
 
 
 
+// --------------------------------------------------------------- //
+// Function to detect DICENTRIC CHROMOSOMES in a single cell       //
+// --------------------------------------------------------------- //
+
+// A dicentric chromosome is a single LINEAR record carrying exactly two centromeres from two DIFFERENT original strands, with no third strand
+// mixed in, the same shape findChromoplexyAcentricRecombinations(), searches for as a dicentric CANDIDATE, but here purely for
+// COUNTING purposes: this does not require a matching acentric partner to be found, since that pairing is a drawing-placement concern, not a
+// detection concern. 
+
+// However, findChromoplexyAcentricRecombinations (the drawing-side dicentric recognition) still requires exactly 2 total strands. 
+// It needs that to find a clean, position-tiling acentric partner, and a third strand's material would break that proof. 
+// So a record this detector now counts as dicentric (centromere pair + a third strand's acentric fragment) won't be recognized by the drawing 
+// code as a clean dicentric/acentric pair. It'll fall through to the generic chromothripsis-style drawing fallback instead.
+inline std::vector<SDRdicentricEvent> detectDicentrics(const SDRsubHeader& subHeader, int numOriginalStrands)
+{
+    std::vector<SDRdicentricEvent> dicentrics;
+
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+        if (!record.linear || !isRearrangementCandidate(record.newStrandID, numOriginalStrands))	// Must be a linear rearranged record.
+        {
+            continue;
+        }
+
+        std::vector<int> centromereStrandsInOrder;
+        std::vector<int> involvedOldStrandIDs;			// Every distinct strand referenced, in first-appearance order - not just the two centromere-bearing ones.
+
+        for (const SDRfragment& fragment : record.fragments)
+        {
+            bool alreadySeen = false;
+
+            for (int strandID : involvedOldStrandIDs)
+            {
+                if (strandID == fragment.oldStrandID)
+                {
+                    alreadySeen = true;
+                    break;
+                }
+            }
+
+            if (!alreadySeen)
+            {
+                involvedOldStrandIDs.push_back(fragment.oldStrandID);
+            }
+
+            if (fragment.hasCentromere)
+            {
+                centromereStrandsInOrder.push_back(fragment.oldStrandID);
+            }
+        }
+
+        if (centromereStrandsInOrder.size() != 2)		// Exactly 2 centromeres required for a dicentric - any number of OTHER, acentric strands may also be fused in.
+        {
+            continue;
+        }
+
+        const int strandX = centromereStrandsInOrder[0];
+        const int strandY = centromereStrandsInOrder[1];
+
+        if (strandX == strandY)				// The two centromeres must come from two DIFFERENT strands.
+        {
+            continue;
+        }
+
+        SDRdicentricEvent event{};
+        event.newStrandID = record.newStrandID;
+        event.centromereStrandAid = strandX;
+        event.centromereStrandBid = strandY;
+        event.involvedOldStrandIDs = involvedOldStrandIDs;
+
+        dicentrics.push_back(event);
+    }
+
+    return dicentrics;
+}
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1767,6 +1851,87 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 
     return ecDNAevents;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// --------------------------------------------------------------- //
+// Function to detect RING CHROMOSOMES in a single cell            //
+// --------------------------------------------------------------- //
+
+// A ring chromosome is any circular (non-linear) rearranged record that STILL carries a centromere, the mirror image of ecDNA, whose defining
+// trait is the opposite (circular, but with NO centromere at all, see detectECDNA()). A ring chromosome's fragments may
+// originate from multiple different original strands (a fused, multi-chromosome ring), so no restriction is placed on how many
+// distinct old strand IDs contribute to it.
+inline std::vector<SDRchromosomeRingEvent> detectChromosomeRings(const SDRsubHeader& subHeader, int numOriginalStrands)
+{
+    std::vector<SDRchromosomeRingEvent> rings;
+
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+        if (record.linear || !isRearrangementCandidate(record.newStrandID, numOriginalStrands))	// Must be circular and a genuine rearrangement, not an intact/baseline strand.
+        {
+            continue;
+        }
+
+        bool hasCentromere = false;
+        int centromereOldStrandID = -1;
+        std::vector<int> involvedOldStrandIDs;
+
+        for (const SDRfragment& fragment : record.fragments)
+        {
+            bool alreadySeen = false;
+
+            for (int strandID : involvedOldStrandIDs)
+            {
+                if (strandID == fragment.oldStrandID)
+                {
+                    alreadySeen = true;
+                    break;
+                }
+            }
+
+            if (!alreadySeen)
+            {
+                involvedOldStrandIDs.push_back(fragment.oldStrandID);
+            }
+
+            if (fragment.hasCentromere && !hasCentromere)		// Record the FIRST centromere-bearing fragment's original strand.
+            {
+                hasCentromere = true;
+                centromereOldStrandID = fragment.oldStrandID;
+            }
+        }
+
+        if (!hasCentromere)						// No centromere present - this is an ecDNA-shaped fragment instead, not a ring chromosome.
+        {
+            continue;
+        }
+
+        SDRchromosomeRingEvent event{};
+        event.newStrandID = record.newStrandID;
+        event.involvedOldStrandIDs = involvedOldStrandIDs;
+        event.centromereOldStrandID = centromereOldStrandID;
+
+        rings.push_back(event);
+    }
+
+    return rings;
+}
+
+
+
+
 
 
 

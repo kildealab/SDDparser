@@ -833,6 +833,8 @@ void SDRparser::writeCellDataSummary(
     const std::vector<SDRdeletionInsertionEvent> delInsertions = detectDeletionInsertions(subHeader, numOriginalStrands);
     const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRchromothripsisEvent> chromothripsis = detectChromothripsis(subHeader, numOriginalStrands);
+    const std::vector<SDRchromosomeRingEvent> chromosomeRings = detectChromosomeRings(subHeader, numOriginalStrands);
+    const std::vector<SDRdicentricEvent> dicentrics = detectDicentrics(subHeader, numOriginalStrands);
 
     output << "Mutation Summary:\n";
     output << "  Long Deletions: " << deletions.size() << "\n";
@@ -844,6 +846,8 @@ void SDRparser::writeCellDataSummary(
     output << "  Deletion-Insertions: " << delInsertions.size() << "\n";
     output << "  Chromoplexy: " << chromoplexy.size() << "\n";
     output << "  Chromothripsis: " << chromothripsis.size() << "\n";
+    output << "  Ring Chromosomes: " << chromosomeRings.size() << "\n";
+    output << "  Dicentrics: " << dicentrics.size() << "\n";
 
     output << "\n";
 }

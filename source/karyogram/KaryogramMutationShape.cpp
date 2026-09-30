@@ -19,6 +19,135 @@ namespace sddparser
 // ------------------------------------------------------- //
 
 
+
+
+// Recognizes a simple chromosome ring formation: exactly 3 records in one slot: one CIRCULAR record carrying a centromere (the ring
+// itself), and two LINEAR, single-fragment, acentric records (the two excised chromosome ends) that, together with the ring, exactly tile
+// the home strand's full declared length, with the ring genuinely in the middle. Scoped to this single-ring, two-end case only.
+bool Karyogram::isChromosomeRingShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader)
+{
+    if (records.size() != 3)
+    {
+        return false;
+    }
+
+    const SDRdataRecord* ringRecord = nullptr;
+    std::vector<const SDRdataRecord*> excisedRecords;
+
+    for (const SDRdataRecord* record : records)
+    {
+        if (!record->linear)
+        {
+            if (ringRecord != nullptr || record->fragments.size() != 1)
+            {
+                return false; // Only ONE circular record expected, and scoped to a single-fragment ring for now.
+            }
+
+            const SDRfragment& fragment = record->fragments[0];
+
+            if (fragment.oldStrandID != homeOldStrandID || !fragment.hasCentromere)
+            {
+                return false; // The ring itself must carry the centromere and originate from the home strand.
+            }
+
+            ringRecord = record;
+        }
+        else
+        {
+            if (record->fragments.size() != 1)
+            {
+                return false; // Scoped to simple, single-fragment excised ends.
+            }
+
+            const SDRfragment& fragment = record->fragments[0];
+
+            if (fragment.oldStrandID != homeOldStrandID || fragment.hasCentromere || isReversedFragment(fragment))
+            {
+                return false; // Excised ends must be plain, acentric, non-reversed home-strand material.
+            }
+
+            excisedRecords.push_back(record);
+        }
+    }
+
+    if (ringRecord == nullptr || excisedRecords.size() != 2)
+    {
+        return false;
+    }
+
+    const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
+
+    if (sizeIndex >= masterHeader.intactChromosomeSizes.size())
+    {
+        return false;
+    }
+
+    const double fullSize = masterHeader.intactChromosomeSizes[sizeIndex];
+
+    if (fullSize <= 0.0)
+    {
+        return false;
+    }
+
+    // Tag each piece so we can confirm the ring lands genuinely in the MIDDLE once sorted, both ends must flank it, not sit on one side.
+    struct TaggedFragment
+    {
+        SDRfragment fragment;
+        bool isRing;
+    };
+
+    std::vector<TaggedFragment> allPieces = {
+        {ringRecord->fragments[0], true},
+        {excisedRecords[0]->fragments[0], false},
+        {excisedRecords[1]->fragments[0], false}
+    };
+
+    std::sort(allPieces.begin(), allPieces.end(), [](const TaggedFragment& a, const TaggedFragment& b)
+    {
+        return std::min(a.fragment.oldStartPosition, a.fragment.oldEndPosition) < std::min(b.fragment.oldStartPosition, b.fragment.oldEndPosition);
+    });
+
+    if (!allPieces[1].isRing)
+    {
+        return false;
+    }
+
+    const double delTolerance = 0.001;
+
+    const double firstLo = std::min(allPieces.front().fragment.oldStartPosition, allPieces.front().fragment.oldEndPosition);
+    const double lastHi = std::max(allPieces.back().fragment.oldStartPosition, allPieces.back().fragment.oldEndPosition);
+
+    if (!approxEqual(firstLo, 0.0, delTolerance) || !approxEqual(lastHi, fullSize, delTolerance))
+    {
+        return false; // Must span the whole chromosome, start to end.
+    }
+
+    for (std::size_t i = 0; i + 1 < allPieces.size(); ++i)
+    {
+        const double hi = std::max(allPieces[i].fragment.oldStartPosition, allPieces[i].fragment.oldEndPosition);
+        const double lo = std::min(allPieces[i + 1].fragment.oldStartPosition, allPieces[i + 1].fragment.oldEndPosition);
+
+        if (!approxEqual(hi, lo, delTolerance))
+        {
+            return false; // Must tile with no gaps or overlaps between the three pieces.
+        }
+    }
+
+    return true;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Recognizes the DONOR side of a deletion-translocation event: two
 // records in one slot, a "recombined" record (fragments from the
 // home strand PLUS exactly one foreign fragment from elsewhere) and

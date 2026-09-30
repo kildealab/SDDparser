@@ -27,4 +27,6 @@ Mutation Summary:
   Deletion-Insertions: 1
   Chromoplexy: 3
   Chromothripsis: 2
+  Ring Chromosomes: 1
+  Dicentrics: 6
 
