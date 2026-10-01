@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cmath>
 #include <string>
+#include <algorithm>
 
 #include "Karyogram.h"
 #include "SDDutilities.h"
@@ -13,7 +14,7 @@
 namespace sddparser
 {
 
-// Bookkeeping struct - remembers each drawn chromosome's pixel
+// Bookkeeping struct, remembers each drawn chromosome's pixel
 // position and height so the DSB/SSB-drawing code further down can
 // look it back up by chromosome/chromatid number.
 struct ChromosomeGeometry
@@ -24,6 +25,89 @@ struct ChromosomeGeometry
     double y;								// Y pixel position
     double height;							// Chromosome height in pixels
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Decides whether the karyogram is drawn pre-replication (one chromatid per
+// chromosome) or post-replication (two sister chromatids per chromosome),
+// combining the header 'Cell cycle phase' with what data Field 3 actually says.
+//
+//   Phase 3/4/5 (S/G2/M)  -> two chromatids. Damages with chromatid 1 go on the
+//                            left sister, chromatid 2 on the right sister.
+//   Phase 1/2   (G0/G1)   -> one chromatid, unless Field 3 references
+//                            chromatid 2, which is inconsistent with the header;
+//                            warn and draw two chromatids so no damage is lost.
+//   Phase 0 / other       -> unspecified, so infer it from Field 3: any
+//                            chromatid 2 means the genome was replicated.
+bool resolveDoubleChromatid(
+    const std::vector<double>& cellCyclePhase,				// SDD header 'Cell cycle phase'
+    const std::vector<Exposure>& exposures)				// Damages, to read the chromatid numbers in data Field 3
+{
+    const int phase = cellCyclePhase.empty() ? 0 : static_cast<int>(cellCyclePhase[0]);
+
+    int secondChromatidDamages = 0;					// Damage sites placed on chromatid 2 by Field 3
+
+    for (const auto& exposure : exposures)
+    {
+        for (const auto& damage : exposure.damages)
+        {
+            if (damage.chromosomeID.chromatidNumber == 2)
+            {
+                ++secondChromatidDamages;
+            }
+        }
+    }
+
+    const bool dataIsReplicated = secondChromatidDamages > 0;
+
+    if (phase == 3 || phase == 4 || phase == 5)				// Header says post-replication
+    {
+        if (!dataIsReplicated)
+        {
+            std::cerr << "NOTE: Cell cycle phase is post-replication but no damage in data Field 3 "
+                      << "references chromatid 2; all damages are drawn on the first sister chromatid.\n";
+        }
+        return true;
+    }
+
+    if (phase == 1 || phase == 2)					// Header says pre-replication
+    {
+        if (dataIsReplicated)
+        {
+            std::cerr << "WARNING: Cell cycle phase is G0/G1 (pre-replication) but "
+                      << secondChromatidDamages << " damage site(s) reference chromatid 2 in data Field 3. "
+                      << "Drawing two sister chromatids so these damages are not dropped.\n";
+        }
+        return dataIsReplicated;
+    }
+
+    // Phase unspecified (0) or unknown: let data Field 3 decide.
+    if (dataIsReplicated)
+    {
+        std::cerr << "NOTE: Cell cycle phase is unspecified; data Field 3 references chromatid 2, "
+                  << "so the karyogram is drawn post-replication.\n";
+    }
+    return dataIsReplicated;
+}
+
+
+
+
+
+
+
+
+
 
 
 
@@ -65,17 +149,7 @@ bool Karyogram::generateSDDkaryogram(                                         //
         return false;
     }
 
-    bool doubleChromatid = false;                                          // Check cell cycle phase to determine number of chromatids per chromosomes to draw.
-
-    if (!cellCyclePhase.empty())                                           // Cell cycle phase of 3, 4, or 5 indicates post-replicated DNA, two chromatids per chromosome.
-    {
-        const int phase = static_cast<int>(cellCyclePhase[0]);
-
-        if (phase == 3 || phase == 4 || phase == 5)
-        {
-            doubleChromatid = true;
-        }
-    }
+    const bool doubleChromatid = resolveDoubleChromatid(cellCyclePhase, exposures);                                          // Determine whether one or two chromatids per chromosome should be drawn
 
     // ------------------------------------------------------------
     // Determine chromosome layout
@@ -256,7 +330,7 @@ bool Karyogram::generateSDDkaryogram(                                         //
             {
                 // Determine horizontal X positions in the karyogram of the two chromatids for the corresponding chromosome.
                 const double posX = groupCenterX - chromosomeWidth - chromatidGap / 2.0;
-                const double posX2 = groupCenterX + chromosomeWidth + chromatidGap;
+                const double posX2 = groupCenterX + chromatidGap / 2.0;
 
                 // Draw both chromatids of the chromosome in their respective X positions.
                 drawChromosome(cr, posX, posY, chromosomeHeight, chromosomeWidth, chromosomeColor, centromereStart, centromereEnd);
@@ -386,7 +460,7 @@ bool Karyogram::generateSDDkaryogram(                                         //
                 const double homologGap = 40.0;                            			// Increase homolog gap to account for second chromatids
 
                 // Determine homolog 1 left and right chromatid positions
-                const double leftChromatid1PosX = groupCenterX - chromosomeWidth - homologGap / 2.0 - chromatidGap / 2.0;
+                const double leftChromatid1PosX = groupCenterX - homologGap / 2.0 - 2.0 * chromosomeWidth - chromatidGap;
                 const double leftChromatid2PosX = leftChromatid1PosX + chromosomeWidth + chromatidGap;
 
                 // Determine homolog 2 left and right chromatid positions
@@ -536,22 +610,80 @@ bool Karyogram::generateSDDkaryogram(                                         //
     }
     else
     {
+	// Sister chromatids centred on the X and Y group centres, separated by chromatidGap.
+        const double xChromatid1PosX = xGroupCenterX - chromosomeWidth - chromatidGap / 2.0;
+        const double xChromatid2PosX = xGroupCenterX + chromatidGap / 2.0;
+        const double yChromatid1PosX = yGroupCenterX - chromosomeWidth - chromatidGap / 2.0;
+        const double yChromatid2PosX = yGroupCenterX + chromatidGap / 2.0;
+
         // Draw X chromatids 1 and 2
-        drawChromosome(cr, xChromPosX, sexChromPosY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
-        drawChromosome(cr, xChromPosX + chromosomeWidth + chromatidGap, sexChromPosY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
+        drawChromosome(cr, xChromatid1PosX, sexChromPosY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
+        drawChromosome(cr, xChromatid2PosX, sexChromPosY, xHeight, chromosomeWidth, xColor, xCentromereStart, xCentromereEnd);
         // Store X chromatids 1 and 2 geometries for damage drawing
-        chromosomeGeometry.push_back({chromosomeCount, 1, xChromPosX, sexChromPosY, xHeight});
-        chromosomeGeometry.push_back({chromosomeCount, 2, xChromPosX + chromosomeWidth + chromatidGap, sexChromPosY, xHeight});
+        chromosomeGeometry.push_back({chromosomeCount, 1, xChromatid1PosX, sexChromPosY, xHeight});
+        chromosomeGeometry.push_back({chromosomeCount, 2, xChromatid2PosX, sexChromPosY, xHeight});
 
         // Draw Y chromatids 1 and 2
-        drawChromosome(cr, yChromPosX, sexChromPosY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
-        drawChromosome(cr, yChromPosX + chromosomeWidth + chromatidGap, sexChromPosY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
+        drawChromosome(cr, yChromatid1PosX, sexChromPosY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
+        drawChromosome(cr, yChromatid2PosX, sexChromPosY, yHeight, chromosomeWidth, yColor, yCentromereStart, yCentromereEnd);
 
         // Store Y chromatids 1 and 2 geometries for damage drawing
-        chromosomeGeometry.push_back({chromosomeCount - 1, 1, yChromPosX, sexChromPosY, yHeight});
-        chromosomeGeometry.push_back({chromosomeCount - 1, 2, yChromPosX + chromosomeWidth + chromatidGap, sexChromPosY, yHeight});
+        chromosomeGeometry.push_back({chromosomeCount - 1, 1, yChromatid1PosX, sexChromPosY, yHeight});
+        chromosomeGeometry.push_back({chromosomeCount - 1, 2, yChromatid2PosX, sexChromPosY, yHeight});
 
     }
+
+
+
+
+
+    // --------------------------------------------------
+    // Damage placement using data Field 3
+    // --------------------------------------------------
+    // Field 3 gives the chromosome number and the chromatid number. Field 4 gives the position along the genetic length (p-arm -> q-arm). Sister chromatids are copies
+    // of the same sequence, so the Field 4 position maps identically onto either one; the chromatid number alone decides which sister the marker is drawn on. A damage
+    // is drawn on exactly one chromatid, never copied onto both sisters.
+
+    int unplacedDamageSites = 0;                                           // Damage sites whose Field 3 chromosome/chromatid has no drawn chromatid
+
+    // Look up the drawn chromatid matching a damage's Field 3 chromosome and chromatid numbers.
+    const auto findChromatidGeometry = [&](const ChromosomeID& id) -> const ChromosomeGeometry*
+    {
+        for (const auto& geometry : chromosomeGeometry)
+        {
+            if (geometry.chromosomeNumber == id.chromosomeNumber &&
+                geometry.chromatidNumber == id.chromatidNumber)
+            {
+                return &geometry;
+            }
+        }
+        return nullptr;
+    };
+
+    // Convert a damage to marker pixel coordinates on its chromatid. Returns false if it cannot be placed.
+    const auto locateDamage = [&](const DamageLocation& damage, double& markerX, double& markerY) -> bool
+    {
+        const ChromosomeGeometry* geometry = findChromatidGeometry(damage.chromosomeID);
+
+        const size_t sizeIndex = static_cast<size_t>(damage.chromosomeID.chromosomeNumber);
+
+        if (geometry == nullptr || sizeIndex == 0 || sizeIndex >= chromosomeSizes.size())
+        {
+            ++unplacedDamageSites;
+            return false;
+        }
+
+       // Fraction of the chromosome length from the p-arm end, clamped to the drawn chromatid.
+       const double damageFraction = std::clamp(getDamageFraction(damage, chromosomeSizes[sizeIndex]), 0.0, 1.0);
+
+       markerX = geometry->x + chromosomeWidth / 2.0;
+       markerY = geometry->y + damageFraction * geometry->height;
+       return true;
+    };
+
+
+
+
 
 
     // --------------------------------------------------
@@ -560,132 +692,51 @@ bool Karyogram::generateSDDkaryogram(                                         //
 
     for (const auto& dsb : dsbVec)                                      // Loop through the double-strand break vector containing exposure data (damages per chromosome per exposure)
     {
-        const int chromosomeID = dsb.chromosomeID.chromosomeNumber;     // Chromosome ID 1-46 for humans
+       double markerX = 0.0;
+       double markerY = 0.0;
 
-        const int chromatidID = dsb.chromosomeID.chromatidNumber;       // Can be either 1 for unduplicated chromosomes, or 1 or 2 for duplicated chromosomes.
-
-        for (const auto& geometry : chromosomeGeometry)                 // Get the associated pixel coordinates for the given chromosome ID and chromatid to draw the double-strand breaks.
+        if (locateDamage(dsb, markerX, markerY))
         {
-            if (geometry.chromosomeNumber != chromosomeID)
-            {
-                continue;
-            }
-
-            if (geometry.chromatidNumber != chromatidID)
-            {
-                continue;
-            }
-
-
-            // ------------------------------------------
-            // Determine chromosome size for the given ID
-            // ------------------------------------------
-            const size_t sizeIndex = static_cast<size_t>(chromosomeID);
-
-            if (sizeIndex >= chromosomeSizes.size())
-            {
-                continue;
-            }
-
-            const double chromosomeSize = chromosomeSizes[sizeIndex];
-
-
-            // ------------------------------------------
-            // Convert damage position to fraction of chromosome length
-            // ------------------------------------------
-            double damageFraction = getDamageFraction(dsb, chromosomeSize);
-
-            // If fraction appears outside of the chromosome, clamp the damage to appear at the end of the chromosome.
-            damageFraction = std::clamp(damageFraction, 0.0, 1.0);
-
-
-            // ------------------------------------------
-            // Convert fraction to image pixel coordinates
-            // ------------------------------------------
-            const double markerX = geometry.x + chromosomeWidth / 2.0;
-            const double markerY = geometry.y + damageFraction * geometry.height;
-
-
-            // ------------------------------------------
-            // Draw DSB marker
-            // ------------------------------------------
-            drawDoubleStrandBreakMarker(cr, markerX, markerY, chromosomeWidth);				// Takes damage marker x location, y location, and width of the chromosome to scale with width of the line.
-
-            break;
+            drawDoubleStrandBreakMarker(cr, markerX, markerY, chromosomeWidth);   // Line spans slightly more than the chromatid width
         }
+
     }
 
     // --------------------------------------------------
     // Draw single-strand break markers
     // --------------------------------------------------
 
+    const double ssbBaseLength = 4.0;                                      // Marker length for a site with one SSB
+    const double ssbLengthPerBreak = 4.0;                                  // Extra marker length per additional SSB in the site
+    const double maxSSBLength = chromosomeWidth;                           // Never longer than the chromatid is wide
+
+
     for (const auto& ssb : ssbVec)
     {
-        const int chromosomeID = ssb.chromosomeID.chromosomeNumber;
+	double markerX = 0.0;
+        double markerY = 0.0;
 
-        const int chromatidID = ssb.chromosomeID.chromatidNumber;
-
-        // Find the chromosome/chromatid geometry
-        for (const auto& geometry : chromosomeGeometry)
+	if (!locateDamage(ssb, markerX, markerY))
         {
-            if (geometry.chromosomeNumber != chromosomeID)
-            {
-                continue;
-            }
-
-            if (geometry.chromatidNumber != chromatidID)
-            {
-                continue;
-            }
-
-
-            // ------------------------------------------
-            // Determine chromosome size
-            // ------------------------------------------
-            const size_t sizeIndex = static_cast<size_t>(chromosomeID);
-
-            if (sizeIndex >= chromosomeSizes.size())
-            {
-                continue;
-            }
-
-            const double chromosomeSize = chromosomeSizes[sizeIndex];
-
-
-            // ------------------------------------------
-            // Convert SSB position to fraction
-            // ------------------------------------------
-            double damageFraction = getDamageFraction(ssb, chromosomeSize);
-
-            damageFraction = std::clamp(damageFraction, 0.0, 1.0);				// damageFraction is the location of the damage along the length of the chromosome, clamped to 1 for safety.
-
-
-            // ------------------------------------------
-            // Convert fraction to image coordinates
-            // ------------------------------------------
-            const double markerX = geometry.x + chromosomeWidth / 2.0;
-            const double markerY = geometry.y + damageFraction * geometry.height;
-
-
-            // ------------------------------------------
-            // Determine SSB marker length
-            // ------------------------------------------
-            const double ssbBaseLength = 4.0;                              // Scaling single-strand break line length based on number of damages in the damage site
-            const double ssbLengthPerBreak = 4.0;                          // Marker length per individual single-strand break to be summed over the whole site
-            const double maxSSBLength = chromosomeWidth;                   // Maximum single-strand break marker length is the width of the chromosome
-
-            double markerLength = ssbBaseLength + ssbLengthPerBreak * (ssb.numSingleStrandBreaks - 1);
-            markerLength = std::min(markerLength, maxSSBLength);		// Scale damage marker length depending on the number of SSBs in the damage site.
-
-
-            // ------------------------------------------
-            // Draw SSB marker
-            // ------------------------------------------
-            drawSingleStrandBreakMarker(cr, markerX, markerY, markerLength);			// Take damage marker X location, Y location, and scaled markerLength depending on the number of SSBs in the damage site.
-
-            break;
+            continue;
         }
+
+        double markerLength = ssbBaseLength + ssbLengthPerBreak * (ssb.numSingleStrandBreaks - 1);
+        markerLength = std::min(markerLength, maxSSBLength);
+
+        drawSingleStrandBreakMarker(cr, markerX, markerY, markerLength);
+
     }
+
+
+
+    if (unplacedDamageSites > 0)                                           // Never drop damages silently: the summary box still counts them.
+    {
+        std::cerr << "WARNING: " << unplacedDamageSites << " DSB/SSB marker(s) could not be drawn because their "
+                  << "data Field 3 chromosome/chromatid number does not match a drawn chromatid "
+                  << "(chromatid must be 1" << (doubleChromatid ? " or 2" : "") << ").\n";
+    }
+
 
 
     // X label

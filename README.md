@@ -93,10 +93,15 @@ locations. The output .png file will be stored in the same directory as the SDD/
 In the SDD/SDR chromosome sizes header, please specify Y chromosome size before X. If the user passes two X chromosomes, the second one will be labeled as Y
 and will have an incorrect centromere position in the karyogram. 
 The plotter also works for more than 46 chromosomes, but the '--karyogram other' option must be specified by the user if that is the case.
+
 If the user desires, the cell cycle phase can also be specified in the SDD header, and the karyogram plotter will account for if the cell cycle phase 
-is pre-replication (G0 or G1 phase) or post-replication (S, G2, M phase). If the user passes '0' (unspecified) as the cell cycle phase, the plotter 
-will assume the cells are in a pre-replication phase. In addition to the chromosome number and sizes passed in the SDD header, the karyogram plotter 
+is pre-replication (G0 or G1 phase) or post-replication (S, G2, M phase). If the user passes '0' (unspecified) as the cell cycle phase, the parser will infer
+cell cycle phase from SDD data field 3 subfield 3 (if it sees a chromatid number of 2 in any data entry, it will assume that all chromosomes have two sister
+chromatids). 
+
+In addition to the chromosome number and sizes passed in the SDD header, the karyogram plotter 
 also requires SDD data fields 3, 4, and 6, otherwise the chromosome sizes and damage information will not be present to draw the karyogram. 
+
 For the SDR file, only the intact chromosome sizes header field is required, and the corresponding SDR data entries for mutations (intact chromosome
 entries are optional).
 
@@ -132,6 +137,7 @@ non-human genomes will be drawn using the generic centromere locations at approx
 within a given damage site (i.e. a given SDD data row) (usually between 0-5 SSBs). 
 5. Summary at the top to describe the dose or fluence in the SDD file, the cell cycle phase, and the number of single- and double-strand breaks.
 6. Legend at the bottom to describe what each symbol signifies in the karyogram.
+7. Can draw damages on either of the two sister chromatids in post-replicated chromosomes. 
 
 ### WHAT IS SUMMARIZED IN THE SDR FILE SUMMARY:
 1. SDR version, author, associated SDD file that produced the SDR file from the MEDRAS-MC output.
@@ -161,9 +167,8 @@ chromosome is present in the new ecDNA fragment.
 
 
 ## FURTHER KARYOGRAM PLOTTING WORK:
-1. Support the drawing of SDD damages on the replicated sister-chromatid for post-replication cells.
-2. Add a zoom in and out and a panning option to conserve image quality. 
-3. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
+1. Add a zoom in and out and a panning option to conserve image quality. 
+2. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
 ... and much more.
 
 
