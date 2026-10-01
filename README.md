@@ -147,22 +147,23 @@ original chromosomes. Extrachromosomal DNA (ecDNA) is drawn as circles with thei
 clarity.
 4. A legend of symbols at the bottom of the karyogram to denote what all the symbols mean, particulary for inversions and ecDNA.
 5. So far, drawing is supported for long deletions, balanced inversions, balanced translocations, ecDNA, deletion-inversions, deletion-translocations,
-and deletion-insertions, chromoplexy and chromothripsis. 
+and deletion-insertions, chromoplexy and chromothripsis (as well as dicentrics and chromosome rings) 
 6. For chromoplexy and ecDNA leading to acentric strands composed of multiple foreign DNA fragments, they receive their own slots
 after the sex chromosomes. They are labeled such that the original chromosomes that compose the acentric strand are labeled and a '*' is 
-present to indicate it is a derivative, not an original chromosome strand. (see exampleSDR_with_dicentrics_cell0_karyogram_human.png).
+present to indicate it is a derivative, not an original chromosome strand. (see exampleSDR_dicentrics_rings_cell0_karyogram_human.png).
 Note: the multi-foreign-fragment ecDNA are depicted pie-chart style, to represent 'how much' of each original
 chromosome is present in the new ecDNA fragment. 
 
 <picture align = "center">
-<img src="./SDRkaryogram.svg" width = "100%" alt="Different mutation representations from irradiated DNA"><br>
+<img src="./SDR_karyogram.svg" width = "100%" alt="Different mutation representations from irradiated DNA"><br>
 <em> Depicting common DNA structural variations that arise from ionizing radiation.</em>
 </picture>
 
 
 ## FURTHER KARYOGRAM PLOTTING WORK:
-1. Add a zoom in and out and a panning option to conserve image quality. 
-2. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
+1. Support the drawing of SDD damages on the replicated sister-chromatid for post-replication cells.
+2. Add a zoom in and out and a panning option to conserve image quality. 
+3. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
 ... and much more.
 
 
@@ -322,7 +323,7 @@ for (const sddparser::SDRsubHeader& subHeader : parser.getSubHeaders())
 
 ## APPENDIX
 
-Example SDR file mutated data entries for each type, the exact same as exampleSDR_with_dicentrics.txt, with additional comments:
+Example SDR file mutated data entries for each type, the exact same as exampleSDR_dicentrics_rings.txt, with additional comments:
 ** NOTE: In reality, the order of the SDR data entries do not matter, but they are logically ordered in the exampleSDR.txt file for clarity**
 
 -- Multiple Deletions per chromosome:
@@ -481,3 +482,11 @@ Example SDR file mutated data entries for each type, the exact same as exampleSD
 
 0; 87; 29/60/70/0; 1;
 
+
+-- Chromosome rings (one entry is the chromosome ring with a centromere - distinct from ecDNA, and the other two entries are the deleted chromosome ends):
+
+0; 102; 27/30/150/1; 0;
+
+0; 103; 27/0/30/0; 1;
+
+0; 104; 27/150/192.2/0; 1;
