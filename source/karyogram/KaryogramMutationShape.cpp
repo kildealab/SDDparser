@@ -112,7 +112,7 @@ bool Karyogram::isChromosomeRingShape(const std::vector<const SDRdataRecord*>& r
         return false;
     }
 
-    const double delTolerance = 0.001;
+    const double delTolerance = 0.000050;					// 50 bp = 0.000050 Mbp. Minimum tolerance for a long deletion SV to occur.
 
     const double firstLo = std::min(allPieces.front().fragment.oldStartPosition, allPieces.front().fragment.oldEndPosition);
     const double lastHi = std::max(allPieces.back().fragment.oldStartPosition, allPieces.back().fragment.oldEndPosition);
@@ -272,7 +272,7 @@ bool Karyogram::isLoneGapShape(const std::vector<const SDRdataRecord*>& records,
         return std::min(a.oldStartPosition, a.oldEndPosition) < std::min(b.oldStartPosition, b.oldEndPosition);
     });
 
-    const double tolerance = 0.001;
+    const double tolerance = 0.000050;
     bool hasGap = false;
 
     for (std::size_t i = 0; i + 1 < sortedFragments.size(); ++i)
@@ -383,7 +383,7 @@ bool Karyogram::isDeletionInversionShape(const std::vector<const SDRdataRecord*>
         return false; // The excised piece itself should not be reversed.
     }
 
-    const double delTolerance = 0.001;
+    const double delTolerance = 0.000050;
     int gapCount = 0;
     bool gapMatchesExcised = false;
 
@@ -509,7 +509,7 @@ bool Karyogram::isECDNAshape(const std::vector<const SDRdataRecord*>& records, i
     });
 
 
-    const double delTolerance = 0.001;
+    const double delTolerance = 0.000050;
     std::vector<std::pair<double, double>> gaps;
 
     const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
@@ -679,7 +679,7 @@ bool Karyogram::isDeletionShape(const std::vector<const SDRdataRecord*>& records
         return std::min(a.oldStartPosition, a.oldEndPosition) < std::min(b.oldStartPosition, b.oldEndPosition);
     });
 
-    const double delTolerance = 0.001;
+    const double delTolerance = 0.000050;
     std::vector<std::pair<double, double>> gaps;
 
 

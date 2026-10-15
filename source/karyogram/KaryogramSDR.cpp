@@ -729,6 +729,16 @@ void Karyogram::drawPaintedFragment(			// Function to draw the individual fragme
     // --------------------------------------------------------
     // Fill each painted segment, clipped to the capsule shape
     // --------------------------------------------------------
+
+    // Draw white segments on chromosomes where deletions occurred instead of truncating the chromosome, for clarity.
+    const auto isWhiteColor = [](const RGB& color)
+    {
+        const double tolerance = 0.000050;					// >= 50 bp for a long deletion to occur
+        return std::fabs(color.r - 1.0) < tolerance && std::fabs(color.g - 1.0) < tolerance && std::fabs(color.b - 1.0) < tolerance;
+    };
+
+    const double minWhiteGapHeight = 5.0;	// Keep a deletion's white gap from shrinking below a visible size, however small the actual deleted region is.
+
     cairo_save(cr);
     cairo_clip_preserve(cr);
 
@@ -741,15 +751,42 @@ void Karyogram::drawPaintedFragment(			// Function to draw the individual fragme
         cairo_rectangle(cr, x, segmentTop, width, segmentBottom - segmentTop);
         cairo_fill(cr);
 
-        if (segment.isReversed) 	        						// Check for balanced inversion
+        if (segment.isReversed)
         {
             const double segmentHeight = segmentBottom - segmentTop;
             const double chevronSize = std::min(width * 0.5, segmentHeight);
             const double chevronCenterY = (segmentTop + segmentBottom) / 2.0;
 
-            drawInversionChevron(cr, x + width / 2.0, chevronCenterY, chevronSize);		// Inversion marker to depict balanced inversions
+            drawInversionChevron(cr, x + width / 2.0, chevronCenterY, chevronSize);
+        }
+    }
+
+    // A white (deletion-gap) segment can shrink to a fraction of a pixel for a tiny deletion and effectively disappear. Re-painting it, re-centered on
+    // its original midpoint and padded out to the minimum height, in a SEPARATE pass after every segment has already been filled once above ensures the
+    // padding isn't immediately painted back over by whichever neighboring segment gets drawn next in the main loop. Non-white segments are untouched,
+    // and nothing here changes the fraction boundaries other segments or the centromere markers use, only how tall this one gap's fill rectangle is.
+    for (const PaintedSegment& segment : segments)
+    {
+        if (!isWhiteColor(segment.color))
+        {
+            continue;
         }
 
+        const double segmentTop = y + height * segment.startFraction;
+        const double segmentBottom = y + height * segment.endFraction;
+
+        if ((segmentBottom - segmentTop) >= minWhiteGapHeight)
+        {
+            continue;
+        }
+
+        const double gapCenter = (segmentTop + segmentBottom) / 2.0;
+        const double paddedTop = gapCenter - minWhiteGapHeight / 2.0;
+        const double paddedBottom = gapCenter + minWhiteGapHeight / 2.0;
+
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        cairo_rectangle(cr, x, paddedTop, width, paddedBottom - paddedTop);
+        cairo_fill(cr);
     }
 
     cairo_restore(cr);
@@ -758,12 +795,6 @@ void Karyogram::drawPaintedFragment(			// Function to draw the individual fragme
     // ------------------------------------------------
     // Segment boundaries and reversed segment markers
     // ------------------------------------------------
-    // Draw white segments on chromosomes where deletions occurred instead of truncating the chromosome, for clarity.
-    const auto isWhiteColor = [](const RGB& color)
-    {
-        const double tolerance = 0.001;
-        return std::fabs(color.r - 1.0) < tolerance && std::fabs(color.g - 1.0) < tolerance && std::fabs(color.b - 1.0) < tolerance;
-    };
 
     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     cairo_set_line_width(cr, 1.0);
@@ -934,7 +965,7 @@ void Karyogram::drawStackedMutations(
         const double barX = slotCenterX - totalWidth / 2.0;
         const double verticalGap = 6.0;
         double excisedY = posY;
-        const double delTolerance = 0.001;
+        const double delTolerance = 0.000050;					// >= 50 bp tolerance for long deletion structural variations
 
         for (const SDRdataRecord* record : excisedRecords)
         {
@@ -962,9 +993,10 @@ void Karyogram::drawStackedMutations(
             ringLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
         }
 
-        const double remainingBarHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
+	const double remainingBarHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
         const double equivalentLinearHeight = (ringLengthMbp / originalSizeMbp) * remainingBarHeight;
-        const double ringDiameter = std::min(equivalentLinearHeight, chromosomeWidth * 3.0);
+        const double minPieceSize = 5.0;				// Matches the floor computeSlotWidth() already applied when it sized this slot's column.
+        const double ringDiameter = std::max(minPieceSize, std::min(equivalentLinearHeight, chromosomeWidth * 3.0));
 
         const double ringColumnCenterX = barX + chromosomeWidth + stackGap + column2Width / 2.0;
         const double ringCenterY = posY + ringDiameter / 2.0;
@@ -1055,7 +1087,7 @@ void Karyogram::drawStackedMutations(
         const double fragHigher = std::max(excisedFragment.oldStartPosition, excisedFragment.oldEndPosition);
         const double excisedLengthMbp = fragHigher - fragLower;
 
-        const double delTolerance = 0.001;					// 0.001 Mbp = 1000 bp
+        const double delTolerance = 0.000050;					// 0.000050 Mbp = 50 bp
 	// Booleans to decide if the deleted segment was at a chromosome end, and if it should draw a rounded cap to indicate the deletion occurred at an end.
         const bool roundTopCap = approxEqual(fragLower, 0.0, delTolerance);
         const bool roundBottomCap = (originalSizeMbp > 0.0) ? approxEqual(fragHigher, originalSizeMbp, delTolerance) : false;
@@ -1113,7 +1145,7 @@ void Karyogram::drawStackedMutations(
         // exactly, since both derive from the same reference height.
         const double verticalGap = 6.0;
         double excisedY = posY;
-        const double delTolerance = 0.001;
+        const double delTolerance = 0.000050;						// 0.000050 Mbp = 50 bp
 
 	for (const SDRdataRecord* record : excisedRecords)
         {
@@ -1126,11 +1158,13 @@ void Karyogram::drawStackedMutations(
                     excisedLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
                 }
 
+
 		const double equivalentLinearHeight = (excisedLengthMbp / originalSizeMbp) * remainingBarHeight;
 		// Scale diameter of ecDNA segment to the length of the fragment, not its circumference (which is more accurate). 
 		// If desired to scale to circumference, divide by M_PI (less clear visually, but more accurate).
                 double diameter = equivalentLinearHeight;
-                diameter = std::min(diameter, chromosomeWidth * 3.0);
+                const double minPieceSize = 5.0;			// Matches the floor computeSlotWidth() already applied when it sized this slot's column.
+                diameter = std::max(minPieceSize, std::min(diameter, chromosomeWidth * 3.0));
 
                 const double centerY = excisedY + diameter / 2.0;
                 // Correct because genuinely mixed-origin circular records are filtered out upstream via multiOriginECDNAnewStrandIDs before reaching this fallback.
@@ -1150,7 +1184,8 @@ void Karyogram::drawStackedMutations(
 	        const bool roundTopCap = approxEqual(fragLower, 0.0, delTolerance);
             	const bool roundBottomCap = approxEqual(fragHigher, originalSizeMbp, delTolerance);
 
-            	const double excisedBarHeight = (excisedLengthMbp / originalSizeMbp) * remainingBarHeight;
+            	const double minPieceSize = 5.0;				// Keep a tiny excised deletion bar from shrinking below a visible size.
+            	const double excisedBarHeight = std::max(minPieceSize, (excisedLengthMbp / originalSizeMbp) * remainingBarHeight);
 	    	const double excisedBarX = excisedColumnCenterX - chromosomeWidth / 2.0;
 
             	const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader);
@@ -1236,7 +1271,7 @@ void Karyogram::drawStackedMutations(
         }
 
         const double verticalGap = 6.0;
-        const double delTolerance = 0.001;
+        const double delTolerance = 0.000050;						// 0.000050 Mbp = 50 bp
         std::vector<double> pieceHeights;
         computeExcisedColumnLayout(otherRecords, maxLengthMbp, maxRenderHeight, maxRenderHeight, verticalGap, pieceHeights);
 
@@ -1544,7 +1579,7 @@ std::vector<PaintedSegment> Karyogram::buildDeletionRemainingSegments(
     };
 
 
-    const double delTolerance = 0.001;
+    const double delTolerance = 0.000050;					// 0.000050 Mbp = 50 bp for minimum tolerance for long deletion structural variations
 
 
     // Leading white gap if the first fragment doesn't start at position 0, a terminal deletion removed the chromosome's start.
@@ -1643,7 +1678,7 @@ std::vector<PaintedSegment> Karyogram::buildMixedStrandSegmentsWithGaps(
         return segments;
     }
 
-    const double tolerance = 0.001;
+    const double tolerance = 0.000050;
 
     struct PlannedPiece
     {
@@ -2069,8 +2104,10 @@ int Karyogram::computeExcisedColumnLayout(
             lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
         }
 
-        const double height = (maxLengthMbp > 0.0) ? (maxRenderHeight * (lengthMbp / maxLengthMbp)) : 0.0;
-        outHeights.push_back(height);
+	const double height = (maxLengthMbp > 0.0) ? (maxRenderHeight * (lengthMbp / maxLengthMbp)) : 0.0;
+        const double minPieceSize = 5.0;				// Keep tiny excised/ecDNA pieces (bars and circles alike) from shrinking below a visible size.
+        outHeights.push_back(std::max(minPieceSize, height));
+
     }
 
     if (outHeights.empty())
@@ -2287,7 +2324,8 @@ double Karyogram::computeSlotWidth(
 
         const double remainingBarHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
         const double equivalentLinearHeight = (ringLengthMbp / originalSizeMbp) * remainingBarHeight;
-        const double ringDiameter = std::min(equivalentLinearHeight, chromosomeWidth * 3.0);
+        const double minPieceSize = 5.0;				// Keep a tiny ring from shrinking below a visible size.
+        const double ringDiameter = std::max(minPieceSize, std::min(equivalentLinearHeight, chromosomeWidth * 3.0));
 
         outColumn2Width = std::max(chromosomeWidth, ringDiameter);
 
@@ -2341,9 +2379,11 @@ double Karyogram::computeSlotWidth(
                 }
 
 		const double equivalentLinearHeight = (excisedLengthMbp / originalSizeMbp) * remainingBarHeight;
-                const double diameter = std::min(equivalentLinearHeight, chromosomeWidth * 3.0);
+                const double minPieceSize = 5.0;			// Keep a tiny ecDNA circle from shrinking below a visible size.
+                const double diameter = std::max(minPieceSize, std::min(equivalentLinearHeight, chromosomeWidth * 3.0));
 
                 maxDiameter = std::max(maxDiameter, diameter);
+
             }
 
             outColumn2Width = std::max(chromosomeWidth, maxDiameter);

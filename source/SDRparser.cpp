@@ -825,10 +825,10 @@ void SDRparser::writeCellDataSummary(
 
     // Declare mutation types to summarize the types of each mutation fed into SDDparser
     const std::vector<SDRdeletionEvent> deletions = detectDeletions(subHeader, numOriginalStrands, masterHeader);
-    const std::vector<SDRinversionEvent> inversions = detectInversions(subHeader, numOriginalStrands);
+    const std::vector<SDRinversionEvent> inversions = detectInversions(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRecDNAevent> ecDNAs = detectECDNA(subHeader, numOriginalStrands, masterHeader);
-    const std::vector<SDRdeletionInversionEvent> delInvs = detectDeletionInversions(subHeader, numOriginalStrands);
+    const std::vector<SDRdeletionInversionEvent> delInvs = detectDeletionInversions(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRdeletionTranslocationEvent> delTras = detectDeletionTranslocations(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRdeletionInsertionEvent> delInsertions = detectDeletionInsertions(subHeader, numOriginalStrands);
     const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
