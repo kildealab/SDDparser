@@ -209,7 +209,36 @@ bool Karyogram::isDeletionTranslocationDonorShape(const std::vector<const SDRdat
         }
     }
 
-    return recombinedRecord != nullptr && excisedRecord != nullptr;
+    if (recombinedRecord == nullptr || excisedRecord == nullptr)
+    {
+        return false;
+    }
+
+    // A recombined record that ALSO holds a real gap between two adjacent home-strand fragments (an independent deletion, e.g. the deletion beside a deletion-insertion's
+    // inserted piece) is not this shape: its gap has to be drawn as white space in place, which the generic mixed-record drawing does.
+    for (std::size_t i = 1; i < recombinedRecord->fragments.size(); ++i)
+    {
+        const SDRfragment& previous = recombinedRecord->fragments[i - 1];
+        const SDRfragment& current = recombinedRecord->fragments[i];
+
+        if (previous.oldStrandID != homeOldStrandID || current.oldStrandID != homeOldStrandID)
+        {
+            continue;
+        }
+
+        const double tolerance = 0.000050;
+        const double prevLo = std::min(previous.oldStartPosition, previous.oldEndPosition);
+        const double prevHi = std::max(previous.oldStartPosition, previous.oldEndPosition);
+        const double curLo = std::min(current.oldStartPosition, current.oldEndPosition);
+        const double curHi = std::max(current.oldStartPosition, current.oldEndPosition);
+
+        if ((prevHi <= curLo && !approxEqual(prevHi, curLo, tolerance)) || (curHi <= prevLo && !approxEqual(curHi, prevLo, tolerance)))
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 
@@ -224,7 +253,7 @@ bool Karyogram::isDeletionTranslocationDonorShape(const std::vector<const SDRdat
 
 
 
-
+/*
 
 // Recognizes the DONOR side of a deletion-insertion event when it's
 // drawn alone in its slot: a single home-strand-only record with 2+
@@ -293,6 +322,7 @@ bool Karyogram::isLoneGapShape(const std::vector<const SDRdataRecord*>& records,
 
     return hasGap;
 }
+*/
 
 
 
@@ -302,6 +332,9 @@ bool Karyogram::isLoneGapShape(const std::vector<const SDRdataRecord*>& records,
 
 
 
+
+
+/*
 // Same pairing pattern as isDeletionShape()/isECDNAshape(), but for a
 // deletion-inversion: one record has THREE fragments (2 normal + 1
 // reversed) from the home strand, with a real gap between two of
@@ -413,6 +446,7 @@ bool Karyogram::isDeletionInversionShape(const std::vector<const SDRdataRecord*>
 
     return gapCount == 1 && gapMatchesExcised;
 }
+*/
 
 
 
@@ -424,8 +458,7 @@ bool Karyogram::isDeletionInversionShape(const std::vector<const SDRdataRecord*>
 
 
 
-
-
+/*
 
 
 // Identical shape to isDeletionShape(), except the excised (single fragment)
@@ -611,6 +644,7 @@ bool Karyogram::isECDNAshape(const std::vector<const SDRdataRecord*>& records, i
 }
 
 
+*/
 
 
 
@@ -620,8 +654,7 @@ bool Karyogram::isECDNAshape(const std::vector<const SDRdataRecord*>& records, i
 
 
 
-
-
+/*
 
 // Generalized deletion shape to account for multiple deletions on the same strand.
 // Shape looks like this, one record contains N + 1 fragments, where N is the number of
@@ -783,5 +816,163 @@ bool Karyogram::isDeletionShape(const std::vector<const SDRdataRecord*>& records
 
     return true;
 }
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ------------------------------------------------------------------------------------------------------------------------------ //
+// Unified "home-strand gap" shape. Replaces the separate deletion / ecDNA / deletion-inversion / lone-gap shape checks for drawing.
+//
+// A slot qualifies when EVERY fragment in it comes from the home strand and it holds:
+//   - exactly ONE "remaining" record: linear, 2+ fragments (below the chromothripsis fragment threshold), with at least one gap
+//     (internal or terminal) between its fragments,
+//   - zero or more "pieces": linear single-fragment excised records (not reversed), or acentric circular (ecDNA) records.
+// Pieces are OPTIONAL and need not match any gap: the SDR file draws what it implies. A gap with no piece is just white space.
+// Uses the same gap logic (analyzeFlankingFragments) and 50 bp tolerance as the detectors in SDRutilities.h.
+// ------------------------------------------------------------------------------------------------------------------------------ //
+bool Karyogram::analyzeHomeStrandGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader,
+                                          const SDRdataRecord*& remainingRecord, std::vector<const SDRdataRecord*>& pieceRecords)
+{
+    const double delTolerance = 0.000050;			// Same as the detectors
+    const std::size_t chromothripsisFragmentThreshold = 10;	// Same default as detectChromothripsis(); such strands are drawn as concatenated shatter, not as gaps.
+
+    remainingRecord = nullptr;
+    pieceRecords.clear();
+
+    auto reject = [&]() -> bool
+    {
+        remainingRecord = nullptr;
+        pieceRecords.clear();
+        return false;
+    };
+
+    if (records.empty())
+    {
+        return false;
+    }
+
+    int multiFragmentLinearCount = 0;
+    std::vector<const SDRdataRecord*> singleCentricLinear;		// Single-fragment, centromere-bearing, non-reversed linear records: terminal-deletion remaining candidates
+
+    for (const SDRdataRecord* record : records)
+    {
+        for (const SDRfragment& fragment : record->fragments)
+        {
+            if (fragment.oldStrandID != homeOldStrandID)
+            {
+                return reject();
+            }
+        }
+
+        if (record->fragments.empty())
+        {
+            return reject();
+        }
+
+        if (record->linear && record->fragments.size() >= 2)
+        {
+            ++multiFragmentLinearCount;
+            remainingRecord = record;
+        }
+        else if (record->linear && record->fragments[0].hasCentromere && !isReversedFragment(record->fragments[0]))
+        {
+            singleCentricLinear.push_back(record);
+        }
+    }
+
+    if (multiFragmentLinearCount > 1)
+    {
+        return reject();
+    }
+
+    // Terminal deletions leave a single-fragment remaining record, only accepted when the strand has no multi-fragment remaining record.
+    if (multiFragmentLinearCount == 0)
+    {
+        if (singleCentricLinear.size() != 1)
+        {
+            return reject();
+        }
+
+        remainingRecord = singleCentricLinear[0];
+    }
+
+    // Everything else is a PIECE: a linear, single-fragment, non-reversed excised record, or an acentric circular (ecDNA) record.
+    for (const SDRdataRecord* record : records)
+    {
+        if (record == remainingRecord)
+        {
+            continue;
+        }
+
+        if (record->linear)
+        {
+            if (record->fragments.size() != 1 || isReversedFragment(record->fragments[0]))
+            {
+                return reject();
+            }
+        }
+        else
+        {
+            for (const SDRfragment& fragment : record->fragments)
+            {
+                if (fragment.hasCentromere)
+                {
+                    return reject();
+                }
+            }
+        }
+
+        pieceRecords.push_back(record);
+    }
+
+    if (remainingRecord->fragments.size() >= chromothripsisFragmentThreshold)
+    {
+        return reject();
+    }
+
+    std::vector<SDRnormalizedFragment> sorted;
+    std::vector<SDRflankGap> gaps;
+
+    if (!analyzeFlankingFragments(remainingRecord->fragments, fullSizeForStrand(masterHeader, homeOldStrandID), delTolerance, sorted, gaps) || gaps.empty())
+    {
+        return reject();
+    }
+
+    // Order the pieces top-to-bottom by where their material came from, so the side column reads like the gaps on the bar.
+    std::stable_sort(pieceRecords.begin(), pieceRecords.end(), [](const SDRdataRecord* a, const SDRdataRecord* b)
+    {
+        auto lowest = [](const SDRdataRecord* r)
+        {
+            double low = r->fragments.front().oldStartPosition;
+            for (const SDRfragment& f : r->fragments)
+            {
+                low = std::min(low, std::min(f.oldStartPosition, f.oldEndPosition));
+            }
+            return low;
+        };
+        return lowest(a) < lowest(b);
+    });
+
+    return true;
+}
+
+
+
+
+
+
 
 } // namespace sddparser

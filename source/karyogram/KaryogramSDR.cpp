@@ -16,6 +16,67 @@
 namespace sddparser
 {
 
+// A linear record that mixes home-strand fragments with foreign (exchanged) ones can still hold lost home-strand material: two ADJACENT home-strand fragments that do not touch
+// leave a gap (an independent deletion elsewhere on the strand, e.g. next to a deletion-translocation or deletion-insertion). Returns the record's drawn length in Mbp with
+// those gaps included, and sets hasGap when at least one exists. Mirrors the gap rule of buildMixedStrandSegmentsWithGaps().
+static double mixedRecordLengthWithHomeGaps(const SDRdataRecord& record, int homeOldStrandID, bool& hasGap)
+{
+    const double tolerance = 0.000050;
+    double totalLengthMbp = 0.0;
+    hasGap = false;
+
+    for (std::size_t i = 0; i < record.fragments.size(); ++i)
+    {
+        const SDRfragment& fragment = record.fragments[i];
+        totalLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+
+        if (i == 0 || fragment.oldStrandID != homeOldStrandID || record.fragments[i - 1].oldStrandID != homeOldStrandID)
+        {
+            continue;
+        }
+
+        const SDRfragment& previous = record.fragments[i - 1];
+        const double prevLo = std::min(previous.oldStartPosition, previous.oldEndPosition);
+        const double prevHi = std::max(previous.oldStartPosition, previous.oldEndPosition);
+        const double curLo = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+        const double curHi = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+
+        if (prevHi <= curLo && !approxEqual(prevHi, curLo, tolerance))
+        {
+            totalLengthMbp += curLo - prevHi;
+            hasGap = true;
+        }
+        else if (curHi <= prevLo && !approxEqual(curHi, prevLo, tolerance))
+        {
+            totalLengthMbp += prevLo - curHi;
+            hasGap = true;
+        }
+    }
+
+    return totalLengthMbp;
+}
+
+static bool isSingleMixedRecordWithHomeGap(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID)
+{
+    if (records.size() != 1 || !records[0]->linear)
+    {
+        return false;
+    }
+
+    bool hasForeign = false;
+    for (const SDRfragment& fragment : records[0]->fragments)
+    {
+        hasForeign = hasForeign || fragment.oldStrandID != homeOldStrandID;
+    }
+
+    bool hasGap = false;
+    mixedRecordLengthWithHomeGaps(*records[0], homeOldStrandID, hasGap);
+
+    return hasForeign && hasGap;
+}
+
+
+
 bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the rearranged chromosome segments on the karyogram
     const SDRmasterHeader& masterHeader,				// Access SDR master header for intact chromosome sizes
     const SDRsubHeader& subHeader, 					// Access SDR subheader for cell-by-cell damage/misrepair data
@@ -47,7 +108,46 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     mergedRecordStorage.reserve(subHeader.dataRecords.size()); 				// Safe upper bound.
 
     // Store maps of chromosome IDs for dicentric and acentric chromosomes to be drawn in their corresponding remaining home slots.
-    const std::map<int, int> dicentricAcentricOverrides = findDicentricAcentricHomeOverrides(subHeader, static_cast<int>(sizes[0]), masterHeader);
+    std::map<int, int> dicentricAcentricOverrides = findDicentricAcentricHomeOverrides(subHeader, static_cast<int>(sizes[0]), masterHeader);
+
+    // Two-chromosome chromothripsis: its multi-fragment records interleave both strands, so they are drawn as concatenated bars, one per strand slot,
+    // whether or not the excised single-fragment pieces exist in the SDR file. The dicentric/acentric pairing above needs those excised pieces to tile the
+    // strands, so when they are absent it finds nothing, and every record would fall back to the first fragment's strand and pile into ONE slot,
+    // leaving the other strand drawn untouched. Give each multi-fragment record of the cluster its own strand slot here instead.
+    for (const SDRchromothripsisEvent& event : detectChromothripsis(subHeader, static_cast<int>(sizes[0])))
+    {
+        if (event.involvedStrandIDs.size() != 2)
+        {
+            continue;
+        }
+
+        std::set<int> takenSlots;
+        for (const SDRdataRecord& record : subHeader.dataRecords)
+        {
+            if (record.fragments.size() < 2 || std::find(event.contributingNewStrandIDs.begin(), event.contributingNewStrandIDs.end(), record.newStrandID) == event.contributingNewStrandIDs.end())
+            {
+                continue;
+            }
+
+            const auto existing = dicentricAcentricOverrides.find(record.newStrandID);
+            int slot = (existing != dicentricAcentricOverrides.end()) ? existing->second : determineHomeStrandID(record);
+
+            if (takenSlots.count(slot))
+            {
+                for (int strandID : event.involvedStrandIDs)
+                {
+                    if (!takenSlots.count(strandID))
+                    {
+                        slot = strandID;
+                        break;
+                    }
+                }
+            }
+
+            takenSlots.insert(slot);
+            dicentricAcentricOverrides[record.newStrandID] = slot;
+        }
+    }
 
 
     // Chromoplexy-specific shape: an original strand fully consumed by fusing onto two OTHER strands' centromeres (one piece each) gets hidden 
@@ -70,7 +170,7 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     // Like the chromoplexy leftover pieces above, it gets its own dedicated slot instead of being grouped under whichever
     // strand determineHomeStrandID() happens to fall back to. A same-origin ecDNA (everyfragment from the same strand, however many gaps) is 
     // left alone here: isECDNAshape() already draws those correctly next to their home chromosome.
-    const std::vector<SDRecDNAevent> ecDNAevents = detectECDNA(subHeader, static_cast<int>(sizes[0]), masterHeader);
+    const std::vector<SDRecDNAevent> ecDNAevents = detectECDNA(subHeader, static_cast<int>(sizes[0]), masterHeader, false);	// false: drawing wants every circular piece, including those scored under a chromothripsis
 
     std::set<int> multiOriginECDNAnewStrandIDs; 					// excisedStrandID of every multi-origin ecDNA event.
     for (const SDRecDNAevent& event : ecDNAevents)
@@ -910,10 +1010,11 @@ void Karyogram::drawStackedMutations(
     // A long deletion's pair of records gets special treatment: the remaining piece is drawn at the ORIGINAL chromosome's full
     // length with a white gap marking the deletion, and the excised piece gets flat (non-rounded) caps on whichever end isn't a
     // real chromosome edge.
-    const bool isDeletion = isDeletionShape(records, homeOldStrandID, masterHeader);
-    const bool isECDNA = isECDNAshape(records, homeOldStrandID, masterHeader);
-    const bool isDeletionInversion = isDeletionInversionShape(records, homeOldStrandID);
-    const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);			// For deletion-insertion mutation shape
+    // Unified gap shape: a home-strand-only slot with one remaining record carrying gap(s), plus any OPTIONAL excised pieces (linear) or ecDNA (circular).
+    // Covers long deletions with or without an excised record, deletion-inversions, same-origin ecDNA and lone gaps (deletion-insertion donors).
+    const SDRdataRecord* gapRemainingRecord = nullptr;
+    std::vector<const SDRdataRecord*> gapPieceRecords;
+    const bool isGapShape = analyzeHomeStrandGapShape(records, homeOldStrandID, masterHeader, gapRemainingRecord, gapPieceRecords);
     const bool isChromosomeRing = isChromosomeRingShape(records, homeOldStrandID, masterHeader);
 
     const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
@@ -925,15 +1026,65 @@ void Karyogram::drawStackedMutations(
     const double totalWidth = computeSlotWidth(records, homeOldStrandID, chromosomeWidth, maxLengthMbp, maxRenderHeight, masterHeader, column2Width);
 
 
-    if (isLoneGap && originalSizeMbp > 0.0)
+    if (isGapShape && originalSizeMbp > 0.0)
     {
-        // Same gap-drawing treatment as a plain deletion's remaining piece, buildDeletionRemainingSegments() already inserts a
-        // white gap wherever consecutive sorted fragments don't touch, regardless of whether an excised counterpart exists.
-        const double barHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
-        const double barX = slotCenterX - totalWidth / 2.0;
-        const std::vector<PaintedSegment> segments = buildDeletionRemainingSegments(*records[0], homeOldStrandID, humanGenome, masterHeader);
+        // The remaining record is drawn at the ORIGINAL chromosome's full length, a white gap wherever material is missing (internal or terminal), reversed
+        // fragments carry the inversion chevron. Every gap is drawn whether or not an excised partner exists in the file.
+        const double remainingBarHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
+        const double remainingBarX = slotCenterX - totalWidth / 2.0;
+        const std::vector<PaintedSegment> segments = buildDeletionRemainingSegments(*gapRemainingRecord, homeOldStrandID, humanGenome, masterHeader);
 
-        drawPaintedFragment(cr, barX, posY, barHeight, chromosomeWidth, segments);
+        drawPaintedFragment(cr, remainingBarX, posY, remainingBarHeight, chromosomeWidth, segments);
+
+        // Optional second column: ONLY the excised pieces actually present in the file. Linear pieces get flat caps unless they sit at a real chromosome end,
+        // circular pieces are ecDNA circles. No pieces -> no second column and nothing drawn beside the chromosome.
+        const double excisedColumnCenterX = remainingBarX + chromosomeWidth + stackGap + column2Width / 2.0;
+        const double verticalGap = 6.0;
+        const double delTolerance = 0.000050;
+        double excisedY = posY;
+
+        for (const SDRdataRecord* piece : gapPieceRecords)
+        {
+            if (!piece->linear)
+            {
+                double pieceLengthMbp = 0.0;
+
+                for (const SDRfragment& fragment : piece->fragments)
+                {
+                    pieceLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+                }
+
+                // Diameter scaled to the fragment's length (not circumference), capped at 3x chromosome width, floored so a tiny circle stays visible.
+                const double minPieceSize = 5.0;			// Matches the floor computeSlotWidth() applies when it sizes this slot's column.
+                const double diameter = std::max(minPieceSize, std::min((pieceLengthMbp / originalSizeMbp) * remainingBarHeight, chromosomeWidth * 3.0));
+                const double centerY = excisedY + diameter / 2.0;
+                const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
+
+                drawCircularFragment(cr, excisedColumnCenterX, centerY, diameter, color);
+
+                excisedY += diameter + verticalGap;
+            }
+            else
+            {
+                const SDRfragment& fragment = piece->fragments[0];
+                const double fragLower = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+                const double fragHigher = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+
+                const bool roundTopCap = approxEqual(fragLower, 0.0, delTolerance);
+                const bool roundBottomCap = approxEqual(fragHigher, originalSizeMbp, delTolerance);
+
+                // Same fraction of the remaining bar height as its length is of the original chromosome, so the piece always matches its white gap exactly.
+                const double minPieceSize = 5.0;			// Keep a tiny excised deletion bar from shrinking below a visible size.
+                const double excisedBarHeight = std::max(minPieceSize, ((fragHigher - fragLower) / originalSizeMbp) * remainingBarHeight);
+                const double excisedBarX = excisedColumnCenterX - chromosomeWidth / 2.0;
+                const std::vector<PaintedSegment> pieceSegments = buildPaintedSegments(*piece, humanGenome, masterHeader);
+
+                drawPaintedFragment(cr, excisedBarX, excisedY, excisedBarHeight, chromosomeWidth, pieceSegments, roundTopCap, roundBottomCap, false);
+
+                excisedY += excisedBarHeight + verticalGap;
+            }
+        }
+
         return;
     }
 
@@ -1104,106 +1255,10 @@ void Karyogram::drawStackedMutations(
     }
 
 
-    // For simple deletion shapes where no foreign fragments are introduced into the original chromosome (unlike delTrans and delIns)
-    if ((isDeletion || isDeletionInversion || isECDNA) && originalSizeMbp > 0.0)
-    {
-	const SDRdataRecord* remainingRecord = nullptr;
-        std::vector<const SDRdataRecord*> excisedRecords;
-
-	for (const SDRdataRecord* record : records)
-        {
-            if (remainingRecord == nullptr || record->fragments.size() > remainingRecord->fragments.size())
-            {
-                if (remainingRecord != nullptr)
-                {
-                    excisedRecords.push_back(remainingRecord);
-                }
-
-                remainingRecord = record;
-            }
-            else
-            {
-                excisedRecords.push_back(record);
-            }
-        }
-
-
-        double remainingBarHeight = 0.0;
-        const double remainingBarX = slotCenterX - totalWidth / 2.0;
-        const double excisedColumnCenterX = remainingBarX + chromosomeWidth + stackGap + column2Width / 2.0;
-
-	if (remainingRecord != nullptr)
-        {
-	    remainingBarHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
-            const std::vector<PaintedSegment> segments = buildDeletionRemainingSegments(*remainingRecord, homeOldStrandID, humanGenome, masterHeader);
-            drawPaintedFragment(cr, remainingBarX, posY, remainingBarHeight, chromosomeWidth, segments);
-        }
-
-
-	// Stack every excised piece vertically in the second column, each sized as the SAME fraction of remainingBarHeight that its
-        // length is of the original chromosome. This guarantees an excised piece's height always matches its white gap's height
-        // exactly, since both derive from the same reference height.
-        const double verticalGap = 6.0;
-        double excisedY = posY;
-        const double delTolerance = 0.000050;						// 0.000050 Mbp = 50 bp
-
-	for (const SDRdataRecord* record : excisedRecords)
-        {
-	    if (isECDNA)
-	    {
-		double excisedLengthMbp = 0.0;
-
-		for (const SDRfragment& fragment : record->fragments)
-                {
-                    excisedLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
-                }
-
-
-		const double equivalentLinearHeight = (excisedLengthMbp / originalSizeMbp) * remainingBarHeight;
-		// Scale diameter of ecDNA segment to the length of the fragment, not its circumference (which is more accurate). 
-		// If desired to scale to circumference, divide by M_PI (less clear visually, but more accurate).
-                double diameter = equivalentLinearHeight;
-                const double minPieceSize = 5.0;			// Matches the floor computeSlotWidth() already applied when it sized this slot's column.
-                diameter = std::max(minPieceSize, std::min(diameter, chromosomeWidth * 3.0));
-
-                const double centerY = excisedY + diameter / 2.0;
-                // Correct because genuinely mixed-origin circular records are filtered out upstream via multiOriginECDNAnewStrandIDs before reaching this fallback.
-		const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
-
-                drawCircularFragment(cr, excisedColumnCenterX, centerY, diameter, color);
-
-                excisedY += diameter + verticalGap;
-	    }
-	    else
-	    {
-		const SDRfragment& fragment = record->fragments[0];
-                const double fragLower = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
-                const double fragHigher = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
-                const double excisedLengthMbp = fragHigher - fragLower;
-
-	        const bool roundTopCap = approxEqual(fragLower, 0.0, delTolerance);
-            	const bool roundBottomCap = approxEqual(fragHigher, originalSizeMbp, delTolerance);
-
-            	const double minPieceSize = 5.0;				// Keep a tiny excised deletion bar from shrinking below a visible size.
-            	const double excisedBarHeight = std::max(minPieceSize, (excisedLengthMbp / originalSizeMbp) * remainingBarHeight);
-	    	const double excisedBarX = excisedColumnCenterX - chromosomeWidth / 2.0;
-
-            	const std::vector<PaintedSegment> segments = buildPaintedSegments(*record, humanGenome, masterHeader);
-
-            	drawPaintedFragment(cr, excisedBarX, excisedY, excisedBarHeight, chromosomeWidth, segments, roundTopCap, roundBottomCap, false);
-
-            	excisedY += excisedBarHeight + verticalGap;
-	    }
-        }
-        return;
-    }
-
-
-
     // Multiple records, none matching a named shape - shattered/collapsed-concatenation case (chromothripsis-style). One base
     // record (most fragments) drawn plainly, every other piece sized exactly to its own length (no floor) and stacked vertically,
     // wrapping into additional columns rather than growing past maxRenderHeight into the next karyogram row.
-    if (records.size() > 1)
+    if (records.size() > 1 || isSingleMixedRecordWithHomeGap(records, homeOldStrandID))
     {
         const SDRdataRecord* baseRecord = nullptr;
         std::vector<const SDRdataRecord*> otherRecords;
@@ -1508,7 +1563,7 @@ std::vector<PaintedSegment> Karyogram::buildDeletionRemainingSegments(
     // to have EVERY fragment from the home strand. It assumes all fragment positions share one coordinate system and sorts them
     // directly. A record mixing in foreign translocated fragments must never be routed here.
 
-    if (record.fragments.size() < 2)
+    if (record.fragments.empty())
     {
         return segments;
     }
@@ -2199,18 +2254,14 @@ double Karyogram::computeMaxBarHeight(
 
     // These are the same special shapes that can cause the remaining chromosome to be drawn at its ORIGINAL height
     // rather than its reduced fragment length.
-    const bool isDeletion = isDeletionShape(records, homeOldStrandID, masterHeader);
-
-    const bool isECDNA = isECDNAshape(records, homeOldStrandID, masterHeader);
-
-    const bool isDeletionInversion = isDeletionInversionShape(records, homeOldStrandID);
-
-    const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);
+    const SDRdataRecord* gapRemainingRecord = nullptr;
+    std::vector<const SDRdataRecord*> gapPieceRecords;
+    const bool isGapShape = analyzeHomeStrandGapShape(records, homeOldStrandID, masterHeader, gapRemainingRecord, gapPieceRecords);
 
 
     // For deletion-like chromosome drawings, the remaining chromosome is drawn using the full original chromosome
     // length, with the deleted material represented as a white gap.
-    if (isDeletion || isECDNA || isDeletionInversion || isLoneGap)
+    if (isGapShape)
     {
         const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
 
@@ -2236,6 +2287,13 @@ double Karyogram::computeMaxBarHeight(
         for (const SDRfragment& fragment : record->fragments)
         {
             lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+        }
+
+        if (record->linear)							// A mixed record's lost home-strand gaps are drawn as white space, so they count towards its height.
+        {
+            bool hasHomeGap = false;
+            const double lengthWithGaps = mixedRecordLengthWithHomeGaps(*record, homeOldStrandID, hasHomeGap);
+            lengthMbp = hasHomeGap ? lengthWithGaps : lengthMbp;
         }
 
         const double height =computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight);
@@ -2278,10 +2336,10 @@ double Karyogram::computeSlotWidth(
         return 0.0;
     }
 
-    const bool isDeletion = isDeletionShape(records, homeOldStrandID, masterHeader);
-    const bool isECDNA = isECDNAshape(records, homeOldStrandID, masterHeader);
-    const bool isDeletionInversion = isDeletionInversionShape(records, homeOldStrandID);
-    const bool isLoneGap = isLoneGapShape(records, homeOldStrandID);
+    const SDRdataRecord* gapRemainingRecord = nullptr;
+    std::vector<const SDRdataRecord*> gapPieceRecords;
+    const bool isGapShape = analyzeHomeStrandGapShape(records, homeOldStrandID, masterHeader, gapRemainingRecord, gapPieceRecords);
+
     const bool isChromosomeRing = isChromosomeRingShape(records, homeOldStrandID, masterHeader);
 
 
@@ -2291,11 +2349,38 @@ double Karyogram::computeSlotWidth(
     const double stackGap = 6.0;
 
 
-    if (isLoneGap && originalSizeMbp > 0.0)
+    if (isGapShape && originalSizeMbp > 0.0)
     {
-        // Only one column, the remaining piece, drawn at full original length. No excised counterpart lives in this slot to reserve
-        // a second column for.
-        return chromosomeWidth;
+        // One column for the remaining bar. A second column exists ONLY if excised pieces are present in the file, sized to the widest ecDNA circle (if any).
+        if (gapPieceRecords.empty())
+        {
+            return chromosomeWidth;
+        }
+
+        const double remainingBarHeight = computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight);
+        double maxDiameter = 0.0;
+
+        for (const SDRdataRecord* piece : gapPieceRecords)
+        {
+            if (piece->linear)
+            {
+                continue;
+            }
+
+            double pieceLengthMbp = 0.0;
+
+            for (const SDRfragment& fragment : piece->fragments)
+            {
+                pieceLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+            }
+
+            const double minPieceSize = 5.0;			// Same floor the drawing applies to each circle
+            maxDiameter = std::max(maxDiameter, std::max(minPieceSize, std::min((pieceLengthMbp / originalSizeMbp) * remainingBarHeight, chromosomeWidth * 3.0)));
+        }
+
+        outColumn2Width = std::max(chromosomeWidth, maxDiameter);
+
+        return chromosomeWidth + stackGap + outColumn2Width;
     }
 
 
@@ -2338,58 +2423,6 @@ double Karyogram::computeSlotWidth(
         // Two plain columns, both chromosomeWidth-wide, the recombined piece isn't scaled to full-original-length, so no ecDNA-style
         // diameter accounting is needed here.
         return 2 * chromosomeWidth + stackGap;
-    }
-
-
-    if ((isDeletion || isDeletionInversion || isECDNA) && originalSizeMbp > 0.0)
-    {
-        if (isECDNA)
-        {
-            const SDRdataRecord* remainingRecord = nullptr;
-            std::vector<const SDRdataRecord*> excisedRecords;
-
-            for (const SDRdataRecord* record : records)
-            {
-		if (remainingRecord == nullptr || record->fragments.size() > remainingRecord->fragments.size())
-                {
-                    if (remainingRecord != nullptr)
-                    {
-                        excisedRecords.push_back(remainingRecord);
-                    }
-
-                    remainingRecord = record;
-                }
-                else
-                {
-                    excisedRecords.push_back(record);
-                }
-            }
-
-            const double remainingBarHeight = (remainingRecord != nullptr) ? computeSDRbarHeight(originalSizeMbp, maxLengthMbp, maxRenderHeight) : 0.0;
-
-            double maxDiameter = 0.0;
-
-            for (const SDRdataRecord* record : excisedRecords)
-            {
-                double excisedLengthMbp = 0.0;
-
-                for (const SDRfragment& fragment : record->fragments)
-                {
-                    excisedLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
-                }
-
-		const double equivalentLinearHeight = (excisedLengthMbp / originalSizeMbp) * remainingBarHeight;
-                const double minPieceSize = 5.0;			// Keep a tiny ecDNA circle from shrinking below a visible size.
-                const double diameter = std::max(minPieceSize, std::min(equivalentLinearHeight, chromosomeWidth * 3.0));
-
-                maxDiameter = std::max(maxDiameter, diameter);
-
-            }
-
-            outColumn2Width = std::max(chromosomeWidth, maxDiameter);
-        }
-
-        return chromosomeWidth + stackGap + outColumn2Width;
     }
 
 
@@ -2654,8 +2687,11 @@ std::vector<const SDRdataRecord*> Karyogram::clusterRecordsForDrawing(
         return records;
     }
 
-    if (isDeletionShape(records, homeOldStrandID, masterHeader) || isECDNAshape(records, homeOldStrandID, masterHeader)
-        || isDeletionInversionShape(records, homeOldStrandID) || isDeletionTranslocationDonorShape(records, homeOldStrandID)
+    const SDRdataRecord* gapRemainingRecord = nullptr;
+    std::vector<const SDRdataRecord*> gapPieceRecords;
+
+    if (analyzeHomeStrandGapShape(records, homeOldStrandID, masterHeader, gapRemainingRecord, gapPieceRecords)
+        || isDeletionTranslocationDonorShape(records, homeOldStrandID)
 	|| isChromosomeRingShape(records, homeOldStrandID, masterHeader))
     {
         return records;

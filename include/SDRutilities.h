@@ -8,6 +8,7 @@
 #include <vector>
 #include <set>
 
+#include <array>
 #include "SDRtypes.h"
 
 
@@ -115,7 +116,7 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
     // single-fragment excised records for that strand) exactly span its full declared length. This is what lets a deletion coexist
     // with the translocation that created the dicentric/acentric pair. Only single-fragment excised pieces are matched (one deletion
     // per gap).
-    auto tryTileWithDeletions = [&](std::vector<SDRfragment> pooled, int strandID, std::set<std::size_t> excludeIndices, std::vector<std::size_t>& usedExcisedIndices) -> bool
+    auto tryTileWithDeletions = [&](std::vector<SDRfragment> pooled, int strandID, std::set<std::size_t> excludeIndices, std::vector<std::size_t>& usedExcisedIndices, bool allowUnmatchedGaps) -> bool
     {
         const std::size_t sizeIndex = static_cast<std::size_t>(strandID);
         if (sizeIndex >= masterHeader.intactChromosomeSizes.size())			// strandID must index a valid ORIGINAL chromosome size. Out of range means its full length is unknown, so quit and return false rather than guess.
@@ -232,7 +233,7 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
 
         for (bool matched : gapMatched)							// Every gap must be filled, otherwise the tiling of records to the original chromosomes invovled is incomplete.
         {
-            if (!matched)
+            if (!matched && !allowUnmatchedGaps)					// The excised record is optional: in the relaxed second pass a gap with no excised record is accepted as a lone deletion.
             {
                 return false;
             }
@@ -243,9 +244,20 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
 
 
 
+    // Two passes: first every dicentric pairs only when ALL gaps in the pooled strands are explained by excised records (the strongest proof), then the remaining dicentrics
+    // pair with gaps allowed to lack an excised record, since the excised record is optional in the SDR file.
+    for (int pass = 0; pass < 2; ++pass)
+    {
+    const bool allowUnmatchedGaps = (pass == 1);
+
     for (std::size_t i = 0; i < records.size(); ++i)					// Outer loop: try every record as a potential DICENTRIC candidate.
     {
         const SDRdataRecord& dicentricCandidate = records[i];
+
+        if (overrides.count(dicentricCandidate.newStrandID))				// Already paired in the strict pass.
+        {
+            continue;
+        }
 
         if (!dicentricCandidate.linear || !isRearrangementCandidate(dicentricCandidate.newStrandID, numOriginalStrands))	// Must be a linear rearranged record.
         {
@@ -342,7 +354,7 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
 
             std::vector<std::size_t> usedExcisedX;
 
-            if (!tryTileWithDeletions(pooledX, strandX, excludeIndices, usedExcisedX))	// Confirm strandX's fragments (plus any matching deletion records) fully reconstruct strandX's original length.
+            if (!tryTileWithDeletions(pooledX, strandX, excludeIndices, usedExcisedX, allowUnmatchedGaps))	// Confirm strandX's fragments (plus any matching deletion records) fully reconstruct strandX's original length.
             {
                 continue;
             }
@@ -356,7 +368,7 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
 
             std::vector<std::size_t> usedExcisedY;
 
-            if (!tryTileWithDeletions(pooledY, strandY, excludeForY, usedExcisedY))	// Same check for strandY.
+            if (!tryTileWithDeletions(pooledY, strandY, excludeForY, usedExcisedY, allowUnmatchedGaps))	// Same check for strandY.
             {
                 continue;
             }
@@ -378,6 +390,8 @@ inline std::map<int, int> findDicentricAcentricHomeOverrides(const SDRsubHeader&
             break;									// Found this dicentric candidate's match, stop searching acentric candidates for it.
         }
     }
+    }
+
 
     return overrides;
 }
@@ -750,6 +764,8 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
 // Forward declarations (defaults live here only, NOT on the later definitions).
 inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool collectAccompanyingDeletions = true);
 inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHeader& subHeader, int numOriginalStrands, int minFragmentCount = 10);
+inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool applyHierarchy = true);
+inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDRsubHeader& subHeader, int numOriginalStrands, bool applyHierarchy = true);
 
 // A fragment with its positions normalized so low <= high, remembering whether it was reversed (start > end).
 struct SDRnormalizedFragment
@@ -939,6 +955,33 @@ inline std::map<int, std::vector<const SDRdataRecord*>> collectFlankingRecords(c
         }
     }
 
+    // TERMINAL deletions leave a SINGLE-fragment remaining record (no flanking pair). Such a record is only accepted for a strand that has no multi-fragment
+    // remaining record, when exactly one of that strand's pure single-fragment linear records carries the centromere and is not reversed (the excised tip is acentric).
+    std::map<int, std::vector<const SDRdataRecord*>> singleFragmentCentric;
+
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+        if (!record.linear || !isRearrangementCandidate(record.newStrandID, numOriginalStrands) || record.fragments.size() != 1)
+        {
+            continue;
+        }
+
+        const SDRfragment& fragment = record.fragments[0];
+
+        if (fragment.hasCentromere && fragment.oldStartPosition <= fragment.oldEndPosition)
+        {
+            singleFragmentCentric[fragment.oldStrandID].push_back(&record);
+        }
+    }
+
+    for (const auto& [strandID, candidates] : singleFragmentCentric)
+    {
+        if (candidates.size() == 1 && result.find(strandID) == result.end())
+        {
+            result[strandID].push_back(candidates[0]);
+        }
+    }
+
     return result;
 }
 
@@ -1023,6 +1066,109 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
             event.excisedStrandID = excisedStrandID;					// -1 when there is no excised record.
 
             deletions.push_back(event);
+        }
+    }
+
+    // Strands taking part in a deletion-translocation or deletion-insertion keep their remaining material in MIXED records (foreign fragments next to their own),
+    // which the pure-record pass above cannot see. Pool each such strand's fragments over every linear multi-fragment rearranged record and report the gaps that
+    // belong to no larger event as ordinary deletions: not the translocation's own deletion, not an insertion's donor gap (a Foreign partner), not an inversion's flank.
+    {
+        const std::map<int, std::vector<const SDRdataRecord*>> pureRecords = collectFlankingRecords(subHeader, numOriginalStrands);
+
+        std::set<int> mixedStrands;
+        std::vector<std::array<double, 3>> claimedGaps;				// {strandID, start, end} of every deletion-translocation's own deletion
+        const SDRmasterHeader& header = masterHeader;
+
+        for (const SDRdeletionTranslocationEvent& event : detectDeletionTranslocations(subHeader, numOriginalStrands, header, false))
+        {
+            mixedStrands.insert(event.oldStrandAid);
+            mixedStrands.insert(event.oldStrandBid);
+            claimedGaps.push_back({static_cast<double>(event.deletedOldStrandID), event.deletionStart, event.deletionEnd});
+        }
+
+        for (const SDRdeletionInsertionEvent& event : detectDeletionInsertions(subHeader, numOriginalStrands, false))
+        {
+            mixedStrands.insert(event.recipientOldStrandID);
+        }
+
+        for (int oldStrandID : mixedStrands)
+        {
+            if (pureRecords.count(oldStrandID))					// Already handled by the pure-record pass.
+            {
+                continue;
+            }
+
+            std::vector<SDRfragment> pooled;
+            std::vector<int> pooledRecordIDs;
+
+            for (const SDRdataRecord& record : subHeader.dataRecords)
+            {
+                if (!record.linear || !isRearrangementCandidate(record.newStrandID, numOriginalStrands) || record.fragments.size() < 2)
+                {
+                    continue;
+                }
+
+                for (const SDRfragment& fragment : record.fragments)
+                {
+                    if (fragment.oldStrandID == oldStrandID)
+                    {
+                        pooled.push_back(fragment);
+                        pooledRecordIDs.push_back(record.newStrandID);
+                    }
+                }
+            }
+
+            std::vector<SDRnormalizedFragment> sorted;
+            std::vector<SDRflankGap> gaps;
+
+            if (pooled.empty() || !analyzeFlankingFragments(pooled, fullSizeForStrand(masterHeader, oldStrandID), delTolerance, sorted, gaps))
+            {
+                continue;
+            }
+
+            for (const SDRflankGap& gap : gaps)
+            {
+                bool claimed = false;
+                for (const std::array<double, 3>& claim : claimedGaps)
+                {
+                    claimed = claimed || (static_cast<int>(claim[0]) == oldStrandID && approxEqual(claim[1], gap.start, delTolerance) && approxEqual(claim[2], gap.end, delTolerance));
+                }
+
+                if (claimed || gapTouchesReversedFragment(sorted, gap))
+                {
+                    continue;
+                }
+
+                // The record holding the neighbouring fragment becomes the deletion's "remaining" record.
+                int remainingID = -1;
+                for (std::size_t k = 0; k < pooled.size() && remainingID == -1; ++k)
+                {
+                    const double low = std::min(pooled[k].oldStartPosition, pooled[k].oldEndPosition);
+                    const double high = std::max(pooled[k].oldStartPosition, pooled[k].oldEndPosition);
+
+                    if ((gap.leftIndex >= 0 && approxEqual(high, gap.start, delTolerance)) || (gap.leftIndex < 0 && approxEqual(low, gap.end, delTolerance)))
+                    {
+                        remainingID = pooledRecordIDs[k];
+                    }
+                }
+
+                int excisedStrandID = -1;
+                const SDRgapPartner partner = classifyGapPartner(subHeader, numOriginalStrands, oldStrandID, gap.start, gap.end, delTolerance, {}, excisedStrandID);
+
+                if (partner == SDRgapPartner::Circular || partner == SDRgapPartner::Foreign)
+                {
+                    continue;
+                }
+
+                SDRdeletionEvent event{};
+                event.oldStrandID = oldStrandID;
+                event.deletionStart = gap.start;
+                event.deletionEnd = gap.end;
+                event.remainingStrandID = remainingID;
+                event.excisedStrandID = excisedStrandID;
+
+                deletions.push_back(event);
+            }
         }
     }
 
@@ -1494,7 +1640,7 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
 // are combined onto ONE shared circular new strand instead of each getting its own. A contributing strand may supply more than one of its own gap
 // fragments to that shared strand (oldStrandIDs/remainingStrandIDs then repeat that strand once per matched segment, same as the same-origin
 // case), alongside fragments from other strands.
-inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader)
+inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool applyHierarchy = true)
 {
     std::vector<SDRecDNAevent> ecDNAevents;					// Vector to store ecDNA event information (strand IDs, fragment lengths)
 
@@ -1566,6 +1712,15 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
             continue;
         }
 
+	bool strandHasMultiFragmentLinear = false;				// Decides whether a single-fragment linear record may act as the remaining record (terminal excision).
+	for (const auto& [candidateID, candidateFragments] : groupNewStrand)
+	{
+	    if (candidateFragments.size() >= 2 && candidateFragments.size() == newStrandIDtotalFragments[candidateID] && recordByNewStrand[candidateID]->linear)
+	    {
+		strandHasMultiFragmentLinear = true;
+	    }
+	}
+
 	int remainingStrandID = -1;						// newStrandID for the strand missing an excised fragment
         std::vector<SDRfragment>* flankingFragments = nullptr;			// Vector containing the pointer to the two fragments missing a central excised segment
         bool multipleRemainingRecords = false;
@@ -1582,7 +1737,7 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 
             const SDRdataRecord* record = recordByNewStrand[newStrandID];	// Assign the SDR data record to a given newStrandID
 
-            if (fragments.size() >= 2 && record->linear)			// Necessary format is one entry that is linear with two flanking fragments referencing the same oldStrandID
+            if (record->linear && (fragments.size() >= 2 || (!strandHasMultiFragmentLinear && fragments.size() == 1 && fragments[0].hasCentromere && fragments[0].oldStartPosition <= fragments[0].oldEndPosition)))	// Linear remaining record: 2+ flanking fragments, or (only if the strand has none) a single centromere-bearing fragment left by a terminal excision
             {
 		if (flankingFragments != nullptr)
                 {
@@ -1622,58 +1777,24 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
             continue;
         }
 
-	// Sort flanking fragments in ascending order of start position to find the gap between flanking fragments where the excised circular fragment was originally.
-        std::sort(flankingFragments->begin(), flankingFragments->end(), [](const SDRfragment& a, const SDRfragment& b)
-        {
-            return a.oldStartPosition < b.oldStartPosition;
-        });
-
 	const double ecDNAtolerance = 0.000050;					// tolerance in Mbp difference between contiguous segments <= 50 bp
 
-        std::vector<Gap> gaps;
-
-
-	// ----------------------------------------------------------------------------- //
-	// Determine if the deleted segment is from the center or ends of the chromosome
-	// ----------------------------------------------------------------------------- //
-
-	// A TERMINAL ecDNA excision (touching position 0 or the chromosome's true end) leaves no extra flanking fragment on
-        // that side, same as a terminal long deletion, checking against the chromosome's true declared length generalizes
-        // this beyond just gaps between listed fragments.
-
-	// Checks if deleted fragment is at the start of the chromosome
+	// Gaps (leading, internal and trailing) from NORMALIZED fragments, so an inverted fragment next to the gap doesn't invalidate the shape (an ecDNA gap touching
+	// an inversion is still an ecDNA formation).
         const std::size_t sizeIndex = static_cast<std::size_t>(oldStrandID);
         const double chromosomeFullSizeMbp = (sizeIndex < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[sizeIndex] : 0.0;
 
-        if (chromosomeFullSizeMbp > 0.0 && !approxEqual(flankingFragments->front().oldStartPosition, 0.0, ecDNAtolerance) && flankingFragments->front().oldStartPosition > 0.0)
+        std::vector<Gap> gaps;
         {
-            gaps.push_back({0.0, flankingFragments->front().oldStartPosition});
-        }
+            std::vector<SDRnormalizedFragment> sortedFlanking;
+            std::vector<SDRflankGap> flankGaps;
 
-	// Checks if deleted segment is in the central section of the chromosome.
-	for (std::size_t i = 0; i + 1 < flankingFragments->size(); ++i)		// Loop through all flanking fragments, should be a gap between each
-        {
-            const double gapStart = (*flankingFragments)[i].oldEndPosition;	// Gap start position in Mbp
-            const double gapEnd = (*flankingFragments)[i + 1].oldStartPosition;	// Gap end position in Mbp
-
-            if (gapEnd <= gapStart)						// Overlap/inversion shape - invalid.
+            if (analyzeFlankingFragments(*flankingFragments, chromosomeFullSizeMbp, ecDNAtolerance, sortedFlanking, flankGaps))
             {
-                gaps.clear();
-                break;
-            }
-
-            gaps.push_back({gapStart, gapEnd});					// If valid shape, store the gap positions in the gap vector
-        }
-
-
-	// Checks if deleted segment is at the end of the chromosome
-	if (chromosomeFullSizeMbp > 0.0)
-        {
-            const double lastFragmentEnd = flankingFragments->back().oldEndPosition;
-
-            if (chromosomeFullSizeMbp > lastFragmentEnd && !approxEqual(lastFragmentEnd, chromosomeFullSizeMbp, ecDNAtolerance))
-            {
-                gaps.push_back({lastFragmentEnd, chromosomeFullSizeMbp});
+                for (const SDRflankGap& flankGap : flankGaps)
+                {
+                    gaps.push_back({flankGap.start, flankGap.end});
+                }
             }
         }
 
@@ -1691,83 +1812,60 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
             continue;
         }
 
-
-	// Total fragments across all excised candidates must match the total number of gaps. Every gap must be filled by exactly one
-        // fragment, and every excised fragment must fill exactly one gap.
-        std::size_t totalExcisedFragments = 0;
+	// Each circular candidate is matched on its own against the strand's still-unclaimed gaps. A gap with no circular partner (a lone gap, or one with a linear
+	// excised record) is simply not ecDNA and is left to the deletion detectors, so gaps and circular pieces no longer need to match up one-to-one overall.
+	std::vector<bool> gapClaimed(gaps.size(), false);
 
 	for (const auto& [newStrandID, fragments] : excisedCandidates)
         {
-            totalExcisedFragments += fragments->size();
-        }
+            std::vector<bool> trialClaimed = gapClaimed;			// Rolled back if this candidate fails to match completely.
+            std::vector<std::pair<double, double>> matchedSegments;
+            bool allMatched = true;
 
-        if (totalExcisedFragments != gaps.size())				// Number of excised fragments must equal number of gaps for multiple ecDNA
-        {
-            continue;
-        }
-
-	std::vector<bool> gapClaimed(gaps.size(), false);			// Initialize all the vector as false by default
-        std::vector<SDRecDNAevent> strandEvents;				// Append to strandEvents if gaps match excised fragments and flanking fragments
-        bool allMatched = true;							// All gaps must match to have multiple ecDNA on the same strand
-
-	for (const auto& [newStrandID, fragments] : excisedCandidates)		// Check all excised candidates
-        {
-            std::vector<std::pair<double, double>> matchedSegments;		// Store the start and end positions of the gaps
-
-            for (const SDRfragment& fragment : *fragments)			// Check the flanking fragment start and end positions and compare with excised fragments
+            for (const SDRfragment& fragment : *fragments)
             {
+                const double fragLow = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+                const double fragHigh = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
                 bool matched = false;
 
-                for (std::size_t i = 0; i < gaps.size(); ++i)			// Loop through the number of gaps in a given data record
+                for (std::size_t i = 0; i < gaps.size(); ++i)
                 {
-                    if (gapClaimed[i])						// Already claimed by an earlier excised fragment, don't double-claim the same gap.
+                    if (trialClaimed[i])
                     {
                         continue;
                     }
 
-		    // If the ends of the flanking fragments match the ends of the gaps within tolerance, then this gap has been claimed and matches
-		    // An excised fragment
-		    if (approxEqual(fragment.oldStartPosition, gaps[i].startPos, ecDNAtolerance) &&
-                        approxEqual(fragment.oldEndPosition, gaps[i].endPos, ecDNAtolerance))
+                    if (approxEqual(fragLow, gaps[i].startPos, ecDNAtolerance) && approxEqual(fragHigh, gaps[i].endPos, ecDNAtolerance))
                     {
-                        gapClaimed[i] = true;
+                        trialClaimed[i] = true;
                         matched = true;
                         matchedSegments.push_back({gaps[i].startPos, gaps[i].endPos});
                         break;
                     }
                 }
 
-                if (!matched)							// All gaps must match excised fragments, otherwise this is a more complex mutation, not multiple ecDNA in a single strand.
+                if (!matched)
                 {
                     allMatched = false;
                     break;
                 }
             }
 
-	    if (!allMatched)
+            if (!allMatched || matchedSegments.empty())
             {
-                break;
+                continue;
             }
 
-	    // All checks for mutation shape passed, store the mutation information. Every segment in the same-origin event comes from this 
-	    // one oldStrandID/remainingStrandID, so both vectors just repeat that single value once per matched segment.
-	    SDRecDNAevent event{};
+            gapClaimed = trialClaimed;
+
+            SDRecDNAevent event{};
             event.oldStrandIDs.assign(matchedSegments.size(), oldStrandID);
             event.ecDNAsegments = matchedSegments;
             event.remainingStrandIDs.assign(matchedSegments.size(), remainingStrandID);
             event.excisedStrandID = newStrandID;
 
-            strandEvents.push_back(event);
+            ecDNAevents.push_back(event);
         }
-
-	if (!allMatched)							// Some gap or fragment didn't match cleanly, reject the whole strand's grouping.
-        {
-            continue;
-        }
-
-
-	// Append this ecDNA event to the ecDNAevents vector
-        ecDNAevents.insert(ecDNAevents.end(), strandEvents.begin(), strandEvents.end());
 
     }
 
@@ -1872,6 +1970,28 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
         ecDNAevents.push_back(event);						// Every fragment matched a distinct gap of its own strand, this is a confirmed multi-origin ecDNA event.
     }
 
+
+    if (applyHierarchy)								// ecDNA pieces that belong to a chromothripsis cluster are scored as that chromothripsis, not as separate ecDNA.
+    {
+        std::set<int> chromothripsisStrands;
+
+        for (const SDRchromothripsisEvent& event : detectChromothripsis(subHeader, numOriginalStrands))
+        {
+            chromothripsisStrands.insert(event.involvedStrandIDs.begin(), event.involvedStrandIDs.end());
+        }
+
+        ecDNAevents.erase(std::remove_if(ecDNAevents.begin(), ecDNAevents.end(), [&](const SDRecDNAevent& e)
+        {
+            for (int strandID : e.oldStrandIDs)
+            {
+                if (chromothripsisStrands.count(strandID))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }), ecDNAevents.end());
+    }
 
     return ecDNAevents;
 }
@@ -2128,7 +2248,7 @@ inline bool fragmentsHaveGap(const SDRfragment& fragment1, const SDRfragment& fr
 // that strand is "clean" (no deletion); if BOTH strands are clean, this is a plain balanced translocation, handled elsewhere. If exactly one strand has a genuine gap
 // instead, a third record (single fragment, from the gapped strand, non-reversed, exactly filling the gap) confirms a deletion-translocation.
 
-inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool applyHierarchy = true)
+inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool applyHierarchy)
 {
     std::vector<SDRdeletionTranslocationEvent> delTras;					// Store deletion-translocation events
 
@@ -2151,241 +2271,195 @@ inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(c
         return !byStrand.empty();
     };
 
-    // Checks whether the pooled fragments for one strand (normalized, sorted) tile [0, fullSize] exactly "clean". If there's exactly
-    // ONE gap among them (and the pooled fragments still start at 0 and end at fullSize), returns false with hasGap set, the
-    // deletion candidate for that strand. Any other shape (doesn't start at 0, more than one gap, an overlap) is rejected outright.
-    auto checkStrandTiling = [&](std::vector<SDRfragment> pooled, int strandID, std::vector<double>& breakpointsOut, bool& hasGap, double& gapStart, double& gapEnd) -> bool
+    // A fragment of the pooled strand together with which of the two translocation records (0 = first, 1 = second) it came from.
+    struct PooledFragment
     {
-    	breakpointsOut.clear();
-    	hasGap = false;
+        SDRfragment fragment;
+        int owner;
+    };
 
-    	const std::size_t sizeIndex = static_cast<std::size_t>(strandID);
+    // Finds every gap of ONE strand's pooled fragments (both records together) against the strand's full length. Any number of gaps is allowed: the one
+    // sitting at the translocation junction is the deletion-translocation, every other gap is an independent deletion (reported by detectDeletions()).
+    // Returns false for an invalid shape (unknown size, overlapping fragments).
+    auto analyzeStrand = [&](const std::vector<PooledFragment>& pooled, int strandID, std::vector<SDRnormalizedFragment>& sorted, std::vector<SDRflankGap>& gaps) -> bool
+    {
+        const double fullSize = fullSizeForStrand(masterHeader, strandID);
 
-    	if (sizeIndex >= masterHeader.intactChromosomeSizes.size())			// Skip intact chromosome entries
-    	{
+        if (fullSize <= 0.0)
+        {
             return false;
-    	}
+        }
 
-    	const double fullSize = masterHeader.intactChromosomeSizes[sizeIndex];		// The size of each chromosome in Mbp
+        std::vector<SDRfragment> fragments;
+        for (const PooledFragment& entry : pooled)
+        {
+            fragments.push_back(entry.fragment);
+        }
 
-    	if (fullSize <= 0.0)
-    	{
-            return false;
-    	}
+        return analyzeFlankingFragments(fragments, fullSize, tolerance, sorted, gaps);
+    };
 
-	// Sort the fragments in a given entry in ascending order of fragment start and end position (normalized for inverted strands)
-    	std::sort(pooled.begin(), pooled.end(), [](const SDRfragment& a, const SDRfragment& b)
-    	{
-            return std::min(a.oldStartPosition, a.oldEndPosition) < std::min(b.oldStartPosition, b.oldEndPosition);
-    	});
+    // Which translocation records (bit 0 = first, bit 1 = second) hold a pooled fragment spanning exactly [low, high].
+    auto ownersOf = [&](const std::vector<PooledFragment>& pooled, double low, double high) -> int
+    {
+        int mask = 0;
 
-    	int gapCount = 0;
-
-    	// Leading gap: before the first fragment (a deletion touching the chromosome's very start).
-    	const double firstGapLower = std::min(pooled.front().oldStartPosition, pooled.front().oldEndPosition);
-
-    	if (firstGapLower > 0.0 && !approxEqual(firstGapLower, 0.0, tolerance))
-    	{
-            ++gapCount;
-            hasGap = true;
-            gapStart = 0.0;
-            gapEnd = firstGapLower;
-    	}
-
-    	// Internal gaps: between consecutive fragments.
-    	for (std::size_t k = 0; k + 1 < pooled.size(); ++k)
-    	{
-            const double higherFragmentPos = std::max(pooled[k].oldStartPosition, pooled[k].oldEndPosition);
-            const double lowerFragmentPos = std::min(pooled[k + 1].oldStartPosition, pooled[k + 1].oldEndPosition);
-
-            if (approxEqual(higherFragmentPos, lowerFragmentPos, tolerance))
+        for (const PooledFragment& entry : pooled)
+        {
+            if (approxEqual(std::min(entry.fragment.oldStartPosition, entry.fragment.oldEndPosition), low, tolerance) && approxEqual(std::max(entry.fragment.oldStartPosition, entry.fragment.oldEndPosition), high, tolerance))
             {
-            	breakpointsOut.push_back(higherFragmentPos);
-            	continue;
+                mask |= (1 << entry.owner);
             }
+        }
 
-            if (lowerFragmentPos <= higherFragmentPos)		// Overlap = invalid shape.
-            {
-            	return false;
-            }
-
-            ++gapCount;
-
-            if (gapCount > 1)					// Only one deletion per strand is supported here.
-            {
-            	return false;
-            }
-
-            hasGap = true;
-            gapStart = higherFragmentPos;
-            gapEnd = lowerFragmentPos;
-    	}
-
-    	// Trailing gap: after the last fragment (a deletion touching the chromosome's very end).
-    	const double lastGapHigher = std::max(pooled.back().oldStartPosition, pooled.back().oldEndPosition);
-
-    	if (fullSize > lastGapHigher && !approxEqual(lastGapHigher, fullSize, tolerance))
-    	{
-            ++gapCount;
-
-            if (gapCount > 1)
-            {
-            	return false;
-            }
-
-            hasGap = true;
-            gapStart = lastGapHigher;
-            gapEnd = fullSize;
-    	}
-
-	// true = clean tiling (no gaps anywhere); false (with hasGap set) = the single-deletion candidate shape, wherever the gap fell.
-    	return !hasGap;
+        return mask;
     };
 
 
     for (std::size_t i = 0; i < records.size(); ++i)					// Loop through all SDR data records
     {
-        std::map<int, std::vector<SDRfragment>> firstStrandGroup;			// Look at the first mutated record ID and its fragments
+        std::map<int, std::vector<SDRfragment>> firstStrandGroup;
 
-	// Check if SDR record is a mutation and if it is composed of fragments from exactly two different original strands
+        // The record must be a linear rearrangement made of fragments from exactly two different original strands.
         if (!getRecordStrandFragments(records[i], firstStrandGroup) || firstStrandGroup.size() != 2)
         {
             continue;
         }
 
-
-        for (std::size_t j = i + 1; j < records.size(); ++j)				// Loop through all the following SDR data records after the i-th record
+        for (std::size_t j = i + 1; j < records.size(); ++j)
         {
-            std::map<int, std::vector<SDRfragment>> secondStrandGroup;			// Look at the second mutated record ID and its fragments
+            std::map<int, std::vector<SDRfragment>> secondStrandGroup;
 
-	    // Check if SDR record is a mutation and if it is composed of fragments from exactly two different original strands
             if (!getRecordStrandFragments(records[j], secondStrandGroup) || secondStrandGroup.size() != 2)
             {
                 continue;
             }
 
-            std::vector<int> firstStrands;					// Vector storing the IDs of the fragments making up the first data record
+            std::vector<int> firstStrands;
             for (auto& [strandID, fragments] : firstStrandGroup)
-	    {
-		firstStrands.push_back(strandID);
-	    }
+            {
+                firstStrands.push_back(strandID);
+            }
 
-            std::vector<int> secondStrands;					// Vector storing the IDs of the fragments making up the second data record
+            std::vector<int> secondStrands;
             for (auto& [strandID, fragments] : secondStrandGroup)
-	    {
-		secondStrands.push_back(strandID);
-	    }
+            {
+                secondStrands.push_back(strandID);
+            }
 
-	    // If the old strand IDs in both records are not exaclty the same, this shape is invalid, skip this record
-            if (firstStrands != secondStrands)
+            if (firstStrands != secondStrands)						// Both records must draw on the same two strands.
             {
                 continue;
             }
 
+            const int strandIDs[2] = {firstStrands[0], firstStrands[1]};
 
-            const int strandAid = firstStrands[0];	// Equal to secondStrands[0]
-            const int strandBid = firstStrands[1];	// Equal to secondStrands[1]
+            std::vector<PooledFragment> pooled[2];
+            std::vector<SDRnormalizedFragment> sorted[2];
+            std::vector<SDRflankGap> gaps[2];
+            bool valid = true;
 
-	    // Pooled A stores all fragments with old strand ID 'strandAid' from both data records involved
-            std::vector<SDRfragment> pooledA = firstStrandGroup[strandAid];
-            pooledA.insert(pooledA.end(), secondStrandGroup[strandAid].begin(), secondStrandGroup[strandAid].end());
-	    // Pooled B stores all fragments with old strand ID 'strandBid' from both data records involved
-            std::vector<SDRfragment> pooledB = firstStrandGroup[strandBid];
-            pooledB.insert(pooledB.end(), secondStrandGroup[strandBid].begin(), secondStrandGroup[strandBid].end());
+            for (int s = 0; s < 2; ++s)
+            {
+                for (const SDRfragment& fragment : firstStrandGroup[strandIDs[s]])
+                {
+                    pooled[s].push_back({fragment, 0});
+                }
 
-            std::vector<double> breakpointsA;
-            bool hasGapA = false;
-            double gapStartA = 0.0, gapEndA = 0.0;
-            const bool cleanA = checkStrandTiling(pooledA, strandAid, breakpointsA, hasGapA, gapStartA, gapEndA);
+                for (const SDRfragment& fragment : secondStrandGroup[strandIDs[s]])
+                {
+                    pooled[s].push_back({fragment, 1});
+                }
 
-            std::vector<double> breakpointsB;
-            bool hasGapB = false;
-            double gapStartB = 0.0, gapEndB = 0.0;
-            const bool cleanB = checkStrandTiling(pooledB, strandBid, breakpointsB, hasGapB, gapStartB, gapEndB);
+                valid = valid && analyzeStrand(pooled[s], strandIDs[s], sorted[s], gaps[s]);
+            }
 
-            if (cleanA && cleanB)			// Plain balanced translocation, handled elsewhere.
+            if (!valid)
             {
                 continue;
             }
 
-            double gapStart = 0.0;
-	    double gapEnd = 0.0;
-            int deletedOldStrandID = -1;
+            if (gaps[0].empty() && gaps[1].empty())					// No gap anywhere: plain balanced translocation, handled elsewhere.
+            {
+                continue;
+            }
+
+            // The deletion-translocation gap sits AT the junction: the fragment ending at the gap start and the fragment starting at the gap end come from the two
+            // DIFFERENT translocation records. Terminal gaps have no neighbour on one side, so they never qualify. Gaps inside one record are independent deletions.
+            int junctionStrandIndex = -1;
+            const SDRflankGap* junctionGap = nullptr;
+            int junctionCount = 0;
+
+            for (int s = 0; s < 2; ++s)
+            {
+                for (const SDRflankGap& gap : gaps[s])
+                {
+                    if (gap.leftIndex < 0 || gap.rightIndex < 0)
+                    {
+                        continue;
+                    }
+
+                    const int leftOwners = ownersOf(pooled[s], sorted[s][gap.leftIndex].low, sorted[s][gap.leftIndex].high);
+                    const int rightOwners = ownersOf(pooled[s], sorted[s][gap.rightIndex].low, sorted[s][gap.rightIndex].high);
+
+                    if ((leftOwners == 1 && rightOwners == 2) || (leftOwners == 2 && rightOwners == 1))
+                    {
+                        ++junctionCount;
+                        junctionStrandIndex = s;
+                        junctionGap = &gap;
+                    }
+                }
+            }
+
+            if (junctionCount != 1)							// None: just a translocation with lone deletions elsewhere. Several: too complex for this shape.
+            {
+                continue;
+            }
+
+            const int deletedOldStrandID = strandIDs[junctionStrandIndex];
+            const double gapStart = junctionGap->start;
+            const double gapEnd = junctionGap->end;
+
+            // Breakpoints of the OTHER strand: where its two records' fragments meet.
+            const int otherIndex = 1 - junctionStrandIndex;
             std::vector<double> cleanBreakPositions;
 
-	    // Check to make sure a deletion only exists on one of the two strands (strand A clean, strand B has deletion)
-            if (cleanA && !cleanB && hasGapB)
+            for (std::size_t k = 0; k + 1 < sorted[otherIndex].size(); ++k)
             {
-                gapStart = gapStartB;
-                gapEnd = gapEndB;
-                deletedOldStrandID = strandBid;
-                cleanBreakPositions = breakpointsA;
+                if (!approxEqual(sorted[otherIndex][k].high, sorted[otherIndex][k + 1].low, tolerance))
+                {
+                    continue;
+                }
+
+                const int leftOwners = ownersOf(pooled[otherIndex], sorted[otherIndex][k].low, sorted[otherIndex][k].high);
+                const int rightOwners = ownersOf(pooled[otherIndex], sorted[otherIndex][k + 1].low, sorted[otherIndex][k + 1].high);
+
+                if ((leftOwners == 1 && rightOwners == 2) || (leftOwners == 2 && rightOwners == 1))
+                {
+                    cleanBreakPositions.push_back(sorted[otherIndex][k].high);
+                }
             }
-            else if (cleanB && !cleanA && hasGapA)	// (strand B clean, strand A has deletion)
-            {
-                gapStart = gapStartA;
-                gapEnd = gapEndA;
-                deletedOldStrandID = strandAid;
-                cleanBreakPositions = breakpointsB;
-            }
-            else					// Cannot have a deletion in both strand A and strand B with a translocation, wrong shape
+
+            int excisedStrandID = -1;
+            const SDRgapPartner partner = classifyGapPartner(subHeader, numOriginalStrands, deletedOldStrandID, gapStart, gapEnd, tolerance, {records[i].newStrandID, records[j].newStrandID}, excisedStrandID);
+
+            if (partner == SDRgapPartner::Circular || partner == SDRgapPartner::Foreign)	// ecDNA / more complex: not a deletion-translocation
             {
                 continue;
             }
 
+            SDRdeletionTranslocationEvent event{};
+            event.oldStrandAid = strandIDs[0];
+            event.oldStrandBid = strandIDs[1];
+            event.deletedOldStrandID = deletedOldStrandID;
+            event.cleanBreakPositions = cleanBreakPositions;
+            event.deletionStart = gapStart;
+            event.deletionEnd = gapEnd;
+            event.newStrandID1 = records[i].newStrandID;
+            event.newStrandID2 = records[j].newStrandID;
+            event.excisedStrandID = excisedStrandID;					// -1 when there is no excised record
 
-	    // The gap must sit AT the translocation junction: the fragment ending at the gap start and the fragment starting at the gap end must come from
-	    // the two DIFFERENT translocation records. Terminal gaps have no neighbour on one side and therefore fail here (they would need 4+ breakpoints).
-	    {
-		bool junction = false;
-
-		const std::vector<SDRfragment>& fromFirst = firstStrandGroup[deletedOldStrandID];
-		const std::vector<SDRfragment>& fromSecond = secondStrandGroup[deletedOldStrandID];
-
-		auto touchesJunction = [&](const std::vector<SDRfragment>& leftSide, const std::vector<SDRfragment>& rightSide) -> bool
-		{
-		    for (const SDRfragment& left : leftSide)
-		    {
-			for (const SDRfragment& right : rightSide)
-			{
-			    if (approxEqual(std::max(left.oldStartPosition, left.oldEndPosition), gapStart, tolerance) &&
-				approxEqual(std::min(right.oldStartPosition, right.oldEndPosition), gapEnd, tolerance))
-			    {
-				return true;
-			    }
-			}
-		    }
-		    return false;
-		};
-
-		junction = touchesJunction(fromFirst, fromSecond) || touchesJunction(fromSecond, fromFirst);
-
-		if (!junction)
-		{
-		    continue;
-		}
-	    }
-
-	    int excisedStrandID = -1;
-	    const SDRgapPartner partner = classifyGapPartner(subHeader, numOriginalStrands, deletedOldStrandID, gapStart, gapEnd, tolerance, {records[i].newStrandID, records[j].newStrandID}, excisedStrandID);
-
-	    if (partner == SDRgapPartner::Circular || partner == SDRgapPartner::Foreign)	// ecDNA / more complex: not a deletion-translocation
-	    {
-		continue;
-	    }
-
-	    SDRdeletionTranslocationEvent event{};
-	    event.oldStrandAid = strandAid;
-	    event.oldStrandBid = strandBid;
-	    event.deletedOldStrandID = deletedOldStrandID;
-	    event.cleanBreakPositions = cleanBreakPositions;
-	    event.deletionStart = gapStart;
-	    event.deletionEnd = gapEnd;
-	    event.newStrandID1 = records[i].newStrandID;
-	    event.newStrandID2 = records[j].newStrandID;
-	    event.excisedStrandID = excisedStrandID;					// -1 when there is no excised record
-
-	    delTras.push_back(event);
+            delTras.push_back(event);
         }
     }
 
@@ -2422,7 +2496,7 @@ inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(c
 // and one FOREIGN fragment (from the donor's old strand ID) sitting between them, whose position exactly matches the donor's gap.
 // Unlike a balanced translocation, only ONE segment moves, the donor loses material with nothing coming back, and the recipient's own material is fully retained, just
 // split by the inserted piece.
-inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDRsubHeader& subHeader, int numOriginalStrands, bool applyHierarchy = true)
+inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDRsubHeader& subHeader, int numOriginalStrands, bool applyHierarchy)
 {
     const double tolerance = 0.000050;						// ~50 bp
 
@@ -2470,7 +2544,7 @@ inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDR
 
             for (const SDRdataRecord& recipientRecord : records)		// Look for the matching RECIPIENT record
             {
-                if (recipientRecord.newStrandID == donorRecord.newStrandID || !recipientRecord.linear || !isRearrangementCandidate(recipientRecord.newStrandID, numOriginalStrands) || recipientRecord.fragments.size() != 3)
+                if (recipientRecord.newStrandID == donorRecord.newStrandID || !recipientRecord.linear || !isRearrangementCandidate(recipientRecord.newStrandID, numOriginalStrands) || recipientRecord.fragments.size() < 3)
                 {
                     continue;
                 }
@@ -2486,55 +2560,45 @@ inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDR
                     continue;
                 }
 
-                std::vector<SDRfragment> nativeFragments;
-                const SDRfragment* foreignFragment = nullptr;
+                // The recipient holds ONE foreign fragment (from the donor strand); every other fragment belongs to a single recipient strand. The recipient's own
+                // material may have gaps elsewhere (independent deletions), only the insertion site itself has to be a clean break.
+                int foreignIndex = -1;
                 int recipientOldStrandID = -1;
+                bool valid = true;
 
-                for (const SDRfragment& fragment : recipientRecord.fragments)
+                for (std::size_t k = 0; k < recipientRecord.fragments.size() && valid; ++k)
                 {
+                    const SDRfragment& fragment = recipientRecord.fragments[k];
+
                     if (fragment.oldStrandID == donorOldStrandID)
                     {
-                        if (foreignFragment != nullptr)
-                        {
-                            foreignFragment = nullptr;
-                            break;
-                        }
-
-                        foreignFragment = &fragment;
+                        valid = foreignIndex == -1;
+                        foreignIndex = static_cast<int>(k);
+                    }
+                    else if (recipientOldStrandID == -1)
+                    {
+                        recipientOldStrandID = fragment.oldStrandID;
                     }
                     else
                     {
-                        if (recipientOldStrandID == -1)
-                        {
-                            recipientOldStrandID = fragment.oldStrandID;
-                        }
-                        else if (fragment.oldStrandID != recipientOldStrandID)
-                        {
-                            recipientOldStrandID = -1;
-                            break;
-                        }
-
-                        nativeFragments.push_back(fragment);
+                        valid = fragment.oldStrandID == recipientOldStrandID;
                     }
                 }
 
-                if (foreignFragment == nullptr || recipientOldStrandID == -1 || nativeFragments.size() != 2)
+                if (!valid || foreignIndex <= 0 || foreignIndex + 1 >= static_cast<int>(recipientRecord.fragments.size()) || recipientOldStrandID == -1)
                 {
                     continue;
                 }
 
-                if (!approxEqual(foreignFragment->oldStartPosition, segmentStart, tolerance) || !approxEqual(foreignFragment->oldEndPosition, segmentEnd, tolerance))
+                const SDRfragment& foreignFragment = recipientRecord.fragments[foreignIndex];
+
+                if (!approxEqual(foreignFragment.oldStartPosition, segmentStart, tolerance) || !approxEqual(foreignFragment.oldEndPosition, segmentEnd, tolerance))
                 {
                     continue;
                 }
 
-                SDRfragment lowerNativeFrag = nativeFragments[0];
-                SDRfragment upperNativeFrag = nativeFragments[1];
-
-                if (lowerNativeFrag.oldStartPosition > upperNativeFrag.oldStartPosition)
-                {
-                    std::swap(lowerNativeFrag, upperNativeFrag);
-                }
+                const SDRfragment& lowerNativeFrag = recipientRecord.fragments[foreignIndex - 1];		// Neighbours of the inserted piece, in record order
+                const SDRfragment& upperNativeFrag = recipientRecord.fragments[foreignIndex + 1];
 
                 if (!approxEqual(lowerNativeFrag.oldEndPosition, upperNativeFrag.oldStartPosition, tolerance))	// Recipient's own material must be cleanly split
                 {

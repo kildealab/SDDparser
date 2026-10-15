@@ -141,12 +141,16 @@ private:
     std::vector<const SDRdataRecord*> filterBaselineIfMutated(const std::vector<const SDRdataRecord*>& records, int numOriginalStrands);
 
     // Functions to alter the drawing of certain mutations depending on the specific mutation involved
-    bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);				// For long deletions
-    bool isECDNAshape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);				// For ecDNA mutations
-    bool isDeletionInversionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);							// For deletion-inversion mutations
+//    bool isDeletionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);				// For long deletions
+//    bool isECDNAshape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);				// For ecDNA mutations
+//    bool isDeletionInversionShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);							// For deletion-inversion mutations
     bool isDeletionTranslocationDonorShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);						// For deletion-translocation mutations
-    bool isLoneGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);									// For deletion-insertion mutations
+//    bool isLoneGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID);									// For deletion-insertion mutations
     bool isChromosomeRingShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader);	// For chromosome ring mutations
+
+    // Replaces isDeletionShape, isECDNAshape, isDeletionInversionShape and isLoneGapShape
+    bool analyzeHomeStrandGapShape(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID, const SDRmasterHeader& masterHeader, const SDRdataRecord*& remainingRecord,std::vector<const SDRdataRecord*>& pieceRecords);
+
 
     // Helper functions to stack mutated chromosome segments of different colors on top of the original segments and remove the correct amount of 
     // chromosome if a deletion occurs.
