@@ -765,6 +765,7 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
 inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool collectAccompanyingDeletions = true);
 inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHeader& subHeader, int numOriginalStrands, int minFragmentCount = 10);
 inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool applyHierarchy = true);
+inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool applyHierarchy = true);
 inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDRsubHeader& subHeader, int numOriginalStrands, bool applyHierarchy = true);
 
 // A fragment with its positions normalized so low <= high, remembering whether it was reversed (start > end).
@@ -1084,6 +1085,12 @@ inline std::vector<SDRdeletionEvent> detectDeletions(const SDRsubHeader& subHead
             mixedStrands.insert(event.oldStrandAid);
             mixedStrands.insert(event.oldStrandBid);
             claimedGaps.push_back({static_cast<double>(event.deletedOldStrandID), event.deletionStart, event.deletionEnd});
+        }
+
+        for (const SDRtranslocationEvent& event : detectTranslocations(subHeader, numOriginalStrands, header, false))
+        {
+            mixedStrands.insert(event.oldStrandAid);
+            mixedStrands.insert(event.oldStrandBid);
         }
 
         for (const SDRdeletionInsertionEvent& event : detectDeletionInsertions(subHeader, numOriginalStrands, false))
@@ -1408,7 +1415,7 @@ inline bool fragmentsShareBreakpoint(const SDRfragment& fragment1, const SDRfrag
 // Generalized to detect translocations anywhere on a chromosome (not just at its ends), and to correctly handle an exchanged piece that re-attaches in reversed orientation
 // (which looks locally like an inversion but isn't one, since it spans two strands). Pools every fragment referencing a given old strand across BOTH candidate records,
 // normalizes each to [min, max] (so reversed fragments sort correctly).
-inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool applyHierarchy = true)
+inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool applyHierarchy)
 {
     std::vector<SDRtranslocationEvent> translocations;					// Translocations vector to store translocation events
 
@@ -1438,79 +1445,6 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
         }
 
         return !groupStrand.empty();							// Return true if the groupStrand is non-empty
-    };
-
-
-
-    // Checks that the pooled fragments for one strand (groupStrand), normalized to [min,max] and sorted, span the full size of 
-    // the chromosome [0, fullSize] exactly with no gaps or overlaps. On success, breakpointsOut holds every internal
-    // boundary between consecutive fragments.
-    auto checkChromosomeSpan = [&](std::vector<SDRfragment> pooledFragments, int strandID, std::vector<double>& allBreakpoints) -> bool
-    {
-        const std::size_t sizeIndex = static_cast<std::size_t>(strandID);
-
-        if (sizeIndex >= masterHeader.intactChromosomeSizes.size())			// Check sizes of intact chromosomes to ensure translocations are
-        {										// balanced, will skip all mutated data entries
-            return false;
-        }
-
-        const double fullSize = masterHeader.intactChromosomeSizes[sizeIndex];		// Store the fullSize of a given chromosome
-
-        if (fullSize <= 0.0)
-        {
-            return false;
-	}
-
-
-	struct NormalizedFragment							// Struct to order fragments according to start position
-        {
-            double lowerPos;								// Lower of the two fragment positions (generalized in case fragment inverted)
-            double higherPos;								// Higher of the two fragment positions
-        };
-
-        std::vector<NormalizedFragment> normalizedFragments;				// Vector to hold the rearranged (normalized) fragment order after
-        normalizedFragments.reserve(pooledFragments.size());
-
-	for (const SDRfragment& fragment : pooledFragments)				// Loop through all pooledFragments which group fragments according to old strand ID
-        {
-	    // Store the fragments according to lower fragment position first, higher fragment position second.
-            normalizedFragments.push_back({std::min(fragment.oldStartPosition, fragment.oldEndPosition), std::max(fragment.oldStartPosition, fragment.oldEndPosition)});
-        }
-
-	// Sort normalizedFragments vector fragments in ascending order of position.
-        std::sort(normalizedFragments.begin(), normalizedFragments.end(), [](const NormalizedFragment& a, const NormalizedFragment& b)
-        {
-            return a.lowerPos < b.lowerPos;
-        });
-
-	// Need the first sorted fragment's start position to start at 0
-        if (!approxEqual(normalizedFragments.front().lowerPos, 0.0, balTraTolerance))
-        {
-            return false;
-        }
-
-	// Need the last sorted fragment's end position to end at the fullSize of the chromosome
-	if (!approxEqual(normalizedFragments.back().higherPos, fullSize, balTraTolerance))
-        {
-            return false;
-        }
-
-
-        allBreakpoints.clear();
-
-	// Loop through all normalizedFragments to check if the fragments are contiguous
-        for (std::size_t k = 0; k + 1 < normalizedFragments.size(); ++k)
-        {
-	    // Require neighbouring fragments to be contiguous within balTraTolerance = 10 bp, otherwise not a balanced translocation
-            if (!approxEqual(normalizedFragments[k].higherPos, normalizedFragments[k + 1].lowerPos, balTraTolerance))
-            {
-                return false;
-            }
-	    // Store breakpoint locations using the higher positions of the fragment ends
-            allBreakpoints.push_back(normalizedFragments[k].higherPos);
-        }
-
-        return true;
     };
 
 
@@ -1567,41 +1501,107 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
             }
 
 	    // Once the strand IDs are confirmed to be identical, set strand A and strand B IDs
-	    const int strandAid = firstStrands[0];			// equivalent to secondStrand[0]
-            const int strandBid = firstStrands[1];			// equivalent to secondStrand[1]
+	    const int strandIDs[2] = {firstStrands[0], firstStrands[1]};	// equivalent to secondStrands
 
+	    // Pools every fragment referencing each strand across BOTH records (this is what allows central-segment translocations, not only end swaps), remembering which
+	    // record (0 = first, 1 = second) each fragment came from. The pooled fragments must tile each strand with every JUNCTION between the two records contiguous.
+	    // Gaps INSIDE one record (or at a chromosome end) are independent deletions, not part of the translocation, and are reported by detectDeletions().
+	    std::vector<double> breakpoints[2];
+	    bool valid = true;
 
-	    // Instead of assuming each record has exactly one fragment per strand (which only holds for a clean single-breakpoint swap), 
-	    // this gathers every fragment referencing strand A across both records into one list, and does the same for strand B.
-	    // This is what also allows for central segment balanced translocations, not only chromosome end swapping.
-            std::vector<SDRfragment> pooledFragmentsA = firstStrandGroup[strandAid];
-            pooledFragmentsA.insert(pooledFragmentsA.end(), secondStrandGroup[strandAid].begin(), secondStrandGroup[strandAid].end());
+	    for (int s = 0; s < 2 && valid; ++s)
+	    {
+	        std::vector<SDRfragment> pooled;
+	        std::vector<int> owners;
 
-            std::vector<SDRfragment> pooledFragmentsB = firstStrandGroup[strandBid];
-            pooledFragmentsB.insert(pooledFragmentsB.end(), secondStrandGroup[strandBid].begin(), secondStrandGroup[strandBid].end());
+	        for (const SDRfragment& fragment : firstStrandGroup[strandIDs[s]])
+	        {
+	            pooled.push_back(fragment);
+	            owners.push_back(0);
+	        }
 
-	    // Store the breakpoints on both chromosome A and chromosome B
-            std::vector<double> breakpointsA;
-            std::vector<double> breakpointsB;
+	        for (const SDRfragment& fragment : secondStrandGroup[strandIDs[s]])
+	        {
+	            pooled.push_back(fragment);
+	            owners.push_back(1);
+	        }
 
-	    // If the fragments of a given old strand ID do not span the entire length of the original intact chromosome they came from,
-	    // this is not a balanced translocation
-            if (!checkChromosomeSpan(pooledFragmentsA, strandAid, breakpointsA) || !checkChromosomeSpan(pooledFragmentsB, strandBid, breakpointsB))
-            {
-                continue;
-            }
+	        const double fullSize = fullSizeForStrand(masterHeader, strandIDs[s]);
+	        std::vector<SDRnormalizedFragment> sorted;
+	        std::vector<SDRflankGap> gaps;
 
+	        if (fullSize <= 0.0 || !analyzeFlankingFragments(pooled, fullSize, balTraTolerance, sorted, gaps))
+	        {
+	            valid = false;
+	            break;
+	        }
+
+	        // Which records (bit 0 = first, bit 1 = second) hold a fragment spanning exactly [low, high].
+	        auto ownersOf = [&](double low, double high) -> int
+	        {
+	            int mask = 0;
+
+	            for (std::size_t k = 0; k < pooled.size(); ++k)
+	            {
+	                if (approxEqual(std::min(pooled[k].oldStartPosition, pooled[k].oldEndPosition), low, balTraTolerance) && approxEqual(std::max(pooled[k].oldStartPosition, pooled[k].oldEndPosition), high, balTraTolerance))
+	                {
+	                    mask |= (1 << owners[k]);
+	                }
+	            }
+
+	            return mask;
+	        };
+
+	        for (const SDRflankGap& gap : gaps)						// A gap at the junction (neighbours from the two different records) means material was lost there: deletion-translocation.
+	        {
+	            if (gap.leftIndex < 0 || gap.rightIndex < 0)
+	            {
+	                continue;
+	            }
+
+	            const int leftOwners = ownersOf(sorted[gap.leftIndex].low, sorted[gap.leftIndex].high);
+	            const int rightOwners = ownersOf(sorted[gap.rightIndex].low, sorted[gap.rightIndex].high);
+
+	            if ((leftOwners == 1 && rightOwners == 2) || (leftOwners == 2 && rightOwners == 1))
+	            {
+	                valid = false;
+	            }
+	        }
+
+	        for (std::size_t k = 0; k + 1 < sorted.size(); ++k)				// Contiguous junctions between the two records are the translocation breakpoints.
+	        {
+	            if (!approxEqual(sorted[k].high, sorted[k + 1].low, balTraTolerance))
+	            {
+	                continue;
+	            }
+
+	            const int leftOwners = ownersOf(sorted[k].low, sorted[k].high);
+	            const int rightOwners = ownersOf(sorted[k + 1].low, sorted[k + 1].high);
+
+	            if ((leftOwners == 1 && rightOwners == 2) || (leftOwners == 2 && rightOwners == 1))
+	            {
+	                breakpoints[s].push_back(sorted[k].high);
+	            }
+	        }
+
+	        valid = valid && !breakpoints[s].empty();					// Each strand needs at least one real break where the two records exchange material.
+	    }
+
+	    if (!valid)
+	    {
+	        continue;
+	    }
 
 	    // All balanced translocation mutation checks passed, store the strand and fragment information, as well as the break locations
 	    SDRtranslocationEvent event{};
-            event.oldStrandAid = strandAid;
-            event.oldStrandBid = strandBid;
-            event.breakpointsA = breakpointsA;
-            event.breakpointsB = breakpointsB;
-            event.newStrandID1 = records[i].newStrandID;
-            event.newStrandID2 = records[j].newStrandID;
+	    event.oldStrandAid = strandIDs[0];
+	    event.oldStrandBid = strandIDs[1];
+	    event.breakpointsA = breakpoints[0];
+	    event.breakpointsB = breakpoints[1];
+	    event.newStrandID1 = records[i].newStrandID;
+	    event.newStrandID2 = records[j].newStrandID;
 
-            translocations.push_back(event);
+	    translocations.push_back(event);
 	}
     }
 

@@ -16,7 +16,7 @@
 namespace sddparser
 {
 
-// A linear record that mixes home-strand fragments with foreign (exchanged) ones can still hold lost home-strand material: two ADJACENT home-strand fragments that do not touch
+// A linear record that mixes home-strand fragments with foreign (exchanged) ones can still hold lost material: two ADJACENT fragments of the SAME strand (home or foreign) that do not touch
 // leave a gap (an independent deletion elsewhere on the strand, e.g. next to a deletion-translocation or deletion-insertion). Returns the record's drawn length in Mbp with
 // those gaps included, and sets hasGap when at least one exists. Mirrors the gap rule of buildMixedStrandSegmentsWithGaps().
 static double mixedRecordLengthWithHomeGaps(const SDRdataRecord& record, int homeOldStrandID, bool& hasGap)
@@ -30,12 +30,18 @@ static double mixedRecordLengthWithHomeGaps(const SDRdataRecord& record, int hom
         const SDRfragment& fragment = record.fragments[i];
         totalLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
 
-        if (i == 0 || fragment.oldStrandID != homeOldStrandID || record.fragments[i - 1].oldStrandID != homeOldStrandID)
+        if (i == 0 || fragment.oldStrandID != record.fragments[i - 1].oldStrandID)
         {
             continue;
         }
 
         const SDRfragment& previous = record.fragments[i - 1];
+
+        // Foreign material is only trusted to be in ascending order, a shuffled (chromothripsis-style) foreign pair says nothing about lost material.
+        if (fragment.oldStrandID != homeOldStrandID && (previous.oldStartPosition > previous.oldEndPosition || fragment.oldStartPosition > fragment.oldEndPosition || previous.oldEndPosition > fragment.oldStartPosition))
+        {
+            continue;
+        }
         const double prevLo = std::min(previous.oldStartPosition, previous.oldEndPosition);
         const double prevHi = std::max(previous.oldStartPosition, previous.oldEndPosition);
         const double curLo = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
@@ -1715,7 +1721,7 @@ std::vector<PaintedSegment> Karyogram::buildDeletionRemainingSegments(
 
 // Builds painted segments for a base record that may mix home-strand fragments with foreign (exchanged) ones. Walks fragments in FILE
 // ORDER (not sorted by position, since foreign fragments live in a different chromosome's coordinate system entirely). A white gap is
-// inserted ONLY between two immediately-adjacent HOME-strand fragments that don't touch, real lost material. No gap is ever inserted
+// inserted ONLY between two immediately-adjacent fragments of the SAME strand (home or foreign) that don't touch, real lost material. No gap is ever inserted
 // around a foreign fragment, since that material is still physically present on the molecule, just relocated from elsewhere. Also
 // allows the pure single-strand case (every fragment home) with the same logic, since every adjacent pair is then a home-home check.
 std::vector<PaintedSegment> Karyogram::buildMixedStrandSegmentsWithGaps(
@@ -1754,7 +1760,7 @@ std::vector<PaintedSegment> Karyogram::buildMixedStrandSegmentsWithGaps(
         {
             const SDRfragment& previous = record.fragments[i - 1];
 
-            if (fragment.oldStrandID == homeOldStrandID && previous.oldStrandID == homeOldStrandID)
+            if (fragment.oldStrandID == previous.oldStrandID && (fragment.oldStrandID == homeOldStrandID || (previous.oldStartPosition <= previous.oldEndPosition && fragment.oldStartPosition <= fragment.oldEndPosition && previous.oldEndPosition <= fragment.oldStartPosition)))
             {
                 const double prevLo = std::min(previous.oldStartPosition, previous.oldEndPosition);
                 const double prevHi = std::max(previous.oldStartPosition, previous.oldEndPosition);

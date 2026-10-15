@@ -221,7 +221,12 @@ bool Karyogram::isDeletionTranslocationDonorShape(const std::vector<const SDRdat
         const SDRfragment& previous = recombinedRecord->fragments[i - 1];
         const SDRfragment& current = recombinedRecord->fragments[i];
 
-        if (previous.oldStrandID != homeOldStrandID || current.oldStrandID != homeOldStrandID)
+        if (previous.oldStrandID != current.oldStrandID)
+        {
+            continue;
+        }
+
+        if (current.oldStrandID != homeOldStrandID && (isReversedFragment(previous) || isReversedFragment(current) || previous.oldEndPosition > current.oldStartPosition))	// Foreign material is only trusted in ascending order.
         {
             continue;
         }
