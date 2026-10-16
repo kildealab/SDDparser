@@ -931,11 +931,63 @@ void Karyogram::drawPaintedFragment(			// Function to draw the individual fragme
     // --------------------------------------
     if (drawOutline)
     {
-        traceCapsulePath(); // Rebuild. The fills above consumed the original path
+        // Outline style follows the material: stretches from the second homolog are dashed, everything else solid, so material exchanged between homologs keeps the
+        // outline of the chromosome it came from. White gap segments carry no origin, so they take the style of the nearest preceding real segment (else the next one).
+        std::vector<bool> dashed(segments.size(), false);
+        for (std::size_t i = 0; i < segments.size(); i++)
+        {
+            if (!isWhiteColor(segments[i].color))
+            {
+                dashed[i] = segments[i].isSecondHomolog;
+                continue;
+            }
 
-        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-        cairo_set_line_width(cr, 1.5);
-        cairo_stroke(cr);
+            bool found = false;
+            for (std::size_t j = i; j-- > 0 && !found;)
+            {
+                if (!isWhiteColor(segments[j].color)) { dashed[i] = segments[j].isSecondHomolog; found = true; }
+            }
+            for (std::size_t j = i + 1; j < segments.size() && !found; j++)
+            {
+                if (!isWhiteColor(segments[j].color)) { dashed[i] = segments[j].isSecondHomolog; found = true; }
+            }
+        }
+
+        // Merge consecutive same-style segments into runs, then stroke the whole outline once per run, clipped to that run's vertical span (first/last run reach past the caps).
+        const double dashPattern[2] = { 4.0, 3.0 };
+        const double big = 1.0e6;
+        std::size_t runStart = 0;
+
+        while (runStart < segments.size())
+        {
+            std::size_t runEnd = runStart;
+            while (runEnd + 1 < segments.size() && dashed[runEnd + 1] == dashed[runStart])
+            {
+                runEnd++;
+            }
+
+            const double clipTop = (runStart == 0) ? -big : y + height * segments[runStart].startFraction;
+            const double clipBottom = (runEnd + 1 == segments.size()) ? big : y + height * segments[runEnd].endFraction;
+
+            cairo_save(cr);
+            cairo_rectangle(cr, x - 10.0, clipTop, width + 20.0, clipBottom - clipTop);
+            cairo_clip(cr);
+
+            traceCapsulePath(); // Rebuild. The previous stroke / clip consumed the path
+
+            cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+            cairo_set_line_width(cr, 1.5);
+
+            if (dashed[runStart])
+            {
+                cairo_set_dash(cr, dashPattern, 2, 0.0);
+            }
+
+            cairo_stroke(cr);
+            cairo_restore(cr);
+
+            runStart = runEnd + 1;
+        }
     }
 
 
@@ -1462,6 +1514,7 @@ std::vector<PaintedSegment> Karyogram::buildPaintedSegments(
         segment.startFraction = runningPositionMbp / totalLengthMbp;			// Find start location of fragment as a fraction of the total chromosome length
         segment.endFraction = (runningPositionMbp + fragmentLengthMbp) / totalLengthMbp;// Find end location of fragment as a fraction of the total chromosome length
         segment.color = getColorForOriginalStrand(fragment.oldStrandID, masterHeader);	// Obtain color of the original chromosome from which this fragment originated
+        segment.isSecondHomolog = isSecondHomologStrand(fragment.oldStrandID, masterHeader);
         segment.isReversed = fragment.oldStartPosition > fragment.oldEndPosition;	// If the start location is > the end location of the fragment, an inversion occurred.
         segment.hasCentromere = false;							// By default, segments/fragments do not contain centromeres, unless hasCentromere = true.
 
@@ -1592,6 +1645,7 @@ std::vector<PaintedSegment> Karyogram::buildDeletionRemainingSegments(
         segment.startFraction = lowerPos / originalSizeMbp;
         segment.endFraction = higherPos / originalSizeMbp;
         segment.color = homeColor;
+        segment.isSecondHomolog = isSecondHomologStrand(homeOldStrandID, masterHeader);
         segment.isReversed = fragment.oldStartPosition > fragment.oldEndPosition;
         segment.hasCentromere = false;
 
@@ -1810,6 +1864,7 @@ std::vector<PaintedSegment> Karyogram::buildMixedStrandSegmentsWithGaps(
         segment.startFraction = runningPositionMbp / totalLengthMbp;
         segment.endFraction = (runningPositionMbp + fragmentLengthMbp) / totalLengthMbp;
         segment.color = getColorForOriginalStrand(fragment.oldStrandID, masterHeader);
+        segment.isSecondHomolog = isSecondHomologStrand(fragment.oldStrandID, masterHeader);
         segment.isReversed = fragment.oldStartPosition > fragment.oldEndPosition;
         segment.hasCentromere = false;
 

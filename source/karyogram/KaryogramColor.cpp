@@ -143,4 +143,31 @@ RGB Karyogram::getColorForOriginalStrand(
     return generateChromosomeColor(group, totalColorGroups);
 }
 
+// Homologs share one color; the SECOND copy of each chromosome is told apart by a dashed outline instead (see drawPaintedFragment). X and Y have no partner.
+bool Karyogram::isSecondHomologStrand(int oldStrandID, const SDRmasterHeader& masterHeader)
+{
+    const std::vector<double>& sizes = masterHeader.intactChromosomeSizes;
+    const int chromosomeCount = sizes.empty() ? 0 : static_cast<int>(sizes[0]);
+
+    if (chromosomeCount < 2)
+    {
+        return false;
+    }
+
+    const ChromosomeLayout layout = determineChromosomeLayout(sizes);
+    const int homologousPairs = (layout != ChromosomeLayout::NON_HOMOLOGOUS) ? (chromosomeCount - 2) / 2 : 0;
+
+    if (homologousPairs <= 0 || oldStrandID == chromosomeCount - 1 || oldStrandID == chromosomeCount || oldStrandID < 1)	// No pairs, or Y / X
+    {
+        return false;
+    }
+
+    if (layout == ChromosomeLayout::SPLIT_HOMOLOGS)
+    {
+        return oldStrandID > homologousPairs;				// Strands 1..N first copies, N+1..2N second copies
+    }
+
+    return oldStrandID % 2 == 0;						// ADJACENT_HOMOLOGS: 1,3,5... first copy, 2,4,6... second copy
+}
+
 } // namespace sddparser

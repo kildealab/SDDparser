@@ -443,7 +443,7 @@ bool Karyogram::generateSDDkaryogram(                                         //
                 drawChromosome(cr, leftChromPosX, posY, firstHeight, chromosomeWidth, chromosomeColor, firstCentromereStart, firstCentromereEnd);
 
                 // Draw second homolog at the desired location with the desired dimensions
-                drawChromosome(cr, rightChromPosX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
+                drawChromosome(cr, rightChromPosX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd, true);
 
                 // Store actual SDD chromosome IDs and their corresponding dimensions and locations --> for damage marker drawings later on.
                 chromosomeGeometry.push_back({static_cast<int>(firstIndex), 1, leftChromPosX, posY, firstHeight});
@@ -474,8 +474,8 @@ bool Karyogram::generateSDDkaryogram(                                         //
 
 
                 // Draw homolog 2 chromatids at the desired locations with the desired dimensions
-                drawChromosome(cr, rightChromatid1PosX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
-                drawChromosome(cr, rightChromatid2PosX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd);
+                drawChromosome(cr, rightChromatid1PosX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd, true);
+                drawChromosome(cr, rightChromatid2PosX, posY, secondHeight, chromosomeWidth, chromosomeColor, secondCentromereStart, secondCentromereEnd, true);
 
                 // Store actual SDD chromosome IDs with their corresponding dimensions and locations --> for damage marker drawings later on
                 chromosomeGeometry.push_back({static_cast<int>(firstIndex), 1, leftChromatid1PosX, posY, firstHeight});
@@ -791,7 +791,8 @@ void Karyogram::drawChromosome(
     double width,                                       // Chromosome width in pixels
     RGB color,                                          // Associated chromosome color
     double centromereStart,                             // Centromere start location as fraction of the chromosome length from p arm to q arm
-    double centromereEnd)                               // Centromere end location as fraction of the chromosome length from p arm to q arm.
+    double centromereEnd,                               // Centromere end location as fraction of the chromosome length from p arm to q arm.
+    bool dashedOutline)                                 // Second homologs get a dashed outline so they can be told apart from the first homolog (same color).
 {
 
     // --------------------------------------
@@ -915,7 +916,18 @@ void Karyogram::drawChromosome(
 
     cairo_set_line_width(cr, 1.5);
 
+    if (dashedOutline)
+    {
+        const double dashPattern[2] = { 4.0, 3.0 };
+        cairo_set_dash(cr, dashPattern, 2, 0.0);
+    }
+
     cairo_stroke(cr);
+
+    if (dashedOutline)
+    {
+        cairo_set_dash(cr, nullptr, 0, 0.0);                  // Back to solid for everything drawn afterwards
+    }
 
 
     // -----------------------------------------
