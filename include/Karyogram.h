@@ -105,7 +105,7 @@ private:
     void drawDoubleStrandBreakMarker(cairo_t* cr, double x, double y, double chromosomeWidth);
     void drawSingleStrandBreakMarker(cairo_t* cr, double x, double y, double markerLength);
     // Draw symbol for inverted segments arising from mutations in the SDR file
-    void drawInversionChevron(cairo_t* cr, double centerX, double centerY, double size);
+    void drawInversionChevron(cairo_t* cr, double centerX, double topY, double bottomY, double width);
     // Draw symbol for ecDNA mutated segments found in SDR file.
     void drawCircularFragment(cairo_t* cr, double centerX, double centerY, double diameter, RGB color);
     // Draw ecDNA mutated segment combined from multiple foreign strands in SDR file

@@ -843,7 +843,7 @@ void Karyogram::drawPaintedFragment(			// Function to draw the individual fragme
         return std::fabs(color.r - 1.0) < tolerance && std::fabs(color.g - 1.0) < tolerance && std::fabs(color.b - 1.0) < tolerance;
     };
 
-    const double minWhiteGapHeight = 5.0;	// Keep a deletion's white gap from shrinking below a visible size, however small the actual deleted region is.
+    const double minWhiteGapHeight = 1.0;	// Keep a deletion's white gap from shrinking below a visible size, however small the actual deleted region is.
 
     cairo_save(cr);
     cairo_clip_preserve(cr);
@@ -856,15 +856,6 @@ void Karyogram::drawPaintedFragment(			// Function to draw the individual fragme
         cairo_set_source_rgb(cr, segment.color.r, segment.color.g, segment.color.b);
         cairo_rectangle(cr, x, segmentTop, width, segmentBottom - segmentTop);
         cairo_fill(cr);
-
-        if (segment.isReversed)
-        {
-            const double segmentHeight = segmentBottom - segmentTop;
-            const double chevronSize = std::min(width * 0.5, segmentHeight);
-            const double chevronCenterY = (segmentTop + segmentBottom) / 2.0;
-
-            drawInversionChevron(cr, x + width / 2.0, chevronCenterY, chevronSize);
-        }
     }
 
     // A white (deletion-gap) segment can shrink to a fraction of a pixel for a tiny deletion and effectively disappear. Re-painting it, re-centered on
@@ -895,20 +886,34 @@ void Karyogram::drawPaintedFragment(			// Function to draw the individual fragme
         cairo_fill(cr);
     }
 
+    // Inversion chevrons, drawn in their own pass after every fill (and white-gap padding) so no neighbouring segment can paint over them. Each chevron is black and spans the
+    // full height of its inverted segment and the full width of the chromosome, so a short inversion gives a flatter and flatter arrow, ending as a single horizontal line.
+    // Still inside the capsule clip, so the arm ends are trimmed to the chromosome outline.
+    for (const PaintedSegment& segment : segments)
+    {
+        if (!segment.isReversed || isWhiteColor(segment.color))
+        {
+            continue;
+        }
+
+        drawInversionChevron(cr, x + width / 2.0, y + height * segment.startFraction, y + height * segment.endFraction, width);
+    }
+
     cairo_restore(cr);
 
 
     // ------------------------------------------------
-    // Segment boundaries and reversed segment markers
+    // Segment boundaries
     // ------------------------------------------------
 
     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     cairo_set_line_width(cr, 1.0);
 
-    // Skip boundary lines touching a white (deletion gap) segment, a thin gap with black lines on both edges reads as solid black instead of white.
+    // Skip boundary lines touching a white (deletion gap) segment, a thin gap with black lines on both edges reads as solid black instead of white. Inverted segments are
+    // marked by their chevron alone, no outlining lines.
     for (std::size_t i = 0; i + 1 < segments.size(); i++)
     {
-        if (isWhiteColor(segments[i].color) || isWhiteColor(segments[i + 1].color))
+        if (isWhiteColor(segments[i].color) || isWhiteColor(segments[i + 1].color) || segments[i].isReversed || segments[i + 1].isReversed)
         {
             continue;
         }
@@ -918,30 +923,6 @@ void Karyogram::drawPaintedFragment(			// Function to draw the individual fragme
         cairo_move_to(cr, x, boundaryY);
         cairo_line_to(cr, x + width, boundaryY);
         cairo_stroke(cr);
-    }
-
-
-
-    cairo_set_line_width(cr, 2.0);
-
-    for (const PaintedSegment& segment : segments)
-    {
-        if (!segment.isReversed)						// Skip non-reversed segments, only reversed ones get the boundary-line markers below
-        {
-            continue;
-        }
-
-        const double segmentTop = y + height * segment.startFraction;		// Determine the extent of the new fragment to be drawn
-        const double segmentBottom = y + height * segment.endFraction;
-
-        cairo_move_to(cr, x, segmentTop);
-        cairo_line_to(cr, x + width, segmentTop);
-        cairo_stroke(cr);
-
-        cairo_move_to(cr, x, segmentBottom);
-        cairo_line_to(cr, x + width, segmentBottom);
-        cairo_stroke(cr);
-
     }
 
 
@@ -1892,27 +1873,32 @@ std::vector<PaintedSegment> Karyogram::buildMixedStrandSegmentsWithGaps(
 
 
 
-void Karyogram::drawInversionChevron(					// Function to draw a marker to denote a balanced inversion occurred, at the center of the inverted fragment
+void Karyogram::drawInversionChevron(					// Function to draw a marker to denote a balanced inversion occurred, spanning the inverted fragment
     cairo_t* cr,
-    double centerX, 							// X position of the marker in pixels
-    double centerY, 							// Y position of the marker in pixels
-    double size)							// Size of the chevron adjusted for the size of the balanced inversion
+    double centerX, 							// X position of the chevron's apex (the chromosome's horizontal center) in pixels
+    double topY, 							// Top of the inverted fragment in pixels, where the apex sits
+    double bottomY, 							// Bottom of the inverted fragment in pixels, where the two arms end
+    double width)							// Width of the chromosome in pixels, the arms reach its left and right edges
 {
+    // Black chevron "^": apex at the top-centre of the segment, arms to the bottom-left and bottom-right corners. Its height is the segment's own height, so the
+    // smaller the inversion the flatter the arrow gets; a segment of ~0 height collapses to one horizontal line the width of the chromosome.
+    const double lineWidth = 1.5;
+    const double halfWidth = width / 2.0;
+
     cairo_save(cr);
 
-    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0); 				// White, for contrast against any segment color
-    cairo_set_line_width(cr, 1.5);
-    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+    cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+    cairo_set_line_width(cr, lineWidth);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);			// Round join keeps the apex tidy as the arrow flattens, no long miter spike
 
-    cairo_move_to(cr, centerX - size / 2.0, centerY + size / 2.0);
-    cairo_line_to(cr, centerX, centerY - size / 2.0);
-    cairo_line_to(cr, centerX + size / 2.0, centerY + size / 2.0);
-
+    cairo_new_path(cr);
+    cairo_move_to(cr, centerX - halfWidth, bottomY);
+    cairo_line_to(cr, centerX, topY);
+    cairo_line_to(cr, centerX + halfWidth, bottomY);
     cairo_stroke(cr);
 
     cairo_restore(cr);
-
 }
 
 

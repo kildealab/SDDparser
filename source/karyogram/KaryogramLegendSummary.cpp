@@ -551,7 +551,7 @@ void Karyogram::drawSDRlegend(cairo_t* cr, double legendY)
     cairo_set_line_width(cr, 1.0);
     cairo_stroke(cr);
 
-    drawInversionChevron(cr, inversionX, legendCenterY, inversionSize * 0.6);
+    drawInversionChevron(cr, inversionX, legendCenterY - inversionSize / 2.0, legendCenterY + inversionSize / 2.0, inversionSize);	// Black chevron spanning the whole square, like on the karyogram
 
     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     cairo_move_to(cr, inversionX + 15.0, textBaseline);
