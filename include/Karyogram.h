@@ -58,6 +58,7 @@ class Karyogram
 {
 public:
 
+// Original: writes the PNG to a file
     bool generateSDDkaryogram(				// Function that generates the overall Karyogram structure and calls individual functions to draw each chromosome based on sizes.
         const std::vector<double>& chromosomeSizes,	// Use to scale the chromosome heights and convert to number of pixels on the Karyogram.
 	const std::vector<double>& cellCyclePhase, 	// Look at SDD header 'Cell cycle phase' to determine if chromosomes should be replicated or not in the final karyogram.
@@ -68,6 +69,7 @@ public:
         const std::string& outputFilename		// Specify generic output file name combining the input file prefix with the suffix "_karyogram.png"
     );
 
+
     bool generateSDRkaryogram(				// Function to generate the karyogram of the rearrangements in an SDR file
 	const SDRmasterHeader& masterHeader,		// One master header per SDR file containing most importantly the sizes of the original chromosomes before mutations
 	const SDRsubHeader& subHeader,			// One subheader per cell in the SDR file, iterate through each subheader for each cell
@@ -76,7 +78,35 @@ public:
     );
 
 
+
+
+// In-memory overloads: PNGs are returned in pngBytes instead of being written to disk (used by web viewer)
+    bool generateSDDkaryogram(				// Function that generates the overall Karyogram structure and calls individual functions to draw each chromosome based on sizes.
+        const std::vector<double>& chromosomeSizes,	// Use to scale the chromosome heights and convert to number of pixels on the Karyogram.
+	const std::vector<double>& cellCyclePhase, 	// Look at SDD header 'Cell cycle phase' to determine if chromosomes should be replicated or not in the final karyogram.
+	const std::vector<double>& doseOrFluence,	// Look at SDD header for dose or fluence to be summarized in Karyogram.
+	const std::vector<int>& incidentParticles,	// Look at SDD header for 'Incident Particles' to be summarized in karyogram.
+	const std::vector<Exposure>& exposures,		// Loop through Exposures object to label chromosome IDs onto the karyogram
+	bool humanGenome,				// Check if the user passed the argument --karyogram human|other. if humanGenome = true, adjust the centromere locations. If humanGenome = false, use generic centromere locations.
+	std::vector<unsigned char>& pngBytes		// Specify the number of bytes to store to open the image in a web browser, do not download image by default.
+    );
+
+    bool generateSDRkaryogram(				// Function to generate the karyogram of the rearrangements in an SDR file
+	const SDRmasterHeader& masterHeader,		// One master header per SDR file containing most importantly the sizes of the original chromosomes before mutations
+	const SDRsubHeader& subHeader,			// One subheader per cell in the SDR file, iterate through each subheader for each cell
+	bool humanGenome,				// Check if user specified human genome to adjust centromere positions on karyogram
+	std::vector<unsigned char>& pngBytes		// Specify the number of bytes to store to open the image in a web browser, do not download image by default.
+    );
+
+
 private:
+
+    // Shared drawing code behind both overloads. Writes to outputFilename when pngBytes is null, otherwise encodes the PNG into pngBytes.
+    bool renderSDDkaryogram(const std::vector<double>& chromosomeSizes, const std::vector<double>& cellCyclePhase, const std::vector<double>& doseOrFluence, const std::vector<int>& incidentParticles, const std::vector<Exposure>& exposures, bool humanGenome, const std::string& outputFilename, std::vector<unsigned char>* pngBytes);
+    bool renderSDRkaryogram(const SDRmasterHeader& masterHeader, const SDRsubHeader& subHeader, bool humanGenome, const std::string& outputFilename, std::vector<unsigned char>* pngBytes);
+
+    // Writes the finished surface either to a PNG file or into an in-memory PNG buffer.
+    bool writeKaryogramPNG(cairo_surface_t* surface, const std::string& outputFilename, std::vector<unsigned char>* pngBytes);
 
     // Function to generate chromosome colors depending on the number of chromosomes, and to choose colors that are different enough between successive chromosomes.
     RGB generateChromosomeColor(int chromosomeNumber, int totalChromosomes);

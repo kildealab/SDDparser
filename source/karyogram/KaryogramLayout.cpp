@@ -310,4 +310,56 @@ bool Karyogram::getCentromereForOriginalStrand(
 }
 
 
+
+
+
+
+
+
+
+
+
+
+// ---------------------------------------------------------------- //
+// Functions to help open karyogram pngs in web browser
+// ---------------------------------------------------------------- //
+
+// Cairo stream callback: appends each chunk of encoded PNG data to the std::vector passed as closure.
+static cairo_status_t appendPNGchunk(void* closure, const unsigned char* data, unsigned int length)
+{
+    std::vector<unsigned char>* buffer = static_cast<std::vector<unsigned char>*>(closure);
+    buffer->insert(buffer->end(), data, data + length);
+    return CAIRO_STATUS_SUCCESS;
+}
+
+
+
+
+// Write the finished karyogram to a PNG file, or into memory if pngBytes is given.
+bool Karyogram::writeKaryogramPNG(cairo_surface_t* surface, const std::string& outputFilename, std::vector<unsigned char>* pngBytes)
+{
+    cairo_status_t status;
+
+    if (pngBytes)
+    {
+        pngBytes->clear();
+        status = cairo_surface_write_to_png_stream(surface, appendPNGchunk, pngBytes);
+    }
+    else
+    {
+        status = cairo_surface_write_to_png(surface, outputFilename.c_str());
+    }
+
+    if (status != CAIRO_STATUS_SUCCESS)
+    {
+        std::cerr << "ERROR: Failed to write karyogram image: " << cairo_status_to_string(status) << "\n";
+        return false;
+    }
+
+    return true;
+
+}
+
+
+
 } // namespace sddparser

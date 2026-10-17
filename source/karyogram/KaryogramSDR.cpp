@@ -62,6 +62,12 @@ static double mixedRecordLengthWithHomeGaps(const SDRdataRecord& record, int hom
     return totalLengthMbp;
 }
 
+
+
+
+
+
+
 static bool isSingleMixedRecordWithHomeGap(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID)
 {
     if (records.size() != 1 || !records[0]->linear)
@@ -83,11 +89,55 @@ static bool isSingleMixedRecordWithHomeGap(const std::vector<const SDRdataRecord
 
 
 
-bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the rearranged chromosome segments on the karyogram
+
+
+
+
+
+
+
+
+
+// Writes the SDR karyogram to a PNG file.
+bool Karyogram::generateSDRkaryogram(
+    const SDRmasterHeader& masterHeader,
+    const SDRsubHeader& subHeader,
+    bool humanGenome,
+    const std::string& outputFilename)
+{
+    return renderSDRkaryogram(masterHeader, subHeader, humanGenome, outputFilename, nullptr);
+}
+
+
+
+// Returns the SDR karyogram as PNG bytes in memory.
+bool Karyogram::generateSDRkaryogram(
+    const SDRmasterHeader& masterHeader,
+    const SDRsubHeader& subHeader,
+    bool humanGenome,
+    std::vector<unsigned char>& pngBytes)
+{
+    return renderSDRkaryogram(masterHeader, subHeader, humanGenome, std::string(), &pngBytes);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the rearranged chromosome segments on the karyogram
     const SDRmasterHeader& masterHeader,				// Access SDR master header for intact chromosome sizes
     const SDRsubHeader& subHeader, 					// Access SDR subheader for cell-by-cell damage/misrepair data
     bool humanGenome,							// Check if human genome specified
-    const std::string& outputFilename)					// Output file name of the karyogram, concatenated with the start of the SDR filename.
+    const std::string& outputFilename,					// Output file name of the karyogram, concatenated with the start of the SDR filename (when pngBytes is null).
+    std::vector<unsigned char>* pngBytes)				// If non-null, receives the PNG in memory instead
 {
 
     // Check for absent data in SDR headers/subHeaders
@@ -703,11 +753,11 @@ bool Karyogram::generateSDRkaryogram(					// Function to draw a karyogram of the
     const double legendY = imgHeight - legendBottomMargin - legendHeight;
     drawSDRlegend(cr, legendY);
 
-    cairo_surface_write_to_png(surface, outputFilename.c_str());
+    const bool written = writeKaryogramPNG(surface, outputFilename, pngBytes);
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 
-    return true;
+    return written;
 }
 
 
@@ -2365,7 +2415,7 @@ double Karyogram::computeMaxBarHeight(
 
 
 // Function to determine how wide a slot's drawing will actually be, used both by drawStackedMutations() itself (to position things)
-// and by generateSDRkaryogram() (to space homologs apart correctly). Returns the total width; outColumn2Width is set to the second
+// and by renderSDRkaryogram() (to space homologs apart correctly). Returns the total width; outColumn2Width is set to the second
 // column's width for deletion-like/ecDNA shapes (chromosomeWidth otherwise, unused by the caller in that case).
 double Karyogram::computeSlotWidth(
     const std::vector<const SDRdataRecord*>& records,

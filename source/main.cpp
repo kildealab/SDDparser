@@ -1,10 +1,13 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <vector>
+#include <utility>
 
 #include "SDDparser.h"
 #include "SDRparser.h"
 #include "Karyogram.h"
+#include "KaryogramViewer.h"
 
 using namespace sddparser;
 
@@ -16,17 +19,21 @@ namespace
             << "SDDparser\n\n"
             << "Usage:\n"
             << "  ./SDDparser <SDD file>\n"
-            << "  ./SDDparser <SDD file> --karyogram human|other\n"
+	    << "  ./SDDparser <SDD file> --karyogram human|other [--save-png]\n"
             << "  ./SDDparser -sdr <SDR file>\n"
-            << "  ./SDDparser -sdr <SDR file> --karyogram human|other\n\n"
+	    << "  ./SDDparser -sdr <SDR file> --karyogram human|other [--save-png]\n\n"
+	    << "Karyogram open in a web viewer in your browser. Add --save-png to \n"
+	    << "write them as PNG files next to the input file instead.\n\n"
             << "Examples:\n"
             << "  ./SDDparser exampleSDD.txt\n"
             << "  ./SDDparser exampleSDD.txt --karyogram human\n"
-            << "  ./SDDparser -sdr exampleSDR.txt\n"
-            << "  ./SDDparser -sdr exampleSDR.txt --karyogram human\n";
+            << "  ./SDDparser exampleSDD.txt --karyogram human --save-png\n"
+	    << "  ./SDDparser -sdr exampleSDR.txt\n"
+            << "  ./SDDparser -sdr exampleSDR.txt --karyogram human\n"
+	    << "  ./SDDparser -sdr exampleSDR.txt --karyogram human --save-png\n";
     }
 
-    // Parses an optional "--karyogram human|other" pair starting at
+    // Parses an optional "--karyogram human|other [--save-png]" option starting at
     // argv[startIndex]. If nothing follows the preceding arguments,
     // drawKaryogram is left false and this returns true (nothing to do).
     // Prints an error and returns false on any malformed input.
@@ -35,9 +42,11 @@ namespace
 	char* argv[], 						// The command line argument at a particular index
 	int startIndex, 					// Variable to track the different possible commands
 	bool& drawKaryogram, 					// Check if draw karyogram was desired by the user
-	std::string& genomeType)				// Check if genome specified was human or other
+	std::string& genomeType,				// Check if genome specified was human or other
+	bool& savePNG)						// Check if the user wants PNG files instead of the web viewer
     {
 	drawKaryogram = false;
+	savePNG = false;
         genomeType.clear();
 
         if (argc <= startIndex)
@@ -72,13 +81,85 @@ namespace
 
         if (argc > startIndex + 2)
         {
-            std::cerr << "ERROR: Too many command-line arguments.\n";
-            return false;
+	    if (std::string(argv[startIndex + 2]) != "--save-png")
+            {
+                std::cerr << "ERROR: Unknown command-line option: "
+                          << argv[startIndex + 2] << '\n';
+                return false;
+            }
+
+            savePNG = true;
+
+        }
+
+	if (argc > startIndex + 3)
+        {
+             std::cerr << "ERROR: Too many command-line arguments.\n";
+             return false;
         }
 
 	return true;
     }
-}
+
+
+
+
+
+
+    // Writes all karyograms of one input file into a single HTML viewer in the system temp folder and opens it in the browser.
+    bool showInWebViewer(
+	const std::vector<KaryogramImage>& images,		// Karyograms generated in memory, one per cell
+	const std::filesystem::path& inputPath,			// Input SDD/SDR file, used to name the viewer
+	const std::string& genomeType)				// human or other, kept in the file name like the PNG outputs
+    {
+	const bool browserAvailable = canOpenBrowser();
+
+	// Where to write the viewer:
+        // - With a browser, use the system temp folder so the input folder is not cluttered (the user can still
+        //   download PNGs from the viewer).
+        // - Without a browser (SSH, HPC cluster, container), the temp folder is on a remote machine the user cannot
+        //   easily browse, so write the viewer next to the input file instead, where it is easy to copy back (scp).
+
+        std::filesystem::path viewerFolder = inputPath.parent_path();
+
+        if (browserAvailable)
+        {
+            std::error_code error;
+            const std::filesystem::path tempFolder = std::filesystem::temp_directory_path(error);
+
+            if (!error)						// Keep the input folder if the system has no usable temp folder
+            {
+                viewerFolder = tempFolder;
+            }
+        }
+
+        const std::filesystem::path viewerPath = viewerFolder /
+            (inputPath.stem().string() + "_karyograms_" + genomeType + ".html");
+
+        if (!writeKaryogramViewer(images, inputPath.filename().string(), viewerPath))
+        {
+            return false;
+        }
+
+        // Always print the path first, so the user can open the viewer by hand whatever happens next.
+        std::cout << "Karyogram viewer written to: " << viewerPath << "\n";
+
+        if (!browserAvailable)
+        {
+            std::cout << "No browser can be opened from this session (for example over SSH).\n"
+                      << "Copy the file above to your own computer and open it there, or rerun with --save-png to get PNG files.\n";
+        }
+        else if (!openInBrowser(viewerPath))
+        {
+            std::cout << "Could not open a browser automatically, open the file above in your browser.\n";
+        }
+
+        return true;
+    }
+
+
+
+} // namespace
 
 
 
@@ -98,8 +179,8 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 
     if(argc < 2)							// Must have at least two command-line arguments, the program and the SDD file path.
     {
-	std::cerr << "Usage: ./SDDparser <SDD file> [--karyogram human|other]\n"
-		   << "       ./SDDparser -sdr <SDR file> [--karyogram human|other]\n";
+	std::cerr << "Usage: ./SDDparser <SDD file> [--karyogram human|other [--save-png]]\n"
+		  << "       ./SDDparser -sdr <SDR file> [--karyogram human|other [--save-png]]\n";
 	return 1;
     }
 
@@ -128,9 +209,10 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
         std::string filename = argv[2];
 
         bool drawKaryogram = false;
+	bool savePNG = false;
         std::string genomeType;
 
-	if (!parseKaryogramOption(argc, argv, 3, drawKaryogram, genomeType))
+	if (!parseKaryogramOption(argc, argv, 3, drawKaryogram, genomeType, savePNG))
         {
             return 1;
         }
@@ -166,12 +248,31 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 
 	    bool hasFailed = false;
 
+	    std::vector<KaryogramImage> viewerImages;				// Karyograms kept in memory for the web viewer (unless --save-png)
+
 	    for (const SDRsubHeader& subHeader : parser.getSubHeaders())	// Draw one karyogram per cell subheader present in SDR file
 	    {
 		std::filesystem::path cellKaryogramPath =			// Modify name of output karyogram
             		inputPath.parent_path() /
             		(inputPath.stem().string() + "_cell" + std::to_string(subHeader.cellID) +
              		"_karyogram_" + genomeType + ".png");
+
+		if (!savePNG)							// Default: generate in memory and show in the web viewer
+		{
+		    KaryogramImage image;
+		    image.label = "Cell " + std::to_string(subHeader.cellID);
+		    image.filename = cellKaryogramPath.filename().string();
+
+		    if (!karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, humanGenome, image.pngBytes))
+		    {
+			std::cerr << "Failed to generate karyogram for cell " << subHeader.cellID << ".\n";
+			hasFailed = true;
+			continue;
+		    }
+
+		    viewerImages.push_back(std::move(image));
+		    continue;
+		}
 
 		// Check if karyogram generated correctly
 		if (!karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, humanGenome, cellKaryogramPath.string()))
@@ -184,6 +285,12 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 	        std::cout << "Karyogram generated successfully: " << cellKaryogramPath << "\n";
 
 	    }
+
+	    if (!savePNG && !viewerImages.empty() && !showInWebViewer(viewerImages, inputPath, genomeType))
+	    {
+		hasFailed = true;
+	    }
+
 
 	    if (hasFailed)
 	    {
@@ -203,9 +310,10 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
     std::string filename = firstArg;
 
     bool drawKaryogram = false;
+    bool savePNG = false;
     std::string genomeType;
 
-    if (!parseKaryogramOption(argc, argv, 2, drawKaryogram, genomeType))
+    if (!parseKaryogramOption(argc, argv, 2, drawKaryogram, genomeType, savePNG))
     {
 	return 1;
     }
@@ -260,6 +368,8 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
         Karyogram karyogram;						// Instantiate the Karyogram object called karyogram.
 
     	bool hasFailed = false;						// default check is false is karyogram drawn correctly.
+    	std::vector<KaryogramImage> viewerImages;			// Karyograms kept in memory for the web viewer (unless --save-png)
+
 
     	for (const Exposure& exposure : parser.getExposures())		// Draw a karyogram for each individual cell exposure in a given SDD file
     	{
@@ -272,6 +382,34 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
             (inputPath.stem().string() + "_cell" + 
 	    std::to_string(exposure.exposureID - 1) + "_karyogram_" + 
 	    genomeType + ".png");
+
+    	    if (!savePNG)							// Default: generate in memory and show in the web viewer
+    	    {
+    	        KaryogramImage image;
+    	        image.label = "Cell " + std::to_string(exposure.exposureID - 1);
+    	        image.filename = karyogramPath.filename().string();
+
+    	        if (!karyogram.generateSDDkaryogram(
+            	    header.chromosome_sizes,
+            	    header.cell_cycle_phase,
+           	    header.dose_or_fluence,
+            	    header.incident_particles,
+            	    singleExposure,
+            	    humanGenome,
+            	    image.pngBytes))
+    	        {
+            	    std::cerr << "Failed to generate karyogram for cell "
+                      << exposure.exposureID << ".\n";
+
+            	    hasFailed = true;
+            	    continue;
+    	        }
+
+    	        viewerImages.push_back(std::move(image));
+    	        continue;
+    	    }
+
+
 
     	    if (!karyogram.generateSDDkaryogram(				// Check if generateSDDkaryogram correctly runs
             	header.chromosome_sizes,
@@ -291,6 +429,11 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 
             std::cout << "Karyogram generated successfully: "
                   << karyogramPath << "\n";
+    	}
+
+	if (!savePNG && !viewerImages.empty() && !showInWebViewer(viewerImages, inputPath, genomeType))
+    	{
+    	    hasFailed = true;
     	}
 
     	if (hasFailed)

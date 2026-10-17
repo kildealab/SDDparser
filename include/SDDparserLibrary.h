@@ -9,5 +9,6 @@
 #include "SDRutilities.h"
 #include "generalUtilities.h"
 #include "Karyogram.h"
+#include "KaryogramViewer.h"
 
 #endif

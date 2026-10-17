@@ -108,17 +108,55 @@ bool resolveDoubleChromatid(
 
 
 
+// Writes the karyogram to a PNG file.
+bool Karyogram::generateSDDkaryogram(
+    const std::vector<double>& chromosomeSizes,
+    const std::vector<double>& cellCyclePhase,
+    const std::vector<double>& doseOrFluence,
+    const std::vector<int>& incidentParticles,
+    const std::vector<Exposure>& exposures,
+    bool humanGenome,
+    const std::string& outputFilename)
+{
+    return renderSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, outputFilename, nullptr);
+}
 
 
 
-bool Karyogram::generateSDDkaryogram(                                         // Function that generates the overall Karyogram structure
+// Returns the karyogram as PNG bytes in memory.
+bool Karyogram::generateSDDkaryogram(
+    const std::vector<double>& chromosomeSizes,
+    const std::vector<double>& cellCyclePhase,
+    const std::vector<double>& doseOrFluence,
+    const std::vector<int>& incidentParticles,
+    const std::vector<Exposure>& exposures,
+    bool humanGenome,
+    std::vector<unsigned char>& pngBytes)
+{
+    return renderSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, std::string(), &pngBytes);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+// Function that generates the overall Karyogram structure
+bool Karyogram::renderSDDkaryogram(
     const std::vector<double>& chromosomeSizes,                            // Requires chromosome sizes in the SDD file header for scaling on the image
     const std::vector<double>& cellCyclePhase,                             // Requires cell cycle phase in the SDD file header for determining presence of duplicated chromosomes.
     const std::vector<double>& doseOrFluence,                              // Accesses the SDD dose or fluence listed in the header
     const std::vector<int>& incidentParticles,                             // Accesses the SDD incident particles in the header
     const std::vector<Exposure>& exposures,                                // Accesses the damage locations associated with each chromosome in a given exposure.
     bool humanGenome,                                                      // Boolean to determine if karyogram should be drawn with human centromere ranges or generic centromere locations for non-human genomes.
-    const std::string& outputFilename)                                     // Outputs the image to the outputFilename.
+    const std::string& outputFilename,                                     // Outputs the image to the outputFilename (when pngBytes is null).
+    std::vector<unsigned char>* pngBytes)					// If non-null, receives the PNG in memory instead.
 {
 
     if (chromosomeSizes.empty())                                           // Make sure SDD header 'Chromosome sizes' Is non-empty.
@@ -762,18 +800,11 @@ bool Karyogram::generateSDDkaryogram(                                         //
     drawSDDlegend(cr, legendY);
 
     // Write the karyogram to the desired output filename "'SDDfileName'_karyogram.png"
-    cairo_status_t status = cairo_surface_write_to_png(surface, outputFilename.c_str());
+    const bool written = writeKaryogramPNG(surface, outputFilename, pngBytes);
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 
-    // Check if Karyogram was generated successfully
-    if (status != CAIRO_STATUS_SUCCESS)
-    {
-        std::cerr << "ERROR: Failed to write karyogram image.\n";
-        return false;
-    }
-
-    return true;
+    return written;
 }
 
 
