@@ -4,9 +4,23 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <utility>
 
 namespace sddparser
 {
+
+struct KaryogramPopupSection                    // One part of a chromosome's popup, e.g. "Homolog 1".
+{
+    std::string heading;                        // Shown above the counts; may be empty when the chromosome has only one homolog.
+    std::vector<std::pair<std::string, int>> counts;   // Mutation type and count, only the types that are present.
+};
+
+struct KaryogramHotspot                         // A clickable area of the karyogram (a chromosome label) that opens a popup.
+{
+    std::string title;                          // Popup title, e.g. "Chromosome 1".
+    double x, y, width, height;                 // Area in image pixels, from Karyogram::getLabelRegions().
+    std::vector<KaryogramPopupSection> sections;
+};
 
 struct KaryogramImage                           // One karyogram to show in the web viewer.
 {
@@ -15,6 +29,9 @@ struct KaryogramImage                           // One karyogram to show in the 
     std::vector<unsigned char> svgBytes;        // Vector image (KaryogramFormat::SVG): shown in the viewer, stays sharp at any zoom level, offered as SVG download.
     std::vector<unsigned char> pngBytes;        // Raster image (KaryogramFormat::PNG): offered as PNG download, and shown only when svgBytes is empty.
                                                 // Either one may be left empty; the viewer then only offers the format it has.
+    std::vector<KaryogramHotspot> hotspots;     // Clickable chromosome labels with mutation or damage summaries (may be empty).
+    std::string popupNote;                      // Small print at the bottom of each popup (may be empty).
+    std::string popupEmptyText = "No mutations detected";   // Shown for a homolog with nothing to list, e.g. "No damage detected" for SDD.
 };
 
 

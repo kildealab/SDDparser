@@ -28,6 +28,9 @@ public:
 
     void printSummary(std::ostream& out) const; 			// Function that will run printHeaderSummary and printDataEntrySummary
 
+    std::map<int, ChromosomeDamageSummary> summarizeChromosomeDamage(const Exposure& exposure) const; 		// Function that maps numBaseDamages, numSingleStrandBreaks, and numDoubleStranBreaks to each chromosome in a given exposure. 
+													// Public so the web viewer's chromosome popups show the same counts as the summary file.
+
 
 private:
 
@@ -43,7 +46,6 @@ private:
 
     void printExposureSummary(std::ostream& out) const; 		// Function to print exposure data summary to an output file.
 
-    std::map<int, ChromosomeDamageSummary> summarizeChromosomeDamage(const Exposure& exposure) const; 		// Function that maps numBaseDamages, numSingleStrandBreaks, and numDoubleStranBreaks to each chromosome in a given exposure. 
 
 };
 

@@ -705,6 +705,12 @@ bool SDRparser::writeSummary(
 
     writeMasterHeaderSummary(output);
 
+    if (!subHeaders.empty())							// Explains every cell's "Mutations by chromosome" list, so it is written once here rather than per cell.
+    {
+        output << "Note on \"Mutations by chromosome\": a mutation involving several chromosomes is listed under each of them,\n"
+               << "except dicentrics, which are listed only under the chromosome drawn with two centromeres.\n\n";
+    }
+
     for (const SDRsubHeader& subHeader : subHeaders)
     {
         writeSubHeaderSummary(output, subHeader);
@@ -848,6 +854,31 @@ void SDRparser::writeCellDataSummary(
     output << "  Chromothripsis: " << chromothripsis.size() << "\n";
     output << "  Ring Chromosomes: " << chromosomeRings.size() << "\n";
     output << "  Dicentrics: " << dicentrics.size() << "\n";
+
+    // Per-chromosome breakdown, in the same layout as the SDD summary's "Damage by chromosome". Only chromosomes with at
+    // least one mutation are listed, and only the mutation types they have. Uses the same counting as the web viewer's
+    // chromosome popups (see countMutationsPerOriginalStrand), so the file and the viewer always agree.
+    const std::map<int, std::vector<std::pair<std::string, int>>> mutationsPerChromosome =
+        countMutationsPerOriginalStrand(subHeader, masterHeader);
+
+    if (mutationsPerChromosome.empty())
+    {
+        output << "\nNo chromosome-associated mutations found.\n";
+    }
+    else
+    {
+        output << "\nMutations by chromosome:\n\n";				// Counting rule explained once at the top of the file, see writeSummary.
+
+        for (const auto& [chromosomeNumber, counts] : mutationsPerChromosome)
+        {
+            output << "Chromosome " << chromosomeNumber << "\n";
+
+            for (const auto& [type, count] : counts)
+            {
+                output << "  " << type << ": " << count << "\n";
+            }
+        }
+    }
 
     output << "\n";
 }

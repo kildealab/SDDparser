@@ -311,6 +311,32 @@ bool Karyogram::getCentromereForOriginalStrand(
 }
 
 
+void Karyogram::drawChromosomeLabel(						// Draw a chromosome label and remember where it is, for the web viewer's clickable labels.
+    cairo_t* cr,
+    const std::string& label,
+    double x,										// Text start position (baseline), as passed to cairo_move_to
+    double y,
+    const std::vector<int>& oldStrandIDs)
+{
+    cairo_move_to(cr, x, y);
+    cairo_show_text(cr, label.c_str());
+
+    // The box is padded a little so the label is easy to click even when zoomed out.
+    cairo_text_extents_t extents;
+    cairo_text_extents(cr, label.c_str(), &extents);
+    const double padding = 6.0;
+
+    KaryogramLabelRegion region;
+    region.label = label;
+    region.x = x + extents.x_bearing - padding;
+    region.y = y + extents.y_bearing - padding;
+    region.width = extents.width + 2.0 * padding;
+    region.height = extents.height + 2.0 * padding;
+    region.oldStrandIDs = oldStrandIDs;
+    labelRegions.push_back(region);
+}
+
+
 // Cairo stream callback: appends each chunk of encoded image data (PNG or SVG) to the std::vector passed as closure.
 static cairo_status_t appendImageChunk(void* closure, const unsigned char* data, unsigned int length)
 {

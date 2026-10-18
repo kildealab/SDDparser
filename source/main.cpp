@@ -3,11 +3,13 @@
 #include <filesystem>
 #include <vector>
 #include <utility>
+#include <map>
 
 #include "SDDparser.h"
 #include "SDRparser.h"
 #include "Karyogram.h"
 #include "KaryogramViewer.h"
+#include "SDRutilities.h"
 
 using namespace sddparser;
 
@@ -103,6 +105,72 @@ namespace
         }
 
 	return true;
+    }
+
+    // Turns the chromosome labels drawn on a karyogram into clickable areas for the web viewer, each with a summary
+    // per homolog (SDR mutations or SDD damages). Only the types that are present are listed.
+    std::vector<KaryogramHotspot> buildLabelHotspots(
+	const std::vector<KaryogramLabelRegion>& labelRegions,	// From Karyogram::getLabelRegions(), after drawing the cell
+	const std::map<int, std::vector<std::pair<std::string, int>>>& countsPerStrand)	// Strand/chromosome ID -> (type, count), nonzero only
+    {
+        std::vector<KaryogramHotspot> hotspots;
+
+        for (const KaryogramLabelRegion& region : labelRegions)
+        {
+            KaryogramHotspot hotspot;
+            const std::string name = region.label.rfind("Chr ", 0) == 0 ? region.label.substr(4) : region.label;	// "Chr 1" -> "1", "X" stays "X"
+            hotspot.title = "Chromosome " + name;
+            hotspot.x = region.x;
+            hotspot.y = region.y;
+            hotspot.width = region.width;
+            hotspot.height = region.height;
+
+            // Homologous layouts list both homologs of the pair; non-homologous layouts have one strand per label,
+            // which needs no heading.
+            for (size_t h = 0; h < region.oldStrandIDs.size(); h++)
+            {
+                KaryogramPopupSection section;
+
+                if (region.oldStrandIDs.size() > 1)
+                {
+                    section.heading = "Homolog " + std::to_string(h + 1);
+                }
+
+                const auto found = countsPerStrand.find(region.oldStrandIDs[h]);
+
+                if (found != countsPerStrand.end())
+                {
+                    section.counts = found->second;
+                }
+
+                hotspot.sections.push_back(std::move(section));
+            }
+
+            hotspots.push_back(std::move(hotspot));
+        }
+
+        return hotspots;
+    }
+
+    // Base damages, single-strand breaks and double-strand breaks per SDD chromosome number for one exposure, using the
+    // same per-chromosome totals as the summary file. Sister chromatids of a homolog share one chromosome number, so
+    // their damages are added together. Types with no damage are left out.
+    std::map<int, std::vector<std::pair<std::string, int>>> countDamagesPerChromosome(
+	const SDDparser& parser,
+	const Exposure& exposure)
+    {
+        std::map<int, std::vector<std::pair<std::string, int>>> result;
+
+        for (const auto& [chromosomeNumber, summary] : parser.summarizeChromosomeDamage(exposure))
+        {
+            std::vector<std::pair<std::string, int>>& counts = result[chromosomeNumber];
+
+            if (summary.numBaseDamages > 0)        counts.emplace_back("Base damages", summary.numBaseDamages);
+            if (summary.numSingleStrandBreaks > 0) counts.emplace_back("Single-strand breaks", summary.numSingleStrandBreaks);
+            if (summary.numDoubleStrandBreaks > 0) counts.emplace_back("Double-strand breaks", summary.numDoubleStrandBreaks);
+        }
+
+        return result;
     }
 
     // Writes all karyograms of one input file into a single HTML viewer and opens it in the browser.
@@ -269,6 +337,9 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
 			continue;
 		    }
 
+		    image.hotspots = buildLabelHotspots(karyogram.getLabelRegions(),					// Clickable chromosome labels
+			countMutationsPerOriginalStrand(subHeader, parser.getMasterHeader()));
+		    image.popupNote = "Events involving several chromosomes are counted on each of them.";
 		    viewerImages.push_back(std::move(image));
 		    continue;
 		}
@@ -433,6 +504,9 @@ int main(int argc, char* argv[]) 					// Variables in main() brackets allow for 
             	    continue;
     	        }
 
+    	        image.hotspots = buildLabelHotspots(karyogram.getLabelRegions(),			// Clickable chromosome labels
+    	            countDamagesPerChromosome(parser, exposure));
+    	        image.popupEmptyText = "No damage detected";					// SDD files record damage, not mutations
     	        viewerImages.push_back(std::move(image));
     	        continue;
     	    }

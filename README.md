@@ -1,9 +1,9 @@
 # SDDparser
 Writing a C++ toolkit capable of parsing the Standard for DNA Damage (SDD) file header and data fields,
-and the Standard for DNA Repair (SDR) header and data fields, drawing the cairo-based karyogram visualizations
+the Standard for DNA Repair (SDR) header and data fields, and drawing the cairo-based karyogram visualizations
 of the associated damages and mutations. 
 
-This package is now capable of summarizing the SDD header fields and the data fields into a single summary file. It can also optionally plot a 
+This package is now capable of summarizing the SDD header fields and data fields into a single summary file. It can also optionally plot a 
 karyogram of the double-strand break and single-strand break locations onto the chromosomes the user passes in the SDD file header. 
 This package can also accommodate the SDR file format in the same way as the SDD file, by summarizing the mutations specified
 in the SDR file for each cell, as well as optionally plotting the karyogram of the mutations specified in the SDR file.
@@ -72,6 +72,10 @@ Each run writes a `<input>_summary.txt` file next to the input. If `--karyogram`
   - switch between cells with Previous/Next or the cell list,
   - zoom with the mouse wheel, trackpad pinch, double-click, the −/+/Fit/100% buttons, or the keys `+`, `-`, `0` (fit) and `1` (100%),
     and drag to pan. Karyograms are shown as vector images (SVG), so they stay sharp at any zoom level,
+  - click a chromosome label to open a small summary for that chromosome, split into homolog 1 and homolog 2 when homologs are drawn.
+    SDD karyograms list base damages, single-strand breaks and double-strand breaks; SDR karyograms list the mutations. Only the types
+    that are present are shown (otherwise "No damage detected" / "No mutations detected"). The SDR counts follow the same rules as the
+    per-chromosome section of the SDR summary file (see below). Close the summary with ×, Esc, or a click elsewhere,
   - download the karyogram shown as a PNG or SVG, or all karyograms as a zip file.
 
 **With `--save-png` and/or `--save-svg`**, no viewer is created; instead one `<input>_cell<N>_karyogram_<human|other>.png` and/or `.svg`
@@ -150,22 +154,26 @@ within a given damage site (i.e. a given SDD data row) (usually between 0-5 SSBs
 1. SDR version, author, associated SDD file that produced the SDR file from the MEDRAS-MC output.
 2. Number of chromosomes listed and their respective sizes in mega base pairs.
 3. Per cell summary of the cell subheader (number of double-strand breaks and misrepairs).
-4. Number of mutations per each type.
+4. Number of mutations per each type for each cell.
+5. Number of mutations per each type per chromosome in the specified cell ("Mutations by chromosome"). Only chromosomes with mutations, and only
+   the mutation types they have, are listed. A mutation involving several chromosomes (e.g. a translocation) is listed under each of them,
+   except dicentrics, which are listed only under the chromosome drawn with two centromeres (not under the partner left acentric). A note at
+   the top of the summary file explains this.
 
 ### WHAT IS PLOTTED IN THE SDR FILE KARYOGRAM 
 1. Summary at the top, including which cell the Karyogram is plotted for, and the number of each mutation type.
 2. Chromosomes plotted with their associated homologs if specified, and structural rearrangements from the associated mutations. 
 3. The colors are used to depict where the chromosomal rearrangements came from, the white sections indicate where the deletions occurred on the 
-original chromosomes. Extrachromosomal DNA (ecDNA) is drawn as circles with their diameters scaled to the length of the deleted segment for visual
+original chromosomes. Extrachromosomal DNA (ecDNA) is drawn as acentric circles with their diameters scaled to the length of the deleted segment for visual
 clarity.
 4. A legend of symbols at the bottom of the karyogram to denote what all the symbols mean, particularly for inversions and ecDNA.
+Material from a second homolog is outlined with a dashed line, including chromosome rings formed from a second homolog (dashed inner and outer circles).
 5. So far, drawing is supported for long deletions, balanced inversions, balanced translocations, ecDNA, deletion-inversions, deletion-translocations,
 and deletion-insertions, chromoplexy and chromothripsis (as well as dicentrics and chromosome rings) 
 6. For chromoplexy and ecDNA leading to acentric strands composed of multiple foreign DNA fragments, they receive their own slots
 after the sex chromosomes. They are labeled such that the original chromosomes that compose the acentric strand are labeled and a '*' is 
 present to indicate it is a derivative, not an original chromosome strand. (see exampleSDR_dicentrics_rings_cell0_karyogram_human.png, produced with `--save-png`).
-Note: the multi-foreign-fragment ecDNA are depicted pie-chart style, to represent 'how much' of each original
-chromosome is present in the new ecDNA fragment. 
+Note: the multi-foreign-fragment ecDNA are depicted pie-chart style, to represent 'how much' of each original chromosome is present in the new ecDNA fragment. 
 
 <picture align = "center">
 <img src="./SDR_karyogram.svg" width = "100%" alt="Different mutation representations from irradiated DNA"><br>
@@ -174,9 +182,8 @@ chromosome is present in the new ecDNA fragment.
 
 
 ## FURTHER WORK:
-1. Click a chromosome label in the web viewer to show a summary of that chromosome's mutation counts.
-2. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
-3. Representing and summarizing short indel mutations in SDR file format and reporting how many of each per chromosome (perhaps drawable in future).
+1. Modify parser to account for newest version of SDR file v2.2 which includes a cell cycle phase master header.
+2. Representing and summarizing short indel mutations in SDR file format and reporting how many of each per chromosome (perhaps drawable in future).
 ... and much more.
 
 
@@ -237,6 +244,7 @@ int main()
 | `const Header& getHeader() const` | The parsed SDD header fields (dose, chromosome sizes, cell cycle phase, etc.). |
 | `const std::vector<Exposure>& getExposures() const` | One `Exposure` per cell/exposure in the file, each holding its own damage records. |
 | `void printSummary(std::ostream& out) const` | Writes a human-readable summary of the header and every exposure's damage to any output stream. |
+| `std::map<int, ChromosomeDamageSummary> summarizeChromosomeDamage(const Exposure& exposure) const` | Base damages, single-strand breaks and double-strand breaks per chromosome number for one exposure (the same totals as the summary file). |
 
 ### Parsing an SDR file — `sddparser::SDRparser`
 
@@ -274,7 +282,7 @@ int main()
 | `bool parseFile(const std::string& filename)` | Parses the given SDR file. Returns `false` on failure. |
 | `const SDRmasterHeader& getMasterHeader() const` | Master header fields — chromosome sizes, SDR version, etc. |
 | `const std::vector<SDRsubHeader>& getSubHeaders() const` | One `SDRsubHeader` per cell, each holding that cell's data records. |
-| `bool writeSummary(const std::string& outputFilename) const` | Writes a text summary of every detected mutation type per cell (deletions, inversions, translocations, ecDNA, deletion-inversions, deletion-translocations, deletion-insertions, chromoplexy, chromothripsis) to the given file. |
+| `bool writeSummary(const std::string& outputFilename) const` | Writes a text summary of every detected mutation type per cell, plus the per-chromosome breakdown, to the given file. |
 
 ### Drawing a karyogram — `sddparser::Karyogram`
 
@@ -347,8 +355,9 @@ karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, /*humanGenom
 |---|---|
 | `bool generateSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, outputFilename, format = PNG)` | Draws a damage karyogram (SSB/DSB markers) for one exposure from SDD data and writes it to a PNG or SVG file. |
 | `bool generateSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, imageBytes, format = PNG)` | Same drawing, but returns the image in `imageBytes` (`std::vector<unsigned char>&`) instead of writing a file. |
-| `bool generateSDRkaryogram(masterHeader, subHeader, humanGenome, outputFilename, format = PNG)` | Draws a structural-rearrangement karyogram (deletions, inversions, translocations, ecDNA, chromoplexy, chromothripsis, and more) for one cell exposure from SDR data and writes it to a PNG or SVG file. |
+| `bool generateSDRkaryogram(masterHeader, subHeader, humanGenome, outputFilename, format = PNG)` | Draws a structural-rearrangement karyogram for one cell exposure from SDR data and writes it to a PNG or SVG file. |
 | `bool generateSDRkaryogram(masterHeader, subHeader, humanGenome, imageBytes, format = PNG)` | Same drawing, but returns the image in `imageBytes` instead of writing a file. |
+| `const std::vector<KaryogramLabelRegion>& getLabelRegions() const` | Where each chromosome label was drawn in the last karyogram (box in image pixels, plus the chromosome/strand IDs of homolog 1 and 2). Used for the viewer's clickable labels. |
 
 `humanGenome = true` draws real human centromere positions; `false` uses a generic centromere at the midpoint of each chromosome.
 `format` is `sddparser::KaryogramFormat::PNG` (default) or `sddparser::KaryogramFormat::SVG`.
@@ -380,6 +389,10 @@ for (const sddparser::SDRsubHeader& subHeader : parser.getSubHeaders())
     }
 }
 
+// Optional: make the chromosome labels clickable. Inside the loop above, after drawing, add per-homolog mutation counts with
+// image.hotspots, built from karyogram.getLabelRegions() and sddparser::countMutationsPerOriginalStrand(subHeader, parser.getMasterHeader())
+// (see buildLabelHotspots in source/main.cpp). image.popupNote and image.popupEmptyText set the popup's footnote and "nothing found" text.
+
 if (sddparser::writeKaryogramViewer(images, "exampleSDR.txt", "exampleSDR_karyograms.html"))
 {
     sddparser::openInBrowser("exampleSDR_karyograms.html");
@@ -390,7 +403,7 @@ if (sddparser::writeKaryogramViewer(images, "exampleSDR.txt", "exampleSDR_karyog
 
 | Function | Description |
 |---|---|
-| `bool writeKaryogramViewer(images, title, htmlPath)` | Writes all karyograms into a single HTML file with no external dependencies, including zoom/pan and PNG/SVG/zip downloads. |
+| `bool writeKaryogramViewer(images, title, htmlPath)` | Writes all karyograms into a single HTML file with no external dependencies, including zoom/pan, PNG/SVG/zip downloads, and clickable chromosome labels for images that have `hotspots`. |
 | `bool canOpenBrowser()` | Returns `false` when no browser can be shown (e.g. over SSH, on an HPC cluster, in a container, or in WSL with Windows interop disabled). |
 | `bool openInBrowser(htmlPath)` | Opens the file in the default browser (`xdg-open` on Linux, `open` on macOS, `start` on Windows, the Windows browser from WSL). Returns `false` if it could not. |
 

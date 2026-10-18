@@ -190,7 +190,20 @@ button, select { font-size: 14px; padding: 4px 10px; cursor: pointer; }
 #viewport { flex: 1; overflow: auto; position: relative; cursor: grab; user-select: none; touch-action: none; }
 #viewport.dragging { cursor: grabbing; }
 #stage { position: relative; }
-#karyogram { position: absolute; display: block; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.25); }
+#frame { position: absolute; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.25); }
+#karyogram { display: block; width: 100%; height: 100%; }
+.hotspot { position: absolute; cursor: pointer; border-radius: 3px; }
+.hotspot:hover { background: rgba(30,110,220,0.15); outline: 1px solid rgba(30,110,220,0.6); }
+#popup { position: fixed; z-index: 10; min-width: 200px; max-width: 320px; background: #fff; border: 1px solid #bbb; border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); padding: 10px 14px; font-size: 14px; }
+#popup[hidden] { display: none; }
+#popup h2 { font-size: 15px; margin: 0 24px 6px 0; }
+#popup h3 { font-size: 13px; margin: 10px 0 4px; color: #444; }
+#popup table { border-collapse: collapse; width: 100%; }
+#popup td { padding: 2px 0; }
+#popup td.count { text-align: right; padding-left: 16px; font-variant-numeric: tabular-nums; }
+#popup .none { color: #666; font-style: italic; }
+#popup .note { margin-top: 8px; font-size: 11px; color: #777; }
+#popupClose { position: absolute; top: 4px; right: 6px; border: none; background: none; font-size: 18px; padding: 0 4px; }
 #hint { padding: 4px 16px; font-size: 12px; color: #666; background: #fff; border-top: 1px solid #ccc; }
 </style>
 </head>
@@ -231,8 +244,9 @@ button, select { font-size: 14px; padding: 4px 10px; cursor: pointer; }
 <button id="downloadAll" title="Download every karyogram in one .zip file">Download all (.zip)</button>
 </div>
 </header>
-<div id="viewport"><div id="stage"><img id="karyogram" alt="Karyogram" draggable="false"></div></div>
-<div id="hint">Scroll or pinch to zoom at the cursor &middot; drag to pan &middot; double-click to zoom in &middot; keys: + &minus; 0 (fit) 1 (100%)</div>
+<div id="viewport"><div id="stage"><div id="frame"><img id="karyogram" alt="Karyogram" draggable="false"><div id="hotspots"></div></div></div></div>
+<div id="popup" hidden role="dialog"><button id="popupClose" title="Close (Esc)">&times;</button><div id="popupBody"></div></div>
+<div id="hint">Click a chromosome label for its summary &middot; scroll or pinch to zoom at the cursor &middot; drag to pan &middot; double-click to zoom in &middot; keys: + &minus; 0 (fit) 1 (100%)</div>
 )HTML";
 
     // ------------------------------------------
@@ -247,7 +261,28 @@ button, select { font-size: 14px; padding: 4px 10px; cursor: pointer; }
         html << "  { filename: " << jsString(image.filename)
              << ",\n    svg: \"" << (image.svgBytes.empty() ? "" : "data:image/svg+xml;base64," + base64Encode(image.svgBytes))
              << "\",\n    png: \"" << (image.pngBytes.empty() ? "" : "data:image/png;base64," + base64Encode(image.pngBytes))
-             << "\" },\n";
+             << "\",\n    hotspots: [";
+
+        // Clickable chromosome labels: position in image pixels plus the counts shown in the popup.
+        for (const KaryogramHotspot& hotspot : image.hotspots)
+        {
+            html << "\n      { title: " << jsString(hotspot.title)
+                 << ", x: " << hotspot.x << ", y: " << hotspot.y
+                 << ", w: " << hotspot.width << ", h: " << hotspot.height << ", sections: [";
+            for (const KaryogramPopupSection& section : hotspot.sections)
+            {
+                html << "{ heading: " << jsString(section.heading) << ", counts: [";
+                for (const auto& [type, count] : section.counts)
+                {
+                    html << "[" << jsString(type) << ", " << count << "], ";
+                }
+                html << "] }, ";
+            }
+            html << "] },";
+        }
+
+        html << " ],\n    popupNote: " << jsString(image.popupNote)
+             << ",\n    popupEmptyText: " << jsString(image.popupEmptyText) << " },\n";
     }
 
     // ------------------------------------------
@@ -257,7 +292,11 @@ button, select { font-size: 14px; padding: 4px 10px; cursor: pointer; }
 
 const viewport = document.getElementById('viewport');
 const stage = document.getElementById('stage');
+const frame = document.getElementById('frame');
 const img = document.getElementById('karyogram');
+const hotspotLayer = document.getElementById('hotspots');
+const popup = document.getElementById('popup');
+const popupBody = document.getElementById('popupBody');
 const select = document.getElementById('cell');
 const counter = document.getElementById('counter');
 const zoomLevel = document.getElementById('zoomLevel');
@@ -294,10 +333,10 @@ function setScale(newScale, screenX, screenY) {
   scale = newScale;
   const after = offsets(scale);
   const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
-  img.style.width = w + 'px';              // Real layout size, so the SVG is redrawn sharply at this size.
-  img.style.height = h + 'px';
-  img.style.left = after.x + 'px';
-  img.style.top = after.y + 'px';
+  frame.style.width = w + 'px';            // Real layout size, so the SVG is redrawn sharply at this size.
+  frame.style.height = h + 'px';           // The clickable labels inside the frame are placed in %, so they follow.
+  frame.style.left = after.x + 'px';
+  frame.style.top = after.y + 'px';
   stage.style.width = Math.max(viewport.clientWidth, w + 2 * after.x) + 'px';
   stage.style.height = Math.max(viewport.clientHeight, h + 2 * after.y) + 'px';
 
@@ -312,7 +351,11 @@ function zoomBy(factor, x, y) { fitMode = false; setScale(scale * factor, x, y);
 function show(index) {
   current = (index + karyograms.length) % karyograms.length;
   const first = !img.src;
-  img.onload = () => { if (first || fitMode) fit(); else setScale(scale); };   // Keep the zoom when switching cells, to compare them.
+  closePopup();
+  img.onload = () => {
+    placeHotspots();
+    if (first || fitMode) fit(); else setScale(scale);           // Keep the zoom when switching cells, to compare them.
+  };
   img.src = karyograms[current].svg || karyograms[current].png;      // Prefer the sharp vector image.
   select.value = current;
   counter.textContent = (current + 1) + ' of ' + karyograms.length;
@@ -330,20 +373,30 @@ viewport.addEventListener('wheel', (e) => {
 let drag = null;
 viewport.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
-  drag = { x: e.clientX, y: e.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
+  drag = { x: e.clientX, y: e.clientY, left: viewport.scrollLeft, top: viewport.scrollTop, moved: false };
   viewport.setPointerCapture(e.pointerId);
   viewport.classList.add('dragging');
 });
 viewport.addEventListener('pointermove', (e) => {
   if (!drag) return;
+  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 4) drag.moved = true;
   viewport.scrollLeft = drag.left - (e.clientX - drag.x);
   viewport.scrollTop = drag.top - (e.clientY - drag.y);
 });
 const endDrag = () => { drag = null; viewport.classList.remove('dragging'); };
-viewport.addEventListener('pointerup', endDrag);
+viewport.addEventListener('pointerup', (e) => {
+  // A press and release without dragging is a click. The pointer is captured by the viewport for panning, so the
+  // click target is looked up from the position: a chromosome label opens its popup, anywhere else closes it.
+  if (drag && !drag.moved) {
+    const spot = hotspotAt(e.clientX, e.clientY);
+    if (spot) openPopup(spot, e.clientX, e.clientY); else closePopup();
+  }
+  endDrag();
+});
 viewport.addEventListener('pointercancel', endDrag);
 
 viewport.addEventListener('dblclick', (e) => {
+  if (hotspotAt(e.clientX, e.clientY)) return;                       // Double-clicking a label should not also zoom.
   const r = viewport.getBoundingClientRect();
   zoomBy(2, e.clientX - r.left, e.clientY - r.top);
 });
@@ -357,12 +410,71 @@ document.getElementById('next').onclick = () => show(current + 1);
 select.onchange = () => show(Number(select.value));
 
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closePopup(); return; }
   if (e.target === select || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === '+' || e.key === '=') zoomBy(STEP);
   else if (e.key === '-' || e.key === '_') zoomBy(1 / STEP);
   else if (e.key === '0') fit();
   else if (e.key === '1') { fitMode = false; setScale(1); }
 });
+
+// ------------------------------------------------------------
+// Clickable chromosome labels and the summary popup (mutations for SDR, damages for SDD)
+// ------------------------------------------------------------
+// One invisible box per chromosome label, placed in % of the image size so it stays on the label at every zoom level.
+function placeHotspots() {
+  hotspotLayer.replaceChildren();
+  const w = img.naturalWidth || 1, h = img.naturalHeight || 1;
+  karyograms[current].hotspots.forEach((spot, i) => {
+    const box = document.createElement('div');
+    box.className = 'hotspot';
+    box.dataset.index = i;
+    box.title = spot.title + ': click for summary';
+    box.style.left = (100 * spot.x / w) + '%';
+    box.style.top = (100 * spot.y / h) + '%';
+    box.style.width = (100 * spot.w / w) + '%';
+    box.style.height = (100 * spot.h / h) + '%';
+    hotspotLayer.appendChild(box);
+  });
+}
+
+function hotspotAt(x, y) {
+  const box = document.elementFromPoint(x, y)?.closest('.hotspot');
+  return box ? karyograms[current].hotspots[Number(box.dataset.index)] : null;
+}
+
+function addElement(parent, tag, text, className) {
+  const element = document.createElement(tag);
+  if (text !== undefined) element.textContent = text;            // textContent, never innerHTML: names are shown as plain text.
+  if (className) element.className = className;
+  parent.appendChild(element);
+  return element;
+}
+
+function openPopup(spot, x, y) {
+  popupBody.replaceChildren();
+  addElement(popupBody, 'h2', spot.title);
+  for (const section of spot.sections) {
+    if (section.heading) addElement(popupBody, 'h3', section.heading);
+    if (section.counts.length === 0) { addElement(popupBody, 'div', karyograms[current].popupEmptyText, 'none'); continue; }
+    const table = addElement(popupBody, 'table');
+    for (const [type, count] of section.counts) {
+      const row = addElement(table, 'tr');
+      addElement(row, 'td', type);
+      addElement(row, 'td', count, 'count');
+    }
+  }
+  if (karyograms[current].popupNote) addElement(popupBody, 'div', karyograms[current].popupNote, 'note');
+
+  popup.hidden = false;
+  // Open next to the click, but keep the whole popup inside the window.
+  const r = popup.getBoundingClientRect();
+  popup.style.left = Math.max(8, Math.min(x + 12, window.innerWidth - r.width - 8)) + 'px';
+  popup.style.top = Math.max(8, Math.min(y + 12, window.innerHeight - r.height - 8)) + 'px';
+}
+
+function closePopup() { popup.hidden = true; }
+document.getElementById('popupClose').onclick = closePopup;
 
 // ------------------------------------------------------------
 // Downloads

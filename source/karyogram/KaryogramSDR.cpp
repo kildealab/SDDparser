@@ -114,6 +114,8 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
     KaryogramFormat format)						// PNG or SVG.
 {
 
+    labelRegions.clear();						// Label positions are recorded fresh for every karyogram
+
     // Check for absent data in SDR headers/subHeaders
     if (subHeader.dataRecords.empty())
     {
@@ -458,8 +460,12 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
         cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
         cairo_set_font_size(cr, 16.0);
         std::string label = "Chr " + std::to_string(i + 1);
-        cairo_move_to(cr, groupCenterX - 20.0, posY + labelHeight + 25.0);
-        cairo_show_text(cr, label.c_str());
+        std::vector<int> slotStrandIDs = {firstOldStrandID};		// Strands summarized when the label is clicked in the web viewer
+        if (hasHomologs)
+        {
+            slotStrandIDs.push_back(secondOldStrandID);
+        }
+        drawChromosomeLabel(cr, label, groupCenterX - 20.0, posY + labelHeight + 25.0, slotStrandIDs);
 
     }
 
@@ -512,8 +518,7 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
         cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
         cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
         cairo_set_font_size(cr, 16.0);
-        cairo_move_to(cr, yCenterPosX - 10.0, sexChromPosY + yLabelHeight + 25.0);
-        cairo_show_text(cr, "Y");
+        drawChromosomeLabel(cr, "Y", yCenterPosX - 10.0, sexChromPosY + yLabelHeight + 25.0, {yOldStrandID});
 
         const std::vector<const SDRdataRecord*> xRecords = resolveSlotRecords(xOldStrandID);
 
@@ -528,8 +533,7 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
         cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
         cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
         cairo_set_font_size(cr, 16.0);
-        cairo_move_to(cr, xCenterPosX - 10.0, sexChromPosY + xLabelHeight + 25.0);
-        cairo_show_text(cr, "X");
+        drawChromosomeLabel(cr, "X", xCenterPosX - 10.0, sexChromPosY + xLabelHeight + 25.0, {xOldStrandID});
     }
 
 
@@ -1231,7 +1235,9 @@ void Karyogram::drawStackedMutations(
             centromereEndFraction = (centromereEndBP / 1000000.0 - fragLow) / ringLengthMbp;
         }
 
-        drawRingFragment(cr, ringColumnCenterX, ringCenterY, ringDiameter, color, centromereStartFraction, centromereEndFraction);
+        // A ring formed from a second homolog gets dashed outlines, like that homolog's linear chromosome.
+        drawRingFragment(cr, ringColumnCenterX, ringCenterY, ringDiameter, color, centromereStartFraction, centromereEndFraction,
+                         isSecondHomologStrand(homeOldStrandID, masterHeader));
 
         return;
     }
@@ -2128,9 +2134,11 @@ void Karyogram::drawRingFragment(
     double diameter,
     RGB color,
     double centromereStartFraction,
-    double centromereEndFraction)
+    double centromereEndFraction,
+    bool dashedOutline)						// Rings from a second homolog get dashed inner and outer outlines, matching the dashed outline of second homologs.
 {
     const double radius = diameter / 2.0;
+    const double dashPattern[2] = { 4.0, 3.0 };				// Same dash as drawPaintedFragment()'s second-homolog outline.
     const double innerRadius = diameter / 4.0;
     const double topAngle = -M_PI / 2.0; 					// 12 o'clock, same convention as drawPieChartFragment().
 
@@ -2158,6 +2166,10 @@ void Karyogram::drawRingFragment(
 
     cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
     cairo_set_line_width(cr, 1.5);
+    if (dashedOutline)
+    {
+        cairo_set_dash(cr, dashPattern, 2, 0.0);
+    }
     cairo_stroke(cr);
 
     const double innerPinchRadius = std::min(radius, innerRadius + constrictionAmount); 	// Pinches OUTWARD into the colored band, meeting the outer ring's own inward pinch partway, clamped so it can't cross past the outer boundary.
@@ -2169,7 +2181,8 @@ void Karyogram::drawRingFragment(
 
     cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
     cairo_set_line_width(cr, 1.5);
-    cairo_stroke(cr);
+    cairo_stroke(cr);							// Still dashed here when dashedOutline is set.
+    cairo_set_dash(cr, nullptr, 0, 0.0);				// Back to solid for everything drawn afterwards.
 
     // Grey centromere mark, spanning the full width of the colored band
     // (outer edge to inner edge), centered at the band's radial

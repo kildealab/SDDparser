@@ -151,6 +151,8 @@ bool Karyogram::renderSDDkaryogram(                                           //
     KaryogramFormat format)                                                // PNG or SVG.
 {
 
+    labelRegions.clear();                                                  // Filled again below by drawChromosomeLabel, one region per chromosome label.
+
     if (chromosomeSizes.empty())                                           // Make sure SDD header 'Chromosome sizes' Is non-empty.
     {
         std::cerr << "ERROR: No chromosome sizes provided.\n";
@@ -388,16 +390,9 @@ bool Karyogram::renderSDDkaryogram(                                           //
             std::string label =
                 "Chr " + std::to_string(i + 1);
 
-            cairo_move_to(
-                cr,
-                groupCenterX - 20.0,
-                posY + chromosomeHeight + 25.0
-            );
-
-            cairo_show_text(
-                cr,
-                label.c_str()
-            );
+            // Draws the label and records where it is, so the web viewer can make it clickable (damage summary for this chromosome).
+            drawChromosomeLabel(cr, label, groupCenterX - 20.0, posY + chromosomeHeight + 25.0,
+                                {static_cast<int>(firstIndex)});
         }
 
         // -----------------------------------------------------
@@ -535,16 +530,9 @@ bool Karyogram::renderSDDkaryogram(                                           //
             std::string label =
                 "Chr " + std::to_string(i + 1);
 
-            cairo_move_to(
-                cr,
-                groupCenterX - 20.0,
-                posY + labelHeight + 25.0
-            );
-
-            cairo_show_text(
-                cr,
-                label.c_str()
-            );
+            // Draws the label and records where it is, so the web viewer can make it clickable (damage summary per homolog).
+            drawChromosomeLabel(cr, label, groupCenterX - 20.0, posY + labelHeight + 25.0,
+                                {static_cast<int>(firstIndex), static_cast<int>(secondIndex)});
         }
     }
 
@@ -771,14 +759,10 @@ bool Karyogram::renderSDDkaryogram(                                           //
 
     cairo_set_font_size(cr, 16.0);
 
-    cairo_move_to(cr, xGroupCenterX - 4.0, sexChromPosY + xHeight + 25.0);
-
-    cairo_show_text(cr, "X");
+    drawChromosomeLabel(cr, "X", xGroupCenterX - 4.0, sexChromPosY + xHeight + 25.0, {static_cast<int>(xIndex)});
 
     // Y label
-    cairo_move_to(cr, yGroupCenterX - 4.0, sexChromPosY + yHeight + 25.0);
-
-    cairo_show_text(cr, "Y");
+    drawChromosomeLabel(cr, "Y", yGroupCenterX - 4.0, sexChromPosY + yHeight + 25.0, {static_cast<int>(yIndex)});
 
     // ----------------------------------------------------
     // Draw Karyogram legend at bottom

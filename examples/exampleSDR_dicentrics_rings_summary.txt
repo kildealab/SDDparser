@@ -30,3 +30,82 @@ Mutation Summary:
   Ring Chromosomes: 1
   Dicentrics: 6
 
+Mutations by chromosome:
+(a mutation involving several chromosomes is listed under each of them, except dicentrics,
+ which are listed only under the chromosome drawn with two centromeres)
+
+Chromosome 1
+  Chromoplexy: 1
+  Dicentrics: 1
+Chromosome 2
+  Chromoplexy: 1
+Chromosome 3
+  Chromoplexy: 1
+Chromosome 5
+  Long Deletions: 2
+Chromosome 6
+  Chromothripsis: 1
+Chromosome 8
+  Deletion-Inversions: 1
+Chromosome 9
+  Balanced Translocations: 1
+Chromosome 10
+  Deletion-Translocations: 1
+Chromosome 11
+  Deletion-Translocations: 1
+  Dicentrics: 1
+Chromosome 12
+  Balanced Translocations: 1
+Chromosome 13
+  Balanced Translocations: 1
+Chromosome 14
+  Extrachromosomal DNA (ecDNA): 1
+Chromosome 15
+  Extrachromosomal DNA (ecDNA): 1
+Chromosome 16
+  Balanced Translocations: 1
+Chromosome 17
+  Chromoplexy: 1
+Chromosome 18
+  Chromoplexy: 1
+Chromosome 19
+  Chromoplexy: 1
+Chromosome 20
+  Chromoplexy: 1
+Chromosome 21
+  Chromoplexy: 1
+  Dicentrics: 1
+Chromosome 23
+  Deletion-Insertions: 1
+  Dicentrics: 1
+Chromosome 24
+  Deletion-Insertions: 1
+Chromosome 25
+  Chromothripsis: 1
+Chromosome 26
+  Balanced Translocations: 1
+  Dicentrics: 1
+Chromosome 27
+  Ring Chromosomes: 1
+Chromosome 28
+  Balanced Inversions: 2
+Chromosome 29
+  Chromothripsis: 1
+Chromosome 30
+  Balanced Translocations: 1
+Chromosome 32
+  Deletion-Translocations: 1
+Chromosome 33
+  Deletion-Translocations: 1
+  Dicentrics: 1
+Chromosome 36
+  Extrachromosomal DNA (ecDNA): 2
+Chromosome 39
+  Chromoplexy: 1
+Chromosome 40
+  Chromoplexy: 1
+Chromosome 41
+  Chromoplexy: 1
+Chromosome 46
+  Extrachromosomal DNA (ecDNA): 1
+

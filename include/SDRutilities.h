@@ -9,6 +9,7 @@
 #include <set>
 
 #include <array>
+#include <string>
 #include "SDRtypes.h"
 
 
@@ -2950,6 +2951,90 @@ inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHead
     }
 
     return chromothripsisEvents;
+}
+
+
+// Counts the detected mutations of one cell per original strand, for the web viewer's per-chromosome popups.
+// Uses the same detection functions (and hierarchy) as the SDR summary file, so the numbers agree with it.
+// A mutation involving several strands (e.g. a translocation between chromosomes 5 and 12) is counted once on each strand involved,
+// so the per-strand counts can add up to more than the cell total. Only mutation types that occur are listed, in summary-file order.
+// Exception: a dicentric is counted only on the chromosome slot it is drawn in, not on the partner left acentric.
+inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPerOriginalStrand(const SDRsubHeader& subHeader, const SDRmasterHeader& masterHeader)
+{
+    const int numOriginalStrands = masterHeader.intactChromosomeSizes.empty() ? 0 : static_cast<int>(masterHeader.intactChromosomeSizes[0]);
+
+    std::map<int, std::map<std::string, int>> counts;			// strand ID -> mutation type -> count
+
+    // Count one mutation of this type on every distinct strand in strandIDs.
+    auto addEvent = [&counts](const std::string& type, std::vector<int> strandIDs)
+    {
+        std::sort(strandIDs.begin(), strandIDs.end());
+        strandIDs.erase(std::unique(strandIDs.begin(), strandIDs.end()), strandIDs.end());
+
+        for (int strandID : strandIDs)
+        {
+            counts[strandID][type]++;
+        }
+    };
+
+    for (const auto& e : detectDeletions(subHeader, numOriginalStrands, masterHeader))              addEvent("Long Deletions", {e.oldStrandID});
+    for (const auto& e : detectInversions(subHeader, numOriginalStrands, masterHeader))             addEvent("Balanced Inversions", {e.oldStrandID});
+    for (const auto& e : detectTranslocations(subHeader, numOriginalStrands, masterHeader))         addEvent("Balanced Translocations", {e.oldStrandAid, e.oldStrandBid});
+    for (const auto& e : detectECDNA(subHeader, numOriginalStrands, masterHeader))                  addEvent("Extrachromosomal DNA (ecDNA)", e.oldStrandIDs);
+    for (const auto& e : detectDeletionInversions(subHeader, numOriginalStrands, masterHeader))     addEvent("Deletion-Inversions", {e.oldStrandID});
+    for (const auto& e : detectDeletionTranslocations(subHeader, numOriginalStrands, masterHeader)) addEvent("Deletion-Translocations", {e.oldStrandAid, e.oldStrandBid});
+    for (const auto& e : detectDeletionInsertions(subHeader, numOriginalStrands))                   addEvent("Deletion-Insertions", {e.donorOldStrandID, e.recipientOldStrandID});
+    for (const auto& e : detectChromoplexy(subHeader, numOriginalStrands, masterHeader))            addEvent("Chromoplexy", e.involvedStrandIDs);
+    for (const auto& e : detectChromothripsis(subHeader, numOriginalStrands))                       addEvent("Chromothripsis", e.involvedStrandIDs);
+    for (const auto& e : detectChromosomeRings(subHeader, numOriginalStrands))                      addEvent("Ring Chromosomes", e.involvedOldStrandIDs);
+
+    // Dicentrics are the one exception to counting every strand involved: a dicentric is counted only on the chromosome
+    // slot where the karyogram draws it (the one showing two centromeres). The partner chromosome, which is left acentric
+    // (e.g. the donor in a deletion-insertion), is not counted. The slot is found with the same rules the drawing uses:
+    // the dicentric/acentric pairing override when there is one, otherwise determineHomeStrandID().
+    const std::map<int, int> drawnSlots = findDicentricAcentricHomeOverrides(subHeader, numOriginalStrands, masterHeader);
+
+    for (const SDRdicentricEvent& e : detectDicentrics(subHeader, numOriginalStrands))
+    {
+        const auto overrideIt = drawnSlots.find(e.newStrandID);
+
+        if (overrideIt != drawnSlots.end())
+        {
+            addEvent("Dicentrics", {overrideIt->second});
+            continue;
+        }
+
+        for (const SDRdataRecord& record : subHeader.dataRecords)
+        {
+            if (record.newStrandID == e.newStrandID)
+            {
+                addEvent("Dicentrics", {determineHomeStrandID(record)});
+                break;
+            }
+        }
+    }
+
+    // Same order as the "Mutation Summary" in the SDR summary file.
+    const std::vector<std::string> typeOrder = {
+        "Long Deletions", "Balanced Inversions", "Balanced Translocations", "Extrachromosomal DNA (ecDNA)", "Deletion-Inversions",
+        "Deletion-Translocations", "Deletion-Insertions", "Chromoplexy", "Chromothripsis", "Ring Chromosomes", "Dicentrics"};
+
+    std::map<int, std::vector<std::pair<std::string, int>>> result;
+
+    for (const auto& [strandID, typeCounts] : counts)
+    {
+        for (const std::string& type : typeOrder)
+        {
+            const auto it = typeCounts.find(type);
+
+            if (it != typeCounts.end())
+            {
+                result[strandID].emplace_back(type, it->second);
+            }
+        }
+    }
+
+    return result;
 }
 
 } // namespace sddparser

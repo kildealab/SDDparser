@@ -60,6 +60,18 @@ struct CentromerePosition                       // Map the centromere start and 
 
 
 
+struct KaryogramLabelRegion                     // Where a chromosome label was drawn, so the web viewer can make it clickable.
+{
+    std::string label;                          // Text drawn under the chromosome, e.g. "Chr 5", "X" or "Y".
+    double x;                                   // Bounding box of the label, in image pixels (same units as the PNG/SVG).
+    double y;
+    double width;
+    double height;
+    std::vector<int> oldStrandIDs;              // Chromosome(s) drawn in this slot: SDR original strand IDs or SDD data Field 3 chromosome numbers.
+                                                // Homolog 1 first, then homolog 2 for homologous layouts.
+};
+
+
 // Use Karyogram for all illustrations of chromosome damages
 class Karyogram
 {
@@ -106,7 +118,17 @@ public:
     );
 
 
+    // Chromosome label positions from the most recent generateSDRkaryogram() call (empty after an SDD karyogram).
+    // Used by the CLI to make the labels clickable in the web viewer.
+    const std::vector<KaryogramLabelRegion>& getLabelRegions() const { return labelRegions; }
+
+
 private:
+
+    std::vector<KaryogramLabelRegion> labelRegions;	// Filled while drawing an SDR karyogram, see getLabelRegions().
+
+    // Draws a chromosome label at the current point and records its bounding box and original strands in labelRegions.
+    void drawChromosomeLabel(cairo_t* cr, const std::string& label, double x, double y, const std::vector<int>& oldStrandIDs);
 
     // Shared drawing code behind both overloads. Writes to outputFilename when imageBytes is null, otherwise encodes the image into imageBytes, in the given format.
     bool renderSDDkaryogram(const std::vector<double>& chromosomeSizes, const std::vector<double>& cellCyclePhase, const std::vector<double>& doseOrFluence, const std::vector<int>& incidentParticles, const std::vector<Exposure>& exposures, bool humanGenome, const std::string& outputFilename, std::vector<unsigned char>* imageBytes, KaryogramFormat format);
@@ -150,7 +172,7 @@ private:
     void drawCircularFragment(cairo_t* cr, double centerX, double centerY, double diameter, RGB color);
     // Draw ecDNA mutated segment combined from multiple foreign strands in SDR file
     void drawPieChartFragment(cairo_t* cr, double centerX, double centerY, double diameter, const std::vector<std::pair<RGB, double>>& wedges);
-    void drawRingFragment(cairo_t* cr, double centerX, double centerY, double outerDiameter, RGB color, double centromereStartFraction, double centromereEndFraction);
+    void drawRingFragment(cairo_t* cr, double centerX, double centerY, double outerDiameter, RGB color, double centromereStartFraction, double centromereEndFraction, bool dashedOutline = false);
     // Draw the inner circle on ecDNA fragments to resemble a ring fragment.
     void drawCircularFragmentInnerRing(cairo_t* cr, double centerX, double centerY, double outerDiameter);
 
