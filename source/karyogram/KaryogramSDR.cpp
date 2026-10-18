@@ -62,12 +62,6 @@ static double mixedRecordLengthWithHomeGaps(const SDRdataRecord& record, int hom
     return totalLengthMbp;
 }
 
-
-
-
-
-
-
 static bool isSingleMixedRecordWithHomeGap(const std::vector<const SDRdataRecord*>& records, int homeOldStrandID)
 {
     if (records.size() != 1 || !records[0]->linear)
@@ -89,55 +83,35 @@ static bool isSingleMixedRecordWithHomeGap(const std::vector<const SDRdataRecord
 
 
 
-
-
-
-
-
-
-
-
-
-// Writes the SDR karyogram to a PNG file.
-bool Karyogram::generateSDRkaryogram(
+bool Karyogram::generateSDRkaryogram(					// Writes the SDR karyogram to a PNG (default) or SVG file.
     const SDRmasterHeader& masterHeader,
     const SDRsubHeader& subHeader,
     bool humanGenome,
-    const std::string& outputFilename)
+    const std::string& outputFilename,
+    KaryogramFormat format)
 {
-    return renderSDRkaryogram(masterHeader, subHeader, humanGenome, outputFilename, nullptr);
+    return renderSDRkaryogram(masterHeader, subHeader, humanGenome, outputFilename, nullptr, format);
 }
 
 
-
-// Returns the SDR karyogram as PNG bytes in memory.
-bool Karyogram::generateSDRkaryogram(
+bool Karyogram::generateSDRkaryogram(					// Returns the SDR karyogram as PNG or SVG bytes in memory.
     const SDRmasterHeader& masterHeader,
     const SDRsubHeader& subHeader,
     bool humanGenome,
-    std::vector<unsigned char>& pngBytes)
+    std::vector<unsigned char>& imageBytes,
+    KaryogramFormat format)
 {
-    return renderSDRkaryogram(masterHeader, subHeader, humanGenome, std::string(), &pngBytes);
+    return renderSDRkaryogram(masterHeader, subHeader, humanGenome, std::string(), &imageBytes, format);
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the rearranged chromosome segments on the karyogram
     const SDRmasterHeader& masterHeader,				// Access SDR master header for intact chromosome sizes
     const SDRsubHeader& subHeader, 					// Access SDR subheader for cell-by-cell damage/misrepair data
     bool humanGenome,							// Check if human genome specified
-    const std::string& outputFilename,					// Output file name of the karyogram, concatenated with the start of the SDR filename (when pngBytes is null).
-    std::vector<unsigned char>* pngBytes)				// If non-null, receives the PNG in memory instead
+    const std::string& outputFilename,					// Output file name of the karyogram, concatenated with the start of the SDR filename (when imageBytes is null).
+    std::vector<unsigned char>* imageBytes,				// If non-null, receives the image in memory instead.
+    KaryogramFormat format)						// PNG or SVG.
 {
 
     // Check for absent data in SDR headers/subHeaders
@@ -350,7 +324,7 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
     const double homologGap = 18.0;						// Visual gap between left/right homolog slots, safe to tune.
 
     // Draw karyogram layout
-    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, imgWidth, imgHeight);
+    cairo_surface_t* surface = createKaryogramSurface(imgWidth, imgHeight, outputFilename, imageBytes, format);
     cairo_t* cr = cairo_create(surface);
 
     cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
@@ -753,7 +727,7 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
     const double legendY = imgHeight - legendBottomMargin - legendHeight;
     drawSDRlegend(cr, legendY);
 
-    const bool written = writeKaryogramPNG(surface, outputFilename, pngBytes);
+    const bool written = writeKaryogramImage(surface, outputFilename, imageBytes, format);
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 

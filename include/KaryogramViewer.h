@@ -11,8 +11,10 @@ namespace sddparser
 struct KaryogramImage                           // One karyogram to show in the web viewer.
 {
     std::string label;                          // Shown in the cell list, e.g. "Cell 0".
-    std::string filename;                       // Suggested name when the user downloads the PNG from the browser.
-    std::vector<unsigned char> pngBytes;        // Encoded PNG, as returned by the in-memory generateSDD/SDRkaryogram overloads.
+    std::string filename;                       // Name used for downloads from the viewer, e.g. "cell0_karyogram.png" (the extension is swapped to .svg for SVG downloads).
+    std::vector<unsigned char> svgBytes;        // Vector image (KaryogramFormat::SVG): shown in the viewer, stays sharp at any zoom level, offered as SVG download.
+    std::vector<unsigned char> pngBytes;        // Raster image (KaryogramFormat::PNG): offered as PNG download, and shown only when svgBytes is empty.
+                                                // Either one may be left empty; the viewer then only offers the format it has.
 };
 
 
@@ -23,14 +25,12 @@ bool writeKaryogramViewer(
     const std::filesystem::path& htmlPath       // Where to write the HTML file.
 );
 
-
 // Returns false when no browser can be shown on this machine, e.g. over SSH, on an HPC cluster or in a container,
 // or in WSL with Windows interop switched off. Used to decide where to write the viewer and whether to open it.
 bool canOpenBrowser();
 
-
-
-// Opens a file in the system's default web browser (xdg-open on Linux, open on macOS, start on Windows).
+// Opens a file in the system's default web browser (xdg-open on Linux, open on macOS, start on Windows, the Windows
+// browser from WSL). Returns false if it could not, in which case the caller should tell the user where the file is.
 bool openInBrowser(const std::filesystem::path& htmlPath);
 
 } // namespace sddparser

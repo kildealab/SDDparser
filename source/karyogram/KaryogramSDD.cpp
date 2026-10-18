@@ -108,55 +108,47 @@ bool resolveDoubleChromatid(
 
 
 
-// Writes the karyogram to a PNG file.
-bool Karyogram::generateSDDkaryogram(
+
+
+
+bool Karyogram::generateSDDkaryogram(                                         // Writes the karyogram to a PNG (default) or SVG file.
     const std::vector<double>& chromosomeSizes,
     const std::vector<double>& cellCyclePhase,
     const std::vector<double>& doseOrFluence,
     const std::vector<int>& incidentParticles,
     const std::vector<Exposure>& exposures,
     bool humanGenome,
-    const std::string& outputFilename)
+    const std::string& outputFilename,
+    KaryogramFormat format)
 {
-    return renderSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, outputFilename, nullptr);
+    return renderSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, outputFilename, nullptr, format);
 }
 
 
-
-// Returns the karyogram as PNG bytes in memory.
-bool Karyogram::generateSDDkaryogram(
+bool Karyogram::generateSDDkaryogram(                                         // Returns the karyogram as PNG or SVG bytes in memory.
     const std::vector<double>& chromosomeSizes,
     const std::vector<double>& cellCyclePhase,
     const std::vector<double>& doseOrFluence,
     const std::vector<int>& incidentParticles,
     const std::vector<Exposure>& exposures,
     bool humanGenome,
-    std::vector<unsigned char>& pngBytes)
+    std::vector<unsigned char>& imageBytes,
+    KaryogramFormat format)
 {
-    return renderSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, std::string(), &pngBytes);
+    return renderSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, std::string(), &imageBytes, format);
 }
 
 
-
-
-
-
-
-
-
-
-
-
-// Function that generates the overall Karyogram structure
-bool Karyogram::renderSDDkaryogram(
+bool Karyogram::renderSDDkaryogram(                                           // Function that generates the overall Karyogram structure
     const std::vector<double>& chromosomeSizes,                            // Requires chromosome sizes in the SDD file header for scaling on the image
     const std::vector<double>& cellCyclePhase,                             // Requires cell cycle phase in the SDD file header for determining presence of duplicated chromosomes.
     const std::vector<double>& doseOrFluence,                              // Accesses the SDD dose or fluence listed in the header
     const std::vector<int>& incidentParticles,                             // Accesses the SDD incident particles in the header
     const std::vector<Exposure>& exposures,                                // Accesses the damage locations associated with each chromosome in a given exposure.
     bool humanGenome,                                                      // Boolean to determine if karyogram should be drawn with human centromere ranges or generic centromere locations for non-human genomes.
-    const std::string& outputFilename,                                     // Outputs the image to the outputFilename (when pngBytes is null).
-    std::vector<unsigned char>* pngBytes)					// If non-null, receives the PNG in memory instead.
+    const std::string& outputFilename,                                     // Outputs the image to the outputFilename (when imageBytes is null).
+    std::vector<unsigned char>* imageBytes,                                // If non-null, receives the image in memory instead.
+    KaryogramFormat format)                                                // PNG or SVG.
 {
 
     if (chromosomeSizes.empty())                                           // Make sure SDD header 'Chromosome sizes' Is non-empty.
@@ -240,12 +232,7 @@ bool Karyogram::renderSDDkaryogram(
     // ----------------------------------------------------
     // Generate the background Karyogram template
     // ----------------------------------------------------
-    cairo_surface_t* surface =
-        cairo_image_surface_create(
-      	    CAIRO_FORMAT_ARGB32,
-            imgWidth,
-            imgHeight
-        );
+    cairo_surface_t* surface = createKaryogramSurface(imgWidth, imgHeight, outputFilename, imageBytes, format);
 
     cairo_t* cr = cairo_create(surface);
 
@@ -800,7 +787,7 @@ bool Karyogram::renderSDDkaryogram(
     drawSDDlegend(cr, legendY);
 
     // Write the karyogram to the desired output filename "'SDDfileName'_karyogram.png"
-    const bool written = writeKaryogramPNG(surface, outputFilename, pngBytes);
+    const bool written = writeKaryogramImage(surface, outputFilename, imageBytes, format);
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 

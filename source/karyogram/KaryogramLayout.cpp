@@ -1,4 +1,5 @@
 #include <cairo/cairo.h>
+#include <cairo/cairo-svg.h>
 #include <iostream>
 #include <cmath>
 #include <string>
@@ -310,22 +311,8 @@ bool Karyogram::getCentromereForOriginalStrand(
 }
 
 
-
-
-
-
-
-
-
-
-
-
-// ---------------------------------------------------------------- //
-// Functions to help open karyogram pngs in web browser
-// ---------------------------------------------------------------- //
-
-// Cairo stream callback: appends each chunk of encoded PNG data to the std::vector passed as closure.
-static cairo_status_t appendPNGchunk(void* closure, const unsigned char* data, unsigned int length)
+// Cairo stream callback: appends each chunk of encoded image data (PNG or SVG) to the std::vector passed as closure.
+static cairo_status_t appendImageChunk(void* closure, const unsigned char* data, unsigned int length)
 {
     std::vector<unsigned char>* buffer = static_cast<std::vector<unsigned char>*>(closure);
     buffer->insert(buffer->end(), data, data + length);
@@ -333,17 +320,60 @@ static cairo_status_t appendPNGchunk(void* closure, const unsigned char* data, u
 }
 
 
+cairo_surface_t* Karyogram::createKaryogramSurface(					// Create the surface every karyogram is drawn on.
+    int width,
+    int height,
+    const std::string& outputFilename,
+    std::vector<unsigned char>* imageBytes,
+    KaryogramFormat format)
+{
+    if (format == KaryogramFormat::SVG)
+    {
+        // SVG keeps every chromosome, marker and letter as a vector shape instead of pixels, so the image can be zoomed
+        // without becoming blurry. Cairo writes the SVG text as it is drawn: into imageBytes, or straight to the file.
+        cairo_surface_t* surface;
+
+        if (imageBytes)
+        {
+            imageBytes->clear();
+            surface = cairo_svg_surface_create_for_stream(appendImageChunk, imageBytes, width, height);
+        }
+        else
+        {
+            surface = cairo_svg_surface_create(outputFilename.c_str(), width, height);
+        }
+
+#if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 16, 0)
+        // Newer cairo versions default to points (pt) for the SVG size, which browsers would show 1.33x larger than the PNG.
+        // Using pixels keeps the SVG exactly the same size as the PNG.
+        cairo_svg_surface_set_document_unit(surface, CAIRO_SVG_UNIT_PX);
+#endif
+
+        return surface;
+    }
+
+    return cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+}
 
 
-// Write the finished karyogram to a PNG file, or into memory if pngBytes is given.
-bool Karyogram::writeKaryogramPNG(cairo_surface_t* surface, const std::string& outputFilename, std::vector<unsigned char>* pngBytes)
+bool Karyogram::writeKaryogramImage(							// Finish the karyogram image: to a file, or into memory if imageBytes is given.
+    cairo_surface_t* surface,
+    const std::string& outputFilename,
+    std::vector<unsigned char>* imageBytes,
+    KaryogramFormat format)
 {
     cairo_status_t status;
 
-    if (pngBytes)
+    if (format == KaryogramFormat::SVG)
     {
-        pngBytes->clear();
-        status = cairo_surface_write_to_png_stream(surface, appendPNGchunk, pngBytes);
+        // The SVG was already written (to the file or imageBytes) while drawing; finishing the surface writes the closing tags.
+        cairo_surface_finish(surface);
+        status = cairo_surface_status(surface);
+    }
+    else if (imageBytes)
+    {
+        imageBytes->clear();
+        status = cairo_surface_write_to_png_stream(surface, appendImageChunk, imageBytes);
     }
     else
     {
@@ -357,9 +387,7 @@ bool Karyogram::writeKaryogramPNG(cairo_surface_t* surface, const std::string& o
     }
 
     return true;
-
 }
-
 
 
 } // namespace sddparser

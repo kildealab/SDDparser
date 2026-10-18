@@ -8,8 +8,9 @@ karyogram of the double-strand break and single-strand break locations onto the 
 This package can also accommodate the SDR file format in the same way as the SDD file, by summarizing the mutations specified
 in the SDR file for each cell, as well as optionally plotting the karyogram of the mutations specified in the SDR file.
 
-Karyograms open in an interactive web viewer in your default browser, where you can switch between cells and download
-any karyogram as a PNG. They can also be saved directly as PNG files with `--save-png`.
+Karyograms open in an interactive web viewer in your default browser, where you can switch between cells, zoom and pan without
+losing image quality, and download any karyogram as a PNG or SVG, or all karyograms at once as a zip file. They can also be saved
+directly as image files with `--save-png` and/or `--save-svg`.
 
 Available both as a **command-line tool** and as a **linkable C++ library** you can embed in your own project.
 
@@ -22,7 +23,7 @@ On Debian/Ubuntu: `sudo apt install libcairo2-dev`
 On macOS (Homebrew): `brew install cairo`
 On Windows, build and run inside WSL (Windows Subsystem for Linux) using the Debian/Ubuntu command above.
 
-A web browser is needed to view karyograms in the web viewer (no extra libraries). Without one, use `--save-png`.
+A web browser is needed to view karyograms in the web viewer (no extra libraries). Without one, use `--save-png` or `--save-svg`.
 
 ## Building
 
@@ -47,8 +48,8 @@ make clean  # removes build artifacts
 5. To run the SDDparser and generate a summary of either the SDD or SDR file, type in the command line 
 
 ```
-./SDDparser <SDD file> [--karyogram human|other [--save-png]]
-./SDDparser -sdr <SDR file> [--karyogram human|other [--save-png]]
+./SDDparser <SDD file> [--karyogram human|other [--save-png] [--save-svg]]
+./SDDparser -sdr <SDR file> [--karyogram human|other [--save-png] [--save-svg]]
 ```
 
 Examples:
@@ -57,22 +58,29 @@ Examples:
 ./SDDparser exampleSDD.txt
 ./SDDparser exampleSDD.txt --karyogram human
 ./SDDparser -sdr exampleSDR.txt
-./SDDparser -sdr exampleSDR.txt --karyogram human 
+./SDDparser -sdr exampleSDR.txt --karyogram human
 ./SDDparser -sdr exampleSDR.txt --karyogram human --save-png
+./SDDparser -sdr exampleSDR.txt --karyogram human --save-svg
+./SDDparser -sdr exampleSDR.txt --karyogram human --save-png --save-svg
 ```
 
 Each run writes a `<input>_summary.txt` file next to the input. If `--karyogram` is passed, one karyogram is drawn per exposure/cell found in the file:
 
 **By default**, all karyograms are placed in a single self-contained HTML file, `<input>_karyograms_<human|other>.html`, written to your system's
-  temporary folder and opened in your default web browser. Use the viewer to switch between cells and download any karyogram as a PNG.
-  The path of the HTML file is always printed, so it can be reopened later (note that the temporary folder may be cleared on reboot).
+  temporary folder and opened in your default web browser. The path of the HTML file is always printed, so it can be reopened later
+  (note that the temporary folder may be cleared on reboot). In the viewer you can:
+  - switch between cells with Previous/Next or the cell list,
+  - zoom with the mouse wheel, trackpad pinch, double-click, the −/+/Fit/100% buttons, or the keys `+`, `-`, `0` (fit) and `1` (100%),
+    and drag to pan. Karyograms are shown as vector images (SVG), so they stay sharp at any zoom level,
+  - download the karyogram shown as a PNG or SVG, or all karyograms as a zip file.
 
-**With `--save-png`**, no viewer is created; instead one `<input>_cell<N>_karyogram_<human|other>.png` is written next to the input file per cell.
+**With `--save-png` and/or `--save-svg`**, no viewer is created; instead one `<input>_cell<N>_karyogram_<human|other>.png` and/or `.svg`
+  is written next to the input file per cell. The two options can be combined, in any order.
 
 **On WSL**, the viewer opens in your Windows browser.
 
 **On machines without a screen** (over SSH, on HPC clusters, or in containers), no browser is opened. The HTML file is written next to the input
-  file instead, so you can copy it to your own computer (e.g. with `scp`) and open it there, or rerun with `--save-png`.
+  file instead, so you can copy it to your own computer (e.g. with `scp`) and open it there, or rerun with `--save-png` or `--save-svg`.
 
 
 6. If you decide to plot the Karyogram of the SDD/SDR file illustrating the locations of the single- and double-strand breaks on each of the chromosomes, 
@@ -166,7 +174,7 @@ chromosome is present in the new ecDNA fragment.
 
 
 ## FURTHER WORK:
-1. Add a zoom in and out and a panning option to conserve image quality. 
+1. Click a chromosome label in the web viewer to show a summary of that chromosome's mutation counts.
 2. Add functionality to be able to receive two X chromosomes instead of a Y and X chromosome and be able to plot them on the karyogram. 
 3. Representing and summarizing short indel mutations in SDR file format and reporting how many of each per chromosome (perhaps drawable in future).
 ... and much more.
@@ -315,13 +323,21 @@ for (const sddparser::SDRsubHeader& subHeader : parser.getSubHeaders())
 }
 ```
 
- 
-**Keeping the image in memory instead of writing a file:** both functions have an overload that takes a `std::vector<unsigned char>&`
-in place of the output filename and fills it with the encoded PNG. This is how the CLI builds the web viewer.
+**Choosing PNG or SVG:** every drawing function takes an optional last argument, `sddparser::KaryogramFormat::PNG` (the default)
+or `sddparser::KaryogramFormat::SVG`. SVG is a vector image that stays sharp at any zoom level.
 
 ```cpp
-std::vector<unsigned char> pngBytes;
+karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, /*humanGenome=*/true,
+                               "cell0_karyogram.svg", sddparser::KaryogramFormat::SVG);
+```
+
+**Keeping the image in memory instead of writing a file:** both functions have an overload that takes a `std::vector<unsigned char>&`
+in place of the output filename and fills it with the encoded image (PNG by default, or SVG). This is how the CLI builds the web viewer.
+
+```cpp
+std::vector<unsigned char> pngBytes, svgBytes;
 karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, /*humanGenome=*/true, pngBytes);
+karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, /*humanGenome=*/true, svgBytes, sddparser::KaryogramFormat::SVG);
 ```
 
 
@@ -329,17 +345,20 @@ karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, /*humanGenom
 
 | Method | Description |
 |---|---|
-| `bool generateSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, outputFilename)` | Draws a damage karyogram (SSB/DSB markers) for one exposure from SDD data and writes it to a PNG file. |
-| `bool generateSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, pngBytes)` | Same drawing, but returns the PNG in `pngBytes` (`std::vector<unsigned char>&`) instead of writing a file. |
-| `bool generateSDRkaryogram(masterHeader, subHeader, humanGenome, outputFilename)` | Draws a structural-rearrangement karyogram (deletions, inversions, translocations, ecDNA, chromoplexy, chromothripsis, and more) for one cell exposure from SDR data and writes it to a PNG file. |
-| `bool generateSDRkaryogram(masterHeader, subHeader, humanGenome, pngBytes)` | Same drawing, but returns the PNG in `pngBytes` instead of writing a file. |
+| `bool generateSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, outputFilename, format = PNG)` | Draws a damage karyogram (SSB/DSB markers) for one exposure from SDD data and writes it to a PNG or SVG file. |
+| `bool generateSDDkaryogram(chromosomeSizes, cellCyclePhase, doseOrFluence, incidentParticles, exposures, humanGenome, imageBytes, format = PNG)` | Same drawing, but returns the image in `imageBytes` (`std::vector<unsigned char>&`) instead of writing a file. |
+| `bool generateSDRkaryogram(masterHeader, subHeader, humanGenome, outputFilename, format = PNG)` | Draws a structural-rearrangement karyogram (deletions, inversions, translocations, ecDNA, chromoplexy, chromothripsis, and more) for one cell exposure from SDR data and writes it to a PNG or SVG file. |
+| `bool generateSDRkaryogram(masterHeader, subHeader, humanGenome, imageBytes, format = PNG)` | Same drawing, but returns the image in `imageBytes` instead of writing a file. |
 
 `humanGenome = true` draws real human centromere positions; `false` uses a generic centromere at the midpoint of each chromosome.
+`format` is `sddparser::KaryogramFormat::PNG` (default) or `sddparser::KaryogramFormat::SVG`.
 
 
 ### Showing karyograms in the web viewer — `KaryogramViewer.h`
 
-Collect in-memory karyograms into `sddparser::KaryogramImage` entries, write them into one self-contained HTML file, and open it:
+Collect in-memory karyograms into `sddparser::KaryogramImage` entries, write them into one self-contained HTML file, and open it.
+The viewer shows `svgBytes` (sharp when zoomed) and offers both formats for download; either one can be left empty, and the viewer
+then only uses the format it has:
 
 ```cpp
 sddparser::Karyogram karyogram;
@@ -352,9 +371,10 @@ for (const sddparser::SDRsubHeader& subHeader : parser.getSubHeaders())
 {
     sddparser::KaryogramImage image;
     image.label = "Cell " + std::to_string(subHeader.cellID);                        // Shown in the viewer's cell list
-    image.filename = "cell" + std::to_string(subHeader.cellID) + "_karyogram.png";   // Name used by the viewer's download button
+    image.filename = "cell" + std::to_string(subHeader.cellID) + "_karyogram.png";   // Name used by the viewer's downloads (.svg for SVG)
 
-    if (karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, /*humanGenome=*/true, image.pngBytes))
+    if (karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, /*humanGenome=*/true, image.svgBytes, sddparser::KaryogramFormat::SVG)
+        && karyogram.generateSDRkaryogram(parser.getMasterHeader(), subHeader, /*humanGenome=*/true, image.pngBytes))
     {
         images.push_back(image);
     }
@@ -370,7 +390,7 @@ if (sddparser::writeKaryogramViewer(images, "exampleSDR.txt", "exampleSDR_karyog
 
 | Function | Description |
 |---|---|
-| `bool writeKaryogramViewer(images, title, htmlPath)` | Writes all karyograms into a single HTML file with no external dependencies. |
+| `bool writeKaryogramViewer(images, title, htmlPath)` | Writes all karyograms into a single HTML file with no external dependencies, including zoom/pan and PNG/SVG/zip downloads. |
 | `bool canOpenBrowser()` | Returns `false` when no browser can be shown (e.g. over SSH, on an HPC cluster, in a container, or in WSL with Windows interop disabled). |
 | `bool openInBrowser(htmlPath)` | Opens the file in the default browser (`xdg-open` on Linux, `open` on macOS, `start` on Windows, the Windows browser from WSL). Returns `false` if it could not. |
 
