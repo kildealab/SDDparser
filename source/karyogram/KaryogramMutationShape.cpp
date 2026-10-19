@@ -914,7 +914,8 @@ bool Karyogram::analyzeHomeStrandGapShape(const std::vector<const SDRdataRecord*
         remainingRecord = singleCentricLinear[0];
     }
 
-    // Everything else is a PIECE: a linear, single-fragment, non-reversed excised record, or an acentric circular (ecDNA) record.
+    // Everything else is a PIECE: a linear, single-fragment, non-reversed excised record, or a circular record cut from a gap. A circular piece
+    // may be acentric (ecDNA) or keep the centromere (a ring next to an acentric remaining record), drawSingleOriginCircularPiece() draws either.
     for (const SDRdataRecord* record : records)
     {
         if (record == remainingRecord)
@@ -927,16 +928,6 @@ bool Karyogram::analyzeHomeStrandGapShape(const std::vector<const SDRdataRecord*
             if (record->fragments.size() != 1 || isReversedFragment(record->fragments[0]))
             {
                 return reject();
-            }
-        }
-        else
-        {
-            for (const SDRfragment& fragment : record->fragments)
-            {
-                if (fragment.hasCentromere)
-                {
-                    return reject();
-                }
             }
         }
 

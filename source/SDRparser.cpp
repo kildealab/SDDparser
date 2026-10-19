@@ -708,7 +708,9 @@ bool SDRparser::writeSummary(
     if (!subHeaders.empty())							// Explains every cell's "Mutations by chromosome" list, so it is written once here rather than per cell.
     {
         output << "Note on \"Mutations by chromosome\": a mutation involving several chromosomes is listed under each of them,\n"
-               << "except dicentrics, which are listed only under the chromosome drawn with two centromeres.\n\n";
+               << "except dicentrics, which are listed only under the chromosome drawn with two centromeres.\n"
+               << "\"Miscellaneous\" marks a chromosome with a change that none of the mutation types above accounts for (e.g. an\n"
+               << "inversion reaching a chromosome end), even when it also has other mutations. It has no line in the cell's Mutation Summary.\n\n";
     }
 
     for (const SDRsubHeader& subHeader : subHeaders)

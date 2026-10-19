@@ -153,6 +153,7 @@ private:
     void drawChromosome(cairo_t* cr, double x, double y, double height, double width, RGB color, double centromereStart, double centromereEnd, bool dashedOutline = false);
     // The main draw mutated chromosome function, accounting additionally for foreign segments with different colors, inversion markers, white deletion segments.
     void drawPaintedFragment(cairo_t* cr, double x, double y, double height, double width, const std::vector<PaintedSegment>& segments, bool roundTopCap = true, bool roundBottomCap = true, bool drawOutline = true);
+    std::vector<PaintedSegment> applyMinimumSegmentHeight(const std::vector<PaintedSegment>& segments, double height, double minPixels);	// Keeps tiny segments at least minPixels tall
     // Function to help stack mutated segments onto original intact chromosomes with their original colors, determines positioning of the mutated segments and deleted segments
     void drawStackedMutations(cairo_t* cr, const std::vector<const SDRdataRecord*>& records, double slotCenterX, double posY, double chromosomeWidth, double maxLengthMbp, double maxRenderHeight, bool humanGenome, const SDRmasterHeader& masterHeader, int homeOldStrandID);
 
@@ -173,6 +174,8 @@ private:
     // Draw ecDNA mutated segment combined from multiple foreign strands in SDR file
     void drawPieChartFragment(cairo_t* cr, double centerX, double centerY, double diameter, const std::vector<std::pair<RGB, double>>& wedges);
     void drawRingFragment(cairo_t* cr, double centerX, double centerY, double outerDiameter, RGB color, double centromereStartFraction, double centromereEndFraction, bool dashedOutline = false);
+    // Draw a circular piece of a single chromosome: a ring (with centromere) if any of its fragments carries a centromere, otherwise ecDNA.
+    void drawSingleOriginCircularPiece(cairo_t* cr, const SDRdataRecord& record, double centerX, double centerY, double diameter, int homeOldStrandID, bool humanGenome, const SDRmasterHeader& masterHeader);
     // Draw the inner circle on ecDNA fragments to resemble a ring fragment.
     void drawCircularFragmentInnerRing(cairo_t* cr, double centerX, double centerY, double outerDiameter);
 

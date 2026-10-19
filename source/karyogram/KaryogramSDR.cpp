@@ -16,6 +16,10 @@
 namespace sddparser
 {
 
+// Gap between a chromosome and a column of circular pieces (rings, ecDNA) beside it. Wider than the 6 px stackGap between linear pieces,
+// because a round edge only comes closest to the chromosome at one point and reads as touching it at 6 px.
+static constexpr double circleColumnGap = 12.0;
+
 // A linear record that mixes home-strand fragments with foreign (exchanged) ones can still hold lost material: two ADJACENT fragments of the SAME strand (home or foreign) that do not touch
 // leave a gap (an independent deletion elsewhere on the strand, e.g. next to a deletion-translocation or deletion-insertion). Returns the record's drawn length in Mbp with
 // those gaps included, and sets hasGap when at least one exists. Mirrors the gap rule of buildMixedStrandSegmentsWithGaps().
@@ -752,21 +756,126 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
 
 
 
+// Returns the segments with their fractions remapped so every non-empty segment spans at least minPixels of a bar height pixels tall. The
+// extra room is taken proportionally from the larger segments, and centromere fractions move with their segment, so the bar keeps its height.
+std::vector<PaintedSegment> Karyogram::applyMinimumSegmentHeight(const std::vector<PaintedSegment>& segments, double height, double minPixels)
+{
+    if (height <= 0.0)
+    {
+        return segments;
+    }
+
+    const double minFraction = minPixels / height;
+
+    // Boundaries of every segment, sorted, define intervals; each interval inside a segment is a piece to stretch or shrink.
+    std::vector<double> bounds;
+    for (const PaintedSegment& segment : segments)
+    {
+        bounds.push_back(std::min(segment.startFraction, segment.endFraction));
+        bounds.push_back(std::max(segment.startFraction, segment.endFraction));
+    }
+    std::sort(bounds.begin(), bounds.end());
+    bounds.erase(std::unique(bounds.begin(), bounds.end()), bounds.end());
+
+    if (bounds.size() < 2)
+    {
+        return segments;
+    }
+
+    double tinyTotal = 0.0;
+    double restTotal = 0.0;
+    std::vector<bool> isTiny(bounds.size() - 1, false);
+
+    for (std::size_t i = 0; i + 1 < bounds.size(); ++i)
+    {
+        const double length = bounds[i + 1] - bounds[i];
+
+        if (length > 0.0 && length < minFraction)
+        {
+            isTiny[i] = true;
+            tinyTotal += minFraction;
+        }
+        else
+        {
+            restTotal += length;
+        }
+    }
+
+    const double span = bounds.back() - bounds.front();
+
+    if (tinyTotal == 0.0 || restTotal <= 0.0 || tinyTotal >= span)		// Nothing to enlarge, or not enough room to do it.
+    {
+        return segments;
+    }
+
+    const double restScale = (span - tinyTotal) / restTotal;
+    std::vector<double> newBounds(bounds.size());
+    newBounds[0] = bounds[0];
+
+    for (std::size_t i = 0; i + 1 < bounds.size(); ++i)
+    {
+        newBounds[i + 1] = newBounds[i] + (isTiny[i] ? minFraction : (bounds[i + 1] - bounds[i]) * restScale);
+    }
+
+    // Piecewise-linear map from an old fraction to its new position.
+    const auto remap = [&](double fraction)
+    {
+        if (fraction <= bounds.front())
+        {
+            return newBounds.front() + (fraction - bounds.front());
+        }
+
+        for (std::size_t i = 0; i + 1 < bounds.size(); ++i)
+        {
+            if (fraction <= bounds[i + 1])
+            {
+                const double length = bounds[i + 1] - bounds[i];
+                const double t = (length > 0.0) ? (fraction - bounds[i]) / length : 0.0;
+                return newBounds[i] + t * (newBounds[i + 1] - newBounds[i]);
+            }
+        }
+
+        return newBounds.back() + (fraction - bounds.back());
+    };
+
+    std::vector<PaintedSegment> result = segments;
+
+    for (PaintedSegment& segment : result)
+    {
+        segment.startFraction = remap(segment.startFraction);
+        segment.endFraction = remap(segment.endFraction);
+
+        if (segment.hasCentromere)
+        {
+            segment.centromereStartFraction = remap(segment.centromereStartFraction);
+            segment.centromereEndFraction = remap(segment.centromereEndFraction);
+        }
+    }
+
+    return result;
+}
+
+
+
 void Karyogram::drawPaintedFragment(			// Function to draw the individual fragments making up the chromosomes on the karyogram and the excised linear fragments (circular fragments handled later)
     cairo_t* cr,
     double x, 						// X position of the painted segment
     double y, 						// Y position of the painted segment
     double height, 					// Height of the chromosome
     double width, 					// Width of the chromosome
-    const std::vector<PaintedSegment>& segments,	// Painted segment vector to add the aberrant strands on the original chromosomes to depict structural variations
+    const std::vector<PaintedSegment>& inputSegments,	// Painted segment vector to add the aberrant strands on the original chromosomes to depict structural variations
     bool roundTopCap,					// Whether the top edge gets a rounded telomere cap or a flat cut edge
     bool roundBottomCap,				// Whether the bottom edge gets a rounded telomere cap or a flat cut edge
     bool drawOutline)					// Whether the shape should have a black outline, default to true
 {
-    if (segments.empty())
+    if (inputSegments.empty())
     {
         return;
     }
+
+    // Tiny segments (e.g. a 0.1 Mbp translocated piece) would round away to nothing, so every segment gets a minimum height.
+    const double minSegmentPixels = 5.0;
+    const std::vector<PaintedSegment> segments = applyMinimumSegmentHeight(inputSegments, height, minSegmentPixels);
 
     const double capRadius = width / 2.0;
 
@@ -1105,7 +1214,8 @@ void Karyogram::drawStackedMutations(
 
         // Optional second column: ONLY the excised pieces actually present in the file. Linear pieces get flat caps unless they sit at a real chromosome end,
         // circular pieces are ecDNA circles. No pieces -> no second column and nothing drawn beside the chromosome.
-        const double excisedColumnCenterX = remainingBarX + chromosomeWidth + stackGap + column2Width / 2.0;
+        const bool hasCircularPiece = std::any_of(gapPieceRecords.begin(), gapPieceRecords.end(), [](const SDRdataRecord* piece) { return !piece->linear; });
+        const double excisedColumnCenterX = remainingBarX + chromosomeWidth + (hasCircularPiece ? circleColumnGap : stackGap) + column2Width / 2.0;
         const double verticalGap = 6.0;
         const double delTolerance = 0.000050;
         double excisedY = posY;
@@ -1125,9 +1235,9 @@ void Karyogram::drawStackedMutations(
                 const double minPieceSize = 5.0;			// Matches the floor computeSlotWidth() applies when it sizes this slot's column.
                 const double diameter = std::max(minPieceSize, std::min((pieceLengthMbp / originalSizeMbp) * remainingBarHeight, chromosomeWidth * 3.0));
                 const double centerY = excisedY + diameter / 2.0;
-                const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
 
-                drawCircularFragment(cr, excisedColumnCenterX, centerY, diameter, color);
+                // A circular piece that kept the centromere is a ring chromosome, not ecDNA.
+                drawSingleOriginCircularPiece(cr, *piece, excisedColumnCenterX, centerY, diameter, homeOldStrandID, humanGenome, masterHeader);
 
                 excisedY += diameter + verticalGap;
             }
@@ -1216,28 +1326,10 @@ void Karyogram::drawStackedMutations(
         const double minPieceSize = 5.0;				// Matches the floor computeSlotWidth() already applied when it sized this slot's column.
         const double ringDiameter = std::max(minPieceSize, std::min(equivalentLinearHeight, chromosomeWidth * 3.0));
 
-        const double ringColumnCenterX = barX + chromosomeWidth + stackGap + column2Width / 2.0;
+        const double ringColumnCenterX = barX + chromosomeWidth + circleColumnGap + column2Width / 2.0;
         const double ringCenterY = posY + ringDiameter / 2.0;
 
-        const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
-
-        double centromereStartFraction = 0.0;
-        double centromereEndFraction = 0.0;
-        double centromereStartBP = 0.0;
-        double centromereEndBP = 0.0;
-
-        if (ringLengthMbp > 0.0 && getCentromereForOriginalStrand(homeOldStrandID, humanGenome, masterHeader, centromereStartBP, centromereEndBP))
-        {
-            const SDRfragment& ringFragment = ringRecord->fragments[0];
-            const double fragLow = std::min(ringFragment.oldStartPosition, ringFragment.oldEndPosition);
-
-            centromereStartFraction = (centromereStartBP / 1000000.0 - fragLow) / ringLengthMbp;
-            centromereEndFraction = (centromereEndBP / 1000000.0 - fragLow) / ringLengthMbp;
-        }
-
-        // A ring formed from a second homolog gets dashed outlines, like that homolog's linear chromosome.
-        drawRingFragment(cr, ringColumnCenterX, ringCenterY, ringDiameter, color, centromereStartFraction, centromereEndFraction,
-                         isSecondHomologStrand(homeOldStrandID, masterHeader));
+        drawSingleOriginCircularPiece(cr, *ringRecord, ringColumnCenterX, ringCenterY, ringDiameter, homeOldStrandID, humanGenome, masterHeader);
 
         return;
     }
@@ -1449,9 +1541,8 @@ void Karyogram::drawStackedMutations(
 		// Correct because genuinely mixed-origin circular records are filtered out upstream via multiOriginECDNAnewStrandIDs before reaching this fallback.
                 // A record that slipped through with foreign fragments would be
 		// miscolored here, since nothing local to this line checks the record's actual fragment origins.
-		const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
-
-                drawCircularFragment(cr, columnX + chromosomeWidth / 2.0, centerY, diameter, color);
+                // A circular piece that kept the centromere is a ring chromosome, not ecDNA.
+                drawSingleOriginCircularPiece(cr, *record, columnX + chromosomeWidth / 2.0, centerY, diameter, homeOldStrandID, humanGenome, masterHeader);
             }
             else
             {
@@ -2119,6 +2210,63 @@ void Karyogram::drawCircularFragmentInnerRing(cairo_t* cr, double centerX, doubl
 
 
 
+// Draws a circular piece made of one chromosome's material. If any fragment kept a centromere (the file's centromere flag, the same
+// test detectChromosomeRings() uses), it is a ring chromosome and gets the ring shape with its centromere mark, dashed for a second
+// homolog. Otherwise it is acentric ecDNA and gets the plain ecDNA circle. Both shapes have the same diameter, so slot widths are unchanged.
+void Karyogram::drawSingleOriginCircularPiece(
+    cairo_t* cr,
+    const SDRdataRecord& record,
+    double centerX,
+    double centerY,
+    double diameter,
+    int homeOldStrandID,							// The slot's chromosome, which sets the color and the dashed outline
+    bool humanGenome,								// Human centromere table or generic centromere at 50% of the chromosome length
+    const SDRmasterHeader& masterHeader)
+{
+    const RGB color = getColorForOriginalStrand(homeOldStrandID, masterHeader);
+
+    double ringLengthMbp = 0.0;
+    const SDRfragment* centromereFragment = nullptr;
+    double centromereFragmentOffsetMbp = 0.0;					// Where the centromere-bearing fragment starts along the ring
+
+    for (const SDRfragment& fragment : record.fragments)
+    {
+        if (fragment.hasCentromere && centromereFragment == nullptr)
+        {
+            centromereFragment = &fragment;
+            centromereFragmentOffsetMbp = ringLengthMbp;
+        }
+
+        ringLengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
+    }
+
+    if (centromereFragment == nullptr)
+    {
+        drawCircularFragment(cr, centerX, centerY, diameter, color);
+        return;
+    }
+
+    // The fractions only size the centromere mark, which drawRingFragment() always places at 12 o'clock.
+    double centromereStartFraction = 0.0;
+    double centromereEndFraction = 0.0;
+    double centromereStartBP = 0.0;
+    double centromereEndBP = 0.0;
+
+    if (ringLengthMbp > 0.0 && getCentromereForOriginalStrand(centromereFragment->oldStrandID, humanGenome, masterHeader, centromereStartBP, centromereEndBP))
+    {
+        const double fragLow = std::min(centromereFragment->oldStartPosition, centromereFragment->oldEndPosition);
+
+        centromereStartFraction = (centromereFragmentOffsetMbp + centromereStartBP / 1000000.0 - fragLow) / ringLengthMbp;
+        centromereEndFraction = (centromereFragmentOffsetMbp + centromereEndBP / 1000000.0 - fragLow) / ringLengthMbp;
+    }
+
+    // A ring formed from a second homolog gets dashed outlines, like that homolog's linear chromosome.
+    drawRingFragment(cr, centerX, centerY, diameter, color, centromereStartFraction, centromereEndFraction,
+                     isSecondHomologStrand(homeOldStrandID, masterHeader));
+}
+
+
+
 // Draws a chromosome ring: a colored circle (same fill and inner white
 // ring as drawCircularFragment(), but WITH a visible black outline, so
 // the centromere constriction notch actually reads against it) with a
@@ -2464,7 +2612,7 @@ double Karyogram::computeSlotWidth(
 
         outColumn2Width = std::max(chromosomeWidth, maxDiameter);
 
-        return chromosomeWidth + stackGap + outColumn2Width;
+        return chromosomeWidth + (maxDiameter > 0.0 ? circleColumnGap : stackGap) + outColumn2Width;	// Must match drawStackedMutations()'s gap choice.
     }
 
 
@@ -2498,7 +2646,7 @@ double Karyogram::computeSlotWidth(
 
         outColumn2Width = std::max(chromosomeWidth, ringDiameter);
 
-        return chromosomeWidth + stackGap + outColumn2Width;
+        return chromosomeWidth + circleColumnGap + outColumn2Width;
     }
 
 

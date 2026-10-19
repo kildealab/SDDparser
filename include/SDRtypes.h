@@ -116,9 +116,9 @@ struct SDRtranslocationEvent
 struct SDRecDNAevent
 {
     std::vector<int> oldStrandIDs;				// Which chromosome/strand ID the fragments originate from
-    std::vector<std::pair<double, double>> ecDNAsegments; 	// One or more (start, end) segments making up this ecDNA molecule
+    std::vector<std::pair<double, double>> ecDNAsegments; 	// One or more (start, end) segments making up this ecDNA formation (one molecule, or several when one deleted segment shattered into several circles)
     std::vector<int> remainingStrandIDs;			// New strand ID of the strand that lost the excised fragment
-    int excisedStrandID;					// New strand ID of the excised strand
+    int excisedStrandID;					// New strand ID of the excised strand (the first circle when there are several)
 };
 
 

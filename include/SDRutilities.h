@@ -860,6 +860,54 @@ enum class SDRgapPartner
     Foreign			// Reappears inside a linear multi-fragment record -> insertion / translocation / chromoplexy signature
 };
 
+// When a gap's material broke into SEVERAL circular pieces (e.g. a centric ring plus an acentric ecDNA cut from the same region),
+// returns the pieces' [low, high] ranges in order, provided they tile the gap exactly (contiguous within tolerance, nothing left over).
+// Returns an empty vector otherwise, including when a single piece fills the whole gap, which the exact-match checks already handle.
+inline std::vector<std::pair<double, double>> circularPiecesTilingGap(const SDRsubHeader& subHeader, int numOriginalStrands, int oldStrandID, double gapStart, double gapEnd, double tolerance)
+{
+    std::vector<std::pair<double, double>> pieces;
+
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+        if (record.linear || !isRearrangementCandidate(record.newStrandID, numOriginalStrands))
+        {
+            continue;
+        }
+
+        for (const SDRfragment& fragment : record.fragments)
+        {
+            const double low = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+            const double high = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+
+            if (fragment.oldStrandID == oldStrandID && low >= gapStart - tolerance && high <= gapEnd + tolerance)
+            {
+                pieces.push_back({low, high});
+            }
+        }
+    }
+
+    if (pieces.size() < 2)
+    {
+        return {};
+    }
+
+    std::sort(pieces.begin(), pieces.end());
+
+    double reached = gapStart;
+
+    for (const std::pair<double, double>& piece : pieces)
+    {
+        if (!approxEqual(piece.first, reached, tolerance))			// Overlap or uncovered stretch, not a clean split of this gap.
+        {
+            return {};
+        }
+
+        reached = piece.second;
+    }
+
+    return approxEqual(reached, gapEnd, tolerance) ? pieces : std::vector<std::pair<double, double>>{};
+}
+
 // Looks through every rearranged record (except ignoreNewStrandIDs) for a fragment of oldStrandID matching [gapStart, gapEnd] within tolerance.
 // Priority: Circular > Foreign > LinearExcised > None. excisedStrandID is set only for LinearExcised (else -1).
 inline SDRgapPartner classifyGapPartner(const SDRsubHeader& subHeader, int numOriginalStrands, int oldStrandID, double gapStart, double gapEnd, double tolerance, const std::set<int>& ignoreNewStrandIDs, int& excisedStrandID)
@@ -910,7 +958,8 @@ inline SDRgapPartner classifyGapPartner(const SDRsubHeader& subHeader, int numOr
         }
     }
 
-    if (circular)
+    // A gap whose material became several circular pieces (a ring plus ecDNA, or several ecDNA) is a circular formation too, not a deletion.
+    if (circular || !circularPiecesTilingGap(subHeader, numOriginalStrands, oldStrandID, gapStart, gapEnd, tolerance).empty())
     {
         return SDRgapPartner::Circular;
     }
@@ -1281,6 +1330,15 @@ inline std::vector<SDRinversionEvent> detectInversions(const SDRsubHeader& subHe
                 }
 
                 if (touchesGap)								// Deleted material next to the inversion -> deletion-inversion or skipped, not balanced.
+                {
+                    continue;
+                }
+
+                // A balanced inversion needs a break on BOTH sides of the inverted segment. A reversed segment that reaches either end of
+                // the chromosome (a terminal inversion) is not scored as one; countMutationsPerOriginalStrand() lists it as Miscellaneous.
+                const double strandSize = fullSizeForStrand(masterHeader, oldStrandID);
+
+                if (approxEqual(sorted[index].low, 0.0, balInvTolerance) || (strandSize > 0.0 && approxEqual(sorted[index].high, strandSize, balInvTolerance)))
                 {
                     continue;
                 }
@@ -1786,6 +1844,7 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
         const double chromosomeFullSizeMbp = (sizeIndex < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[sizeIndex] : 0.0;
 
         std::vector<Gap> gaps;
+        std::vector<std::size_t> gapOrigin;					// Index of the deletion (gap on the remaining record) each entry of gaps was cut from.
         {
             std::vector<SDRnormalizedFragment> sortedFlanking;
             std::vector<SDRflankGap> flankGaps;
@@ -1794,7 +1853,25 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
             {
                 for (const SDRflankGap& flankGap : flankGaps)
                 {
-                    gaps.push_back({flankGap.start, flankGap.end});
+                    // A gap split into several circular pieces (e.g. a centric ring next to an acentric ecDNA) is matched piece by piece,
+                    // so each acentric piece can claim its own part. Centric pieces are never candidates, so their part stays unclaimed.
+                    const std::vector<std::pair<double, double>> pieces = circularPiecesTilingGap(subHeader, numOriginalStrands, oldStrandID, flankGap.start, flankGap.end, ecDNAtolerance);
+
+                    const std::size_t origin = &flankGap - flankGaps.data();
+
+                    if (pieces.empty())
+                    {
+                        gaps.push_back({flankGap.start, flankGap.end});
+                        gapOrigin.push_back(origin);
+                    }
+                    else
+                    {
+                        for (const std::pair<double, double>& piece : pieces)
+                        {
+                            gaps.push_back({piece.first, piece.second});
+                            gapOrigin.push_back(origin);
+                        }
+                    }
                 }
             }
         }
@@ -1817,10 +1894,16 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 	// excised record) is simply not ecDNA and is left to the deletion detectors, so gaps and circular pieces no longer need to match up one-to-one overall.
 	std::vector<bool> gapClaimed(gaps.size(), false);
 
+	// One deletion whose missing segment shattered into several acentric circles is ONE ecDNA formation (one mutational event), so circles cut from the
+	// same gap are merged into a single event. A centric ring cut from that gap is still scored separately, as a ring chromosome.
+	const std::size_t strandEventsStart = ecDNAevents.size();
+	std::vector<std::set<std::size_t>> eventOrigins;			// Gaps each of this strand's events came from, index-aligned with ecDNAevents from strandEventsStart.
+
 	for (const auto& [newStrandID, fragments] : excisedCandidates)
         {
             std::vector<bool> trialClaimed = gapClaimed;			// Rolled back if this candidate fails to match completely.
             std::vector<std::pair<double, double>> matchedSegments;
+            std::set<std::size_t> matchedOrigins;
             bool allMatched = true;
 
             for (const SDRfragment& fragment : *fragments)
@@ -1841,6 +1924,7 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
                         trialClaimed[i] = true;
                         matched = true;
                         matchedSegments.push_back({gaps[i].startPos, gaps[i].endPos});
+                        matchedOrigins.insert(gapOrigin[i]);
                         break;
                     }
                 }
@@ -1859,6 +1943,29 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
 
             gapClaimed = trialClaimed;
 
+            std::size_t sameDeletion = eventOrigins.size();			// An earlier event of this strand sharing a gap with this circle, if any.
+            for (std::size_t k = 0; k < eventOrigins.size() && sameDeletion == eventOrigins.size(); ++k)
+            {
+                for (std::size_t origin : matchedOrigins)
+                {
+                    if (eventOrigins[k].count(origin))
+                    {
+                        sameDeletion = k;
+                        break;
+                    }
+                }
+            }
+
+            if (sameDeletion < eventOrigins.size())				// Another circle of the same shattered segment, extend that event (keeps the first circle's excisedStrandID).
+            {
+                SDRecDNAevent& event = ecDNAevents[strandEventsStart + sameDeletion];
+                event.oldStrandIDs.insert(event.oldStrandIDs.end(), matchedSegments.size(), oldStrandID);
+                event.ecDNAsegments.insert(event.ecDNAsegments.end(), matchedSegments.begin(), matchedSegments.end());
+                event.remainingStrandIDs.insert(event.remainingStrandIDs.end(), matchedSegments.size(), remainingStrandID);
+                eventOrigins[sameDeletion].insert(matchedOrigins.begin(), matchedOrigins.end());
+                continue;
+            }
+
             SDRecDNAevent event{};
             event.oldStrandIDs.assign(matchedSegments.size(), oldStrandID);
             event.ecDNAsegments = matchedSegments;
@@ -1866,6 +1973,7 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
             event.excisedStrandID = newStrandID;
 
             ecDNAevents.push_back(event);
+            eventOrigins.push_back(matchedOrigins);
         }
 
     }
@@ -2959,6 +3067,7 @@ inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHead
 // A mutation involving several strands (e.g. a translocation between chromosomes 5 and 12) is counted once on each strand involved,
 // so the per-strand counts can add up to more than the cell total. Only mutation types that occur are listed, in summary-file order.
 // Exception: a dicentric is counted only on the chromosome slot it is drawn in, not on the partner left acentric.
+// A chromosome with a change that none of the mutation types accounts for gets one "Miscellaneous" entry, even if it has other mutations.
 inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPerOriginalStrand(const SDRsubHeader& subHeader, const SDRmasterHeader& masterHeader)
 {
     const int numOriginalStrands = masterHeader.intactChromosomeSizes.empty() ? 0 : static_cast<int>(masterHeader.intactChromosomeSizes[0]);
@@ -2977,16 +3086,28 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
         }
     };
 
-    for (const auto& e : detectDeletions(subHeader, numOriginalStrands, masterHeader))              addEvent("Long Deletions", {e.oldStrandID});
-    for (const auto& e : detectInversions(subHeader, numOriginalStrands, masterHeader))             addEvent("Balanced Inversions", {e.oldStrandID});
-    for (const auto& e : detectTranslocations(subHeader, numOriginalStrands, masterHeader))         addEvent("Balanced Translocations", {e.oldStrandAid, e.oldStrandBid});
-    for (const auto& e : detectECDNA(subHeader, numOriginalStrands, masterHeader))                  addEvent("Extrachromosomal DNA (ecDNA)", e.oldStrandIDs);
-    for (const auto& e : detectDeletionInversions(subHeader, numOriginalStrands, masterHeader))     addEvent("Deletion-Inversions", {e.oldStrandID});
-    for (const auto& e : detectDeletionTranslocations(subHeader, numOriginalStrands, masterHeader)) addEvent("Deletion-Translocations", {e.oldStrandAid, e.oldStrandBid});
-    for (const auto& e : detectDeletionInsertions(subHeader, numOriginalStrands))                   addEvent("Deletion-Insertions", {e.donorOldStrandID, e.recipientOldStrandID});
-    for (const auto& e : detectChromoplexy(subHeader, numOriginalStrands, masterHeader))            addEvent("Chromoplexy", e.involvedStrandIDs);
-    for (const auto& e : detectChromothripsis(subHeader, numOriginalStrands))                       addEvent("Chromothripsis", e.involvedStrandIDs);
-    for (const auto& e : detectChromosomeRings(subHeader, numOriginalStrands))                      addEvent("Ring Chromosomes", e.involvedOldStrandIDs);
+    const std::vector<SDRdeletionEvent> deletions = detectDeletions(subHeader, numOriginalStrands, masterHeader);
+    const std::vector<SDRinversionEvent> inversions = detectInversions(subHeader, numOriginalStrands, masterHeader);
+    const std::vector<SDRtranslocationEvent> translocations = detectTranslocations(subHeader, numOriginalStrands, masterHeader);
+    const std::vector<SDRecDNAevent> ecDNAs = detectECDNA(subHeader, numOriginalStrands, masterHeader);
+    const std::vector<SDRdeletionInversionEvent> delInvs = detectDeletionInversions(subHeader, numOriginalStrands, masterHeader);
+    const std::vector<SDRdeletionTranslocationEvent> delTras = detectDeletionTranslocations(subHeader, numOriginalStrands, masterHeader);
+    const std::vector<SDRdeletionInsertionEvent> delIns = detectDeletionInsertions(subHeader, numOriginalStrands);
+    const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
+    const std::vector<SDRchromothripsisEvent> chromothripsis = detectChromothripsis(subHeader, numOriginalStrands);
+    const std::vector<SDRchromosomeRingEvent> rings = detectChromosomeRings(subHeader, numOriginalStrands);
+    const std::vector<SDRdicentricEvent> dicentrics = detectDicentrics(subHeader, numOriginalStrands);
+
+    for (const auto& e : deletions)      addEvent("Long Deletions", {e.oldStrandID});
+    for (const auto& e : inversions)     addEvent("Balanced Inversions", {e.oldStrandID});
+    for (const auto& e : translocations) addEvent("Balanced Translocations", {e.oldStrandAid, e.oldStrandBid});
+    for (const auto& e : ecDNAs)         addEvent("Extrachromosomal DNA (ecDNA)", e.oldStrandIDs);
+    for (const auto& e : delInvs)        addEvent("Deletion-Inversions", {e.oldStrandID});
+    for (const auto& e : delTras)        addEvent("Deletion-Translocations", {e.oldStrandAid, e.oldStrandBid});
+    for (const auto& e : delIns)         addEvent("Deletion-Insertions", {e.donorOldStrandID, e.recipientOldStrandID});
+    for (const auto& e : chromoplexy)    addEvent("Chromoplexy", e.involvedStrandIDs);
+    for (const auto& e : chromothripsis) addEvent("Chromothripsis", e.involvedStrandIDs);
+    for (const auto& e : rings)          addEvent("Ring Chromosomes", e.involvedOldStrandIDs);
 
     // Dicentrics are the one exception to counting every strand involved: a dicentric is counted only on the chromosome
     // slot where the karyogram draws it (the one showing two centromeres). The partner chromosome, which is left acentric
@@ -2994,7 +3115,7 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
     // the dicentric/acentric pairing override when there is one, otherwise determineHomeStrandID().
     const std::map<int, int> drawnSlots = findDicentricAcentricHomeOverrides(subHeader, numOriginalStrands, masterHeader);
 
-    for (const SDRdicentricEvent& e : detectDicentrics(subHeader, numOriginalStrands))
+    for (const SDRdicentricEvent& e : dicentrics)
     {
         const auto overrideIt = drawnSlots.find(e.newStrandID);
 
@@ -3014,10 +3135,257 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
         }
     }
 
-    // Same order as the "Mutation Summary" in the SDR summary file.
+    // Miscellaneous: a change to a strand that none of the detectors above accounts for, e.g. a terminal inversion, scored whether or not the strand
+    // also has detected mutations. Listed per chromosome only; it has no line in the cell's Mutation Summary or the karyogram's box.
+    // Each strand's material in each rearranged record (other than a plain, whole, forward copy) must be accounted for by an event, and so must each of
+    // its reversed fragments and each of its gaps. A strand with anything left over gets one Miscellaneous entry.
+    {
+        const double tolerance = 0.000050;					// 50 bp, the loosest detector tolerance
+        typedef std::pair<int, int> RecordStrand;				// {newStrandID, oldStrandID}
+        typedef std::array<double, 3> StrandRange;				// {oldStrandID, low, high}
+
+        std::set<RecordStrand> explainedPieces;				// This strand's material in this record belongs to an event
+        std::set<RecordStrand> fullyExplained;				// ...including any reversals in it (multi-strand events)
+        std::vector<StrandRange> explainedReversals;			// Inverted segments accounted for
+        std::vector<StrandRange> explainedGaps;				// Missing segments accounted for
+        std::set<int> wholeStrandEvents;					// Strands whose every change is part of one large event (chromoplexy, chromothripsis)
+
+        auto explainRecords = [&](const std::vector<int>& newStrandIDs, const std::vector<int>& oldStrandIDs, bool full)
+        {
+            for (int newID : newStrandIDs)
+            {
+                for (int oldID : oldStrandIDs)
+                {
+                    explainedPieces.insert({newID, oldID});
+                    if (full)
+                    {
+                        fullyExplained.insert({newID, oldID});
+                    }
+                }
+            }
+        };
+        auto range = [](int strandID, double a, double b) -> StrandRange
+        {
+            return {static_cast<double>(strandID), std::min(a, b), std::max(a, b)};
+        };
+
+        for (const auto& e : deletions)
+        {
+            explainRecords({e.remainingStrandID, e.excisedStrandID}, {e.oldStrandID}, false);
+            explainedGaps.push_back(range(e.oldStrandID, e.deletionStart, e.deletionEnd));
+        }
+        for (const auto& e : inversions)
+        {
+            explainRecords({e.newStrandID}, {e.oldStrandID}, false);
+            explainedReversals.push_back(range(e.oldStrandID, e.inversionStart, e.inversionEnd));
+        }
+        for (const auto& e : translocations)
+        {
+            explainRecords({e.newStrandID1, e.newStrandID2}, {e.oldStrandAid, e.oldStrandBid}, true);
+        }
+        std::vector<StrandRange> ecDNAranges;
+        for (const auto& e : ecDNAs)
+        {
+            for (std::size_t i = 0; i < e.oldStrandIDs.size(); ++i)
+            {
+                explainRecords({e.remainingStrandIDs[i]}, {e.oldStrandIDs[i]}, false);
+                ecDNAranges.push_back(range(e.oldStrandIDs[i], e.ecDNAsegments[i].first, e.ecDNAsegments[i].second));
+            }
+        }
+        explainedGaps.insert(explainedGaps.end(), ecDNAranges.begin(), ecDNAranges.end());
+        for (const auto& e : delInvs)
+        {
+            explainRecords({e.remainingStrandID, e.excisedStrandID}, {e.oldStrandID}, false);
+            explainedGaps.push_back(range(e.oldStrandID, e.deletionStart, e.deletionEnd));
+            explainedReversals.push_back(range(e.oldStrandID, e.inversionStart, e.inversionEnd));
+        }
+        for (const auto& e : delTras)
+        {
+            explainRecords({e.newStrandID1, e.newStrandID2}, {e.oldStrandAid, e.oldStrandBid}, true);
+            explainRecords({e.excisedStrandID}, {e.deletedOldStrandID}, false);
+            explainedGaps.push_back(range(e.deletedOldStrandID, e.deletionStart, e.deletionEnd));
+        }
+        for (const auto& e : delIns)
+        {
+            explainRecords({e.donorRemainingNewStrandID}, {e.donorOldStrandID}, false);
+            explainRecords({e.recipientNewStrandID}, {e.donorOldStrandID, e.recipientOldStrandID}, true);
+            explainedGaps.push_back(range(e.donorOldStrandID, e.segmentStart, e.segmentEnd));
+        }
+        for (const auto& e : chromoplexy)
+        {
+            explainRecords(e.contributingNewStrandIDs, e.involvedStrandIDs, true);
+            wholeStrandEvents.insert(e.involvedStrandIDs.begin(), e.involvedStrandIDs.end());
+        }
+        for (const auto& e : chromothripsis)
+        {
+            explainRecords(e.contributingNewStrandIDs, e.involvedStrandIDs, true);
+            wholeStrandEvents.insert(e.involvedStrandIDs.begin(), e.involvedStrandIDs.end());
+        }
+
+        // Rings and dicentrics account for their own record, and for the acentric leftovers of the same strands (the ends cut off when a ring
+        // closes, the acentric partner of a dicentric), so those leftovers are not scored again. Their material also fills the strands' gaps.
+        auto explainWithLeftovers = [&](int newStrandID, const std::vector<int>& strandIDs)
+        {
+            explainRecords({newStrandID}, strandIDs, true);
+            const std::set<int> strands(strandIDs.begin(), strandIDs.end());
+
+            for (const SDRdataRecord& record : subHeader.dataRecords)
+            {
+                if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands))
+                {
+                    continue;
+                }
+
+                bool onlyTheseStrands = !record.fragments.empty();
+                bool acentric = true;
+
+                for (const SDRfragment& fragment : record.fragments)
+                {
+                    onlyTheseStrands = onlyTheseStrands && strands.count(fragment.oldStrandID);
+                    acentric = acentric && !fragment.hasCentromere;
+                }
+
+                if (onlyTheseStrands && (acentric || record.newStrandID == newStrandID))
+                {
+                    explainRecords({record.newStrandID}, strandIDs, record.newStrandID == newStrandID);
+                }
+
+                if (record.newStrandID == newStrandID)
+                {
+                    for (const SDRfragment& fragment : record.fragments)
+                    {
+                        explainedGaps.push_back(range(fragment.oldStrandID, fragment.oldStartPosition, fragment.oldEndPosition));
+                    }
+                }
+            }
+        };
+        for (const auto& e : rings)
+        {
+            explainWithLeftovers(e.newStrandID, e.involvedOldStrandIDs);
+        }
+        for (const auto& e : dicentrics)
+        {
+            explainWithLeftovers(e.newStrandID, e.involvedOldStrandIDs);
+        }
+
+        // A reversed fragment or gap counts as accounted for when an event's segment overlaps it (detectors trim slightly differently).
+        auto overlapsAny = [&](const std::vector<StrandRange>& ranges, int strandID, double low, double high)
+        {
+            for (const StrandRange& r : ranges)
+            {
+                if (static_cast<int>(r[0]) == strandID && r[1] < high - tolerance && low < r[2] - tolerance)
+                {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        // The circles themselves: every circular fragment lying in an ecDNA segment (one formation can have several circles).
+        for (const SDRdataRecord& record : subHeader.dataRecords)
+        {
+            if (record.linear || !isRearrangementCandidate(record.newStrandID, numOriginalStrands))
+            {
+                continue;
+            }
+
+            for (const SDRfragment& fragment : record.fragments)
+            {
+                const double low = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+                const double high = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+
+                for (const StrandRange& r : ecDNAranges)
+                {
+                    if (static_cast<int>(r[0]) == fragment.oldStrandID && low >= r[1] - tolerance && high <= r[2] + tolerance)
+                    {
+                        explainRecords({record.newStrandID}, {fragment.oldStrandID}, false);
+                    }
+                }
+            }
+        }
+
+        std::set<int> unexplainedStrands;
+        std::map<int, std::vector<SDRfragment>> pooledByStrand;		// Every rearranged fragment per strand, for the gap check below
+        std::set<int> wholeCopyStrands;						// Strands with an unchanged whole copy among the rearranged records
+
+        for (const SDRdataRecord& record : subHeader.dataRecords)
+        {
+            if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands))
+            {
+                continue;
+            }
+
+            if (record.linear && record.fragments.size() == 1)
+            {
+                const SDRfragment& fragment = record.fragments[0];
+                const double strandSize = fullSizeForStrand(masterHeader, fragment.oldStrandID);
+
+                if (approxEqual(fragment.oldStartPosition, 0.0, tolerance) && strandSize > 0.0 && approxEqual(fragment.oldEndPosition, strandSize, tolerance))
+                {
+                    wholeCopyStrands.insert(fragment.oldStrandID);
+                    continue;							// An unchanged copy of the whole chromosome, nothing altered.
+                }
+            }
+
+            for (const SDRfragment& fragment : record.fragments)
+            {
+                const int strandID = fragment.oldStrandID;
+                pooledByStrand[strandID].push_back(fragment);
+
+                if (wholeStrandEvents.count(strandID))
+                {
+                    continue;
+                }
+
+                const RecordStrand key{record.newStrandID, strandID};
+
+                if (!explainedPieces.count(key))
+                {
+                    unexplainedStrands.insert(strandID);
+                }
+                else if (isReversedFragment(fragment) && !fullyExplained.count(key)
+                         && !overlapsAny(explainedReversals, strandID, fragment.oldEndPosition, fragment.oldStartPosition))
+                {
+                    unexplainedStrands.insert(strandID);			// An inversion no event accounts for, e.g. a terminal one next to a balanced inversion.
+                }
+            }
+        }
+
+        // Missing material: every gap left in a strand's pooled rearranged fragments must belong to a deletion-type event (or be filled by a ring).
+        for (const auto& [strandID, fragments] : pooledByStrand)
+        {
+            if (wholeStrandEvents.count(strandID) || wholeCopyStrands.count(strandID))
+            {
+                continue;
+            }
+
+            std::vector<SDRnormalizedFragment> sorted;
+            std::vector<SDRflankGap> gaps;
+
+            if (!analyzeFlankingFragments(fragments, fullSizeForStrand(masterHeader, strandID), tolerance, sorted, gaps))
+            {
+                continue;								// Overlapping material (e.g. duplicated); not judged here.
+            }
+
+            for (const SDRflankGap& gap : gaps)
+            {
+                if (!overlapsAny(explainedGaps, strandID, gap.start, gap.end))
+                {
+                    unexplainedStrands.insert(strandID);
+                }
+            }
+        }
+
+        for (int strandID : unexplainedStrands)
+        {
+            addEvent("Miscellaneous", {strandID});
+        }
+    }
+
+    // Same order as the "Mutation Summary" in the SDR summary file, with Miscellaneous last.
     const std::vector<std::string> typeOrder = {
         "Long Deletions", "Balanced Inversions", "Balanced Translocations", "Extrachromosomal DNA (ecDNA)", "Deletion-Inversions",
-        "Deletion-Translocations", "Deletion-Insertions", "Chromoplexy", "Chromothripsis", "Ring Chromosomes", "Dicentrics"};
+        "Deletion-Translocations", "Deletion-Insertions", "Chromoplexy", "Chromothripsis", "Ring Chromosomes", "Dicentrics", "Miscellaneous"};
 
     std::map<int, std::vector<std::pair<std::string, int>>> result;
 
