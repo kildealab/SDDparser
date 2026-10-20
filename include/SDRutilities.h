@@ -1257,6 +1257,41 @@ inline bool isReversedFragment(const SDRfragment& fragment)
 }
 
 
+// A record can list a chromosome from its other end: exactly three pieces of one chromosome, the two outer ones reversed and reaching opposite chromosome ends
+// (the start and end of the chromosome swap places), the middle one forward, e.g. 24/132.6/52.9, 24/21.7/52.9, 24/21.7/0. Read from the other end that is
+// 0-21.7, 52.9-21.7 (inverted), 52.9-132.6: only the middle piece is inverted. Returns the fragments in that reading (order reversed, each start/end swapped),
+// or the record's own fragments when it is not listed upside down, so the detectors score both listings the same way.
+inline std::vector<SDRfragment> fragmentsInReadingOrder(const SDRdataRecord& record, const SDRmasterHeader& masterHeader)
+{
+    const double tolerance = 0.000050;					// 50 bp
+    const std::vector<SDRfragment>& fragments = record.fragments;
+
+    if (!record.linear || fragments.size() != 3 || fragments[0].oldStrandID != fragments[1].oldStrandID || fragments[1].oldStrandID != fragments[2].oldStrandID)
+    {
+        return fragments;
+    }
+
+    const double strandSize = fullSizeForStrand(masterHeader, fragments[0].oldStrandID);
+    const bool upsideDown = strandSize > 0.0
+                            && isReversedFragment(fragments[0]) && !isReversedFragment(fragments[1]) && isReversedFragment(fragments[2])
+                            && approxEqual(fragments[0].oldStartPosition, strandSize, tolerance) && approxEqual(fragments[2].oldEndPosition, 0.0, tolerance);
+
+    if (!upsideDown)
+    {
+        return fragments;
+    }
+
+    std::vector<SDRfragment> flipped(fragments.rbegin(), fragments.rend());
+
+    for (SDRfragment& fragment : flipped)
+    {
+        std::swap(fragment.oldStartPosition, fragment.oldEndPosition);
+    }
+
+    return flipped;
+}
+
+
 // ---------------------------------------------------------------------------- //
 // Detects BALANCED INVERSIONS within a single cell.
 // ---------------------------------------------------------------------------- //
@@ -1278,7 +1313,7 @@ inline std::vector<SDRinversionEvent> detectInversions(const SDRsubHeader& subHe
 
         std::map<int, std::vector<SDRfragment>> groupOldStrand;
 
-        for (const SDRfragment& fragment : record.fragments)
+        for (const SDRfragment& fragment : fragmentsInReadingOrder(record, masterHeader))	// A pericentric inversion listed upside down reads as one inner inversion
         {
             groupOldStrand[fragment.oldStrandID].push_back(fragment);
         }
@@ -1501,6 +1536,27 @@ inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeade
         for (const SDRfragment& fragment : record.fragments)				// If initial checks pass, store the fragment associated with
         {										// A given oldStrandID
             groupStrand[fragment.oldStrandID].push_back(fragment);
+        }
+
+        // A record holding 3+ chromosomes can carry a translocation AND an unrelated insertion, e.g. 38/0/119.4, 30/0.8/2.2, 38/119.4/130.2, 18/11.4/132.6:
+        // chr 30's piece is only inserted into chr 38 (a deletion-insertion, found by detectDeletionInsertions()), while chr 38 and chr 18 exchange ends.
+        // Such inserted pieces (flanked on both sides by one other chromosome) are set aside so the translocation between the other two can still be checked.
+        // Safeguard: only done for 3+ chromosomes, so a two-chromosome central-segment exchange (A, B, A) keeps its inserted-looking piece.
+        if (groupStrand.size() > 2)
+        {
+            groupStrand.clear();
+
+            for (std::size_t k = 0; k < record.fragments.size(); ++k)
+            {
+                const bool inserted = k > 0 && k + 1 < record.fragments.size()
+                                      && record.fragments[k - 1].oldStrandID == record.fragments[k + 1].oldStrandID
+                                      && record.fragments[k - 1].oldStrandID != record.fragments[k].oldStrandID;
+
+                if (!inserted)
+                {
+                    groupStrand[record.fragments[k].oldStrandID].push_back(record.fragments[k]);
+                }
+            }
         }
 
         return !groupStrand.empty();							// Return true if the groupStrand is non-empty
@@ -2222,7 +2278,8 @@ inline std::vector<SDRdeletionInversionEvent> detectDeletionInversions(const SDR
         std::vector<SDRnormalizedFragment> sorted;
         std::vector<SDRflankGap> gaps;
 
-        if (!analyzeFlankingFragments(flanking.fragments, fullSizeForStrand(masterHeader, oldStrandID), delInvTolerance, sorted, gaps))
+        // A deletion-inversion listed from the other chromosome end (outer pieces reversed and swapped, middle forward) is read the normal way first.
+        if (!analyzeFlankingFragments(fragmentsInReadingOrder(flanking, masterHeader), fullSizeForStrand(masterHeader, oldStrandID), delInvTolerance, sorted, gaps))
         {
             continue;
         }
@@ -2653,50 +2710,52 @@ inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDR
                     continue;
                 }
 
-                bool anyReversed = false;
-                for (const SDRfragment& fragment : recipientRecord.fragments)
-                {
-                    anyReversed = anyReversed || isReversedFragment(fragment);
-                }
-
-                if (anyReversed)
-                {
-                    continue;
-                }
-
-                // The recipient holds ONE foreign fragment (from the donor strand); every other fragment belongs to a single recipient strand. The recipient's own
-                // material may have gaps elsewhere (independent deletions), only the insertion site itself has to be a clean break.
+                // The recipient holds ONE foreign fragment (from the donor strand), flanked on both sides by the recipient strand. The recipient's own
+                // material may have gaps elsewhere (independent deletions), only the insertion site itself has to be a clean break. Other chromosomes may also
+                // be attached to the recipient (an unrelated translocation on the same chromosome, e.g. 38/0/119.4, 30/0.8/2.2, 38/119.4/130.2, 18/11.4/132.6),
+                // they are scored by their own detector.
                 int foreignIndex = -1;
-                int recipientOldStrandID = -1;
                 bool valid = true;
 
                 for (std::size_t k = 0; k < recipientRecord.fragments.size() && valid; ++k)
                 {
-                    const SDRfragment& fragment = recipientRecord.fragments[k];
-
-                    if (fragment.oldStrandID == donorOldStrandID)
+                    if (recipientRecord.fragments[k].oldStrandID == donorOldStrandID)
                     {
                         valid = foreignIndex == -1;
                         foreignIndex = static_cast<int>(k);
                     }
-                    else if (recipientOldStrandID == -1)
-                    {
-                        recipientOldStrandID = fragment.oldStrandID;
-                    }
-                    else
-                    {
-                        valid = fragment.oldStrandID == recipientOldStrandID;
-                    }
                 }
 
-                if (!valid || foreignIndex <= 0 || foreignIndex + 1 >= static_cast<int>(recipientRecord.fragments.size()) || recipientOldStrandID == -1)
+                if (!valid || foreignIndex <= 0 || foreignIndex + 1 >= static_cast<int>(recipientRecord.fragments.size()))
+                {
+                    continue;
+                }
+
+                const int recipientOldStrandID = recipientRecord.fragments[foreignIndex - 1].oldStrandID;
+
+                if (recipientRecord.fragments[foreignIndex + 1].oldStrandID != recipientOldStrandID)	// Both neighbours must be the same recipient chromosome
+                {
+                    continue;
+                }
+
+                // The inserted piece may go in either orientation (e.g. 29/0/21.5, 20/27.4/25.0, 29/21.5/132.6 is chr 20's piece inserted inverted), so it is
+                // compared by its low/high bounds. Every other fragment must keep its original orientation; a reversed one is a different event.
+                bool otherReversed = false;
+                for (std::size_t k = 0; k < recipientRecord.fragments.size(); ++k)
+                {
+                    otherReversed = otherReversed || (static_cast<int>(k) != foreignIndex && isReversedFragment(recipientRecord.fragments[k]));
+                }
+
+                if (otherReversed)
                 {
                     continue;
                 }
 
                 const SDRfragment& foreignFragment = recipientRecord.fragments[foreignIndex];
+                const double foreignLow = std::min(foreignFragment.oldStartPosition, foreignFragment.oldEndPosition);
+                const double foreignHigh = std::max(foreignFragment.oldStartPosition, foreignFragment.oldEndPosition);
 
-                if (!approxEqual(foreignFragment.oldStartPosition, segmentStart, tolerance) || !approxEqual(foreignFragment.oldEndPosition, segmentEnd, tolerance))
+                if (!approxEqual(foreignLow, segmentStart, tolerance) || !approxEqual(foreignHigh, segmentEnd, tolerance))
                 {
                     continue;
                 }
@@ -2749,6 +2808,9 @@ inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDR
 // Builds a graph where each old strand ID is a node. For every rearranged record, every PAIR of distinct old strand IDs referenced by its fragments gets an edge, regardless
 // of whether that record matches any specific named mutation shape (translocation, deletion-translocation, etc.). Any connected component spanning 3 or more distinct
 // strands is reported as one chromoplexy event.
+// Only strands that RECEIVE foreign material are linked: in real chromoplexy every chromosome involved gets material from another one. A strand whose material only sits
+// inside another chromosome (flanked by that chromosome's own fragments, e.g. 38/0/119.4, 30/0.8/2.2, 38/119.4/130.2) only donated it (a deletion-insertion), so it is
+// left out of the graph and does not merge two unrelated events into one chromoplexy.
 inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool collectAccompanyingDeletions)
 {
     std::vector<SDRchromoplexyEvent> chromoplexyEvents;
@@ -2794,7 +2856,42 @@ inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& su
     };
 
 
-    // For every rearranged record, track which distinct old strand IDs it references and union every pair found together.
+    // A strand receives foreign material when it forms an end of a linear multi-strand record (its own arm with foreign material attached), or is part of a
+    // circular multi-strand record (no ends, so no strand is just inserted into another). Strands only found in the middle of other chromosomes are donors only.
+    std::set<int> receivingStrands;
+
+    for (const SDRdataRecord& record : subHeader.dataRecords)
+    {
+        if (!isRearrangementCandidate(record.newStrandID, numOriginalStrands) || record.fragments.empty())
+        {
+            continue;
+        }
+
+        std::set<int> strandsInRecord;
+
+        for (const SDRfragment& fragment : record.fragments)
+        {
+            strandsInRecord.insert(fragment.oldStrandID);
+        }
+
+        if (strandsInRecord.size() < 2)
+        {
+            continue;
+        }
+
+        if (record.linear)
+        {
+            receivingStrands.insert(record.fragments.front().oldStrandID);
+            receivingStrands.insert(record.fragments.back().oldStrandID);
+        }
+        else
+        {
+            receivingStrands.insert(strandsInRecord.begin(), strandsInRecord.end());
+        }
+    }
+
+
+    // For every rearranged record, track which distinct old strand IDs it references and union every pair of receiving strands found together.
     std::vector<std::pair<int, std::set<int>>> recordStrandSets; 			// {newStrandID, {distinct old strand IDs}}
 
     for (const SDRdataRecord& record : subHeader.dataRecords)				// Loop through all SDR data records per cell
@@ -2818,7 +2915,14 @@ inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& su
 
         recordStrandSets.push_back({record.newStrandID, strandsInRecord});		// Couple the new strand ID with the old strand IDs of its fragments
 
-        std::vector<int> strandVec(strandsInRecord.begin(), strandsInRecord.end());	// Store the involved new strand IDs and their respective fragments' old strand IDs
+        std::vector<int> strandVec;							// The record's receiving strands; donor-only strands get no edges
+        for (int strandID : strandsInRecord)
+        {
+            if (receivingStrands.count(strandID))
+            {
+                strandVec.push_back(strandID);
+            }
+        }
 
 	// Loop through all original chromosome IDs, in the current record and following records
 	for (std::size_t a = 0; a < strandVec.size(); ++a)
@@ -3198,7 +3302,7 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
                         continue;
                     }
 
-                    for (const SDRfragment& fragment : record.fragments)
+                    for (const SDRfragment& fragment : fragmentsInReadingOrder(record, masterHeader))
                     {
                         const double low = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
                         const double high = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
@@ -3319,6 +3423,13 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
                     if (static_cast<int>(r[0]) == fragment.oldStrandID && low >= r[1] - tolerance && high <= r[2] + tolerance)
                     {
                         explainRecords({record.newStrandID}, {fragment.oldStrandID}, false);
+
+                        // An ecDNA can be closed from forward and reversed pieces (e.g. 17/111.9/112.8 + 17/118.9/112.8), and a circle has no
+                        // orientation, so a reversed piece inside the ecDNA is part of it and not an inversion left unexplained (Miscellaneous).
+                        if (isReversedFragment(fragment))
+                        {
+                            explainedReversals.push_back(range(fragment.oldStrandID, low, high));
+                        }
                     }
                 }
             }
@@ -3347,7 +3458,7 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
                 }
             }
 
-            for (const SDRfragment& fragment : record.fragments)
+            for (const SDRfragment& fragment : fragmentsInReadingOrder(record, masterHeader))	// Upside-down listings are judged as read the normal way
             {
                 const int strandID = fragment.oldStrandID;
                 pooledByStrand[strandID].push_back(fragment);
