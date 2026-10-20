@@ -137,6 +137,9 @@ private:
     cairo_surface_t* createKaryogramSurface(int width, int height, const std::string& outputFilename, std::vector<unsigned char>* imageBytes, KaryogramFormat format);
     // Finishes the image: encodes the PNG to the file or buffer, or completes the SVG document.
     bool writeKaryogramImage(cairo_surface_t* surface, const std::string& outputFilename, std::vector<unsigned char>* imageBytes, KaryogramFormat format);
+    // Overload for a karyogram drawn on a recording surface (everything except the legend): places the legend a fixed gap below the lowest
+    // thing drawn (the labels of the lowest chromosome row), sizes the image to fit, then writes it as above. Takes ownership of `content`.
+    bool writeKaryogramImage(cairo_surface_t* content, int width, void (Karyogram::*drawLegend)(cairo_t*, double), const std::string& outputFilename, std::vector<unsigned char>* imageBytes, KaryogramFormat format);
 
     // Function to generate chromosome colors depending on the number of chromosomes, and to choose colors that are different enough between successive chromosomes.
     RGB generateChromosomeColor(int chromosomeNumber, int totalChromosomes);

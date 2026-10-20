@@ -2080,20 +2080,15 @@ inline std::vector<SDRecDNAevent> detectECDNA(const SDRsubHeader& subHeader, int
     }
 
 
-    if (applyHierarchy)								// ecDNA pieces that belong to a chromothripsis cluster are scored as that chromothripsis, not as separate ecDNA.
+    if (applyHierarchy)								// ecDNA pieces on a strand of a chromothripsis or chromoplexy cluster are scored as that event, not also as ecDNA.
     {
-        std::set<int> chromothripsisStrands;
-
-        for (const SDRchromothripsisEvent& event : detectChromothripsis(subHeader, numOriginalStrands))
-        {
-            chromothripsisStrands.insert(event.involvedStrandIDs.begin(), event.involvedStrandIDs.end());
-        }
+        const std::set<int> higherOrderStrands = collectHigherOrderStrands(subHeader, numOriginalStrands);	// Chromothripsis and chromoplexy strands
 
         ecDNAevents.erase(std::remove_if(ecDNAevents.begin(), ecDNAevents.end(), [&](const SDRecDNAevent& e)
         {
             for (int strandID : e.oldStrandIDs)
             {
-                if (chromothripsisStrands.count(strandID))
+                if (higherOrderStrands.count(strandID))
                 {
                     return true;
                 }
@@ -3190,6 +3185,31 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
             {
                 explainRecords({e.remainingStrandIDs[i]}, {e.oldStrandIDs[i]}, false);
                 ecDNAranges.push_back(range(e.oldStrandIDs[i], e.ecDNAsegments[i].first, e.ecDNAsegments[i].second));
+
+                // A deletion-inversion whose deleted piece closed into a circle is scored as ecDNA only (the higher tier absorbs it), so an
+                // inverted fragment right next to the excised segment on the remaining strand belongs to this ecDNA as well.
+                const double segLow = std::min(e.ecDNAsegments[i].first, e.ecDNAsegments[i].second);
+                const double segHigh = std::max(e.ecDNAsegments[i].first, e.ecDNAsegments[i].second);
+
+                for (const SDRdataRecord& record : subHeader.dataRecords)
+                {
+                    if (record.newStrandID != e.remainingStrandIDs[i])
+                    {
+                        continue;
+                    }
+
+                    for (const SDRfragment& fragment : record.fragments)
+                    {
+                        const double low = std::min(fragment.oldStartPosition, fragment.oldEndPosition);
+                        const double high = std::max(fragment.oldStartPosition, fragment.oldEndPosition);
+
+                        if (fragment.oldStrandID == e.oldStrandIDs[i] && isReversedFragment(fragment)
+                            && (approxEqual(low, segHigh, tolerance) || approxEqual(high, segLow, tolerance)))
+                        {
+                            explainedReversals.push_back(range(fragment.oldStrandID, low, high));
+                        }
+                    }
+                }
             }
         }
         explainedGaps.insert(explainedGaps.end(), ecDNAranges.begin(), ecDNAranges.end());

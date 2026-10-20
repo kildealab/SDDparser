@@ -261,10 +261,20 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
     intactRecordStorage.reserve(static_cast<std::size_t>(chromosomeCount));
 
 
-    // Determine max strand length to scale chromosome sizes on karyogram
+    // Scale: the largest intact chromosome size in the master header is drawn maxRenderHeight tall, in every cell of the file.
+    // Why: the scale used to come from the longest record in each cell. A cell whose records were all shorter than the largest
+    // chromosome (e.g. a single deletion, with the intact strands not listed as records) got a larger scale, so its intact chromosomes
+    // grew into the next row and the legend; a cell with a long derivative got a smaller one. Chromosome sizes now look the same in
+    // every karyogram, and a derivative longer than the largest chromosome makes its own row taller instead (see rowTop below).
     double maxLengthMbp = 0.0;
 
-    for (const SDRdataRecord& record : subHeader.dataRecords)
+    for (std::size_t i = 1; i < sizes.size(); ++i)
+    {
+        maxLengthMbp = std::max(maxLengthMbp, sizes[i]);
+    }
+
+    // Total length of a record's fragments, in Mbp.
+    const auto recordLengthMbp = [](const SDRdataRecord& record)
     {
         double lengthMbp = 0.0;
 
@@ -273,9 +283,14 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
             lengthMbp += std::fabs(fragment.oldEndPosition - fragment.oldStartPosition);
         }
 
-        if (lengthMbp > maxLengthMbp)
+        return lengthMbp;
+    };
+
+    if (maxLengthMbp <= 0.0)							// No usable sizes in the header: fall back to the longest record.
+    {
+        for (const SDRdataRecord& record : subHeader.dataRecords)
         {
-            maxLengthMbp = lengthMbp;
+            maxLengthMbp = std::max(maxLengthMbp, recordLengthMbp(record));
         }
     }
 
@@ -297,14 +312,11 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
     const int imgWidth = 1000;
     const int columns = 4;
     const double colWidth = static_cast<double>(imgWidth) / columns;
-    const double rowHeight = 250.0;
+    const double maxRenderHeight = 180.0;					// Height of the largest intact chromosome, safe to tune.
+    const double rowHeight = 250.0;						// Default row height; a row holding a longer derivative grows (see rowTop below).
+    const double rowSpacing = rowHeight - maxRenderHeight;			// Room under the tallest bar of a row for its label and the gap to the next row.
     const double startY = 250.0;
     const int rows = (drawableGroups + columns - 1) / columns;
-    int imgHeight;
-
-    // Add extra vertical space for summary box at top and legend at bottom
-    const double legendHeight = 70.0;
-    const double legendBottomMargin = 40.0;
 
     // Check if X and Y can fit in last row, if not, put in their own row
     const int sexChromosomeRow = (drawableGroups > 0) ? (drawableGroups - 1) / columns : 0;
@@ -321,21 +333,83 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
     const int combinedAcentricRows = (combinedAcentricSlotCount + columns - 1) / columns;
     const int autosomeAndSexRows = sexChromosomesFitInLastRow ? rows : rows + 1;
     const int acentricsStartRow = autosomeAndSexRows;
-    const double acentricsStartY = startY + acentricsStartRow * rowHeight;
+    const int sexRow = sexChromosomesFitInLastRow ? sexChromosomeRow : rows;
+    const int totalRows = autosomeAndSexRows + combinedAcentricRows;
 
-    imgHeight = static_cast<int>(startY + (autosomeAndSexRows + combinedAcentricRows) * rowHeight + legendHeight + legendBottomMargin);
+    // Row heights. Every row is rowHeight tall, except a row holding a derivative longer than the largest chromosome, which grows just enough
+    // to fit it, so it doesn't run into the row below or the legend. Only that row grows; the others keep the default height.
+    std::vector<double> rowLongestMbp(static_cast<std::size_t>(totalRows), 0.0);	// Longest strand drawn in each row
 
-    const double maxRenderHeight = 180.0;					// Visual cap on how tall a single bar/circle renders, safe to tune.
+    const auto noteSlotStrand = [&](int row, int oldStrandID)
+    {
+        const auto it = recordsByOriginalStrand.find(oldStrandID);
+
+        if (row < 0 || row >= totalRows || it == recordsByOriginalStrand.end() || chromoplexyConsumedStrands.count(oldStrandID))
+        {
+            return;
+        }
+
+        for (const SDRdataRecord* record : it->second)
+        {
+            rowLongestMbp[row] = std::max(rowLongestMbp[row], recordLengthMbp(*record));
+        }
+    };
+
+    for (int i = 0; i < drawableGroups; ++i)					// Same slot-to-strand mapping as the drawing loop below
+    {
+        if (chromosomeLayout == ChromosomeLayout::SPLIT_HOMOLOGS)
+        {
+            noteSlotStrand(i / columns, i + 1);
+            noteSlotStrand(i / columns, i + 1 + homologousPairs);
+        }
+        else if (chromosomeLayout == ChromosomeLayout::ADJACENT_HOMOLOGS)
+        {
+            noteSlotStrand(i / columns, 2 * i + 1);
+            noteSlotStrand(i / columns, 2 * i + 2);
+        }
+        else
+        {
+            noteSlotStrand(i / columns, i + 1);
+        }
+    }
+
+    noteSlotStrand(sexRow, chromosomeCount - 1);					// Y
+    noteSlotStrand(sexRow, chromosomeCount);					// X
+
+    for (std::size_t p = 0; p < chromoplexyPlacements.size(); ++p)		// Chromoplexy leftovers are drawn joined into one bar
+    {
+        double combinedMbp = 0.0;
+
+        for (const SDRdataRecord& record : subHeader.dataRecords)
+        {
+            const std::vector<int>& leftovers = chromoplexyPlacements[p].leftoverNewStrandIDs;
+
+            if (std::find(leftovers.begin(), leftovers.end(), record.newStrandID) != leftovers.end())
+            {
+                combinedMbp += recordLengthMbp(record);
+            }
+        }
+
+        const int row = acentricsStartRow + static_cast<int>(p) / columns;
+        rowLongestMbp[row] = std::max(rowLongestMbp[row], combinedMbp);
+    }
+
+    std::vector<double> rowTop(static_cast<std::size_t>(totalRows) + 1, startY);	// rowTop[r] = top of row r; rowTop[totalRows] = bottom of the last row
+
+    for (int r = 0; r < totalRows; ++r)
+    {
+        rowTop[r + 1] = rowTop[r] + std::max(rowHeight, maxRenderHeight * (rowLongestMbp[r] / maxLengthMbp) + rowSpacing);
+    }
+
     const double chromosomeWidth = 20.0;					// Visual width of a single bar/column, safe to tune.
     const double homologGap = 18.0;						// Visual gap between left/right homolog slots, safe to tune.
 
-    // Draw karyogram layout
-    cairo_surface_t* surface = createKaryogramSurface(imgWidth, imgHeight, outputFilename, imageBytes, format);
-    cairo_t* cr = cairo_create(surface);
+    // Draw karyogram layout. Everything except the legend is drawn on a recording surface first: the image height is only known once
+    // the lowest label has been drawn, since the legend starts a fixed gap below it (see writeKaryogramImage).
+    cairo_surface_t* content = cairo_recording_surface_create(CAIRO_CONTENT_COLOR_ALPHA, nullptr);
+    cairo_t* cr = cairo_create(content);
 
     cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
-    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
-    cairo_paint(cr);
 
     cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     cairo_set_font_size(cr, 12.0);
@@ -397,7 +471,7 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
         const int col = i % columns;
         const int row = i / columns;
         const double groupCenterX = (col * colWidth) + (colWidth / 2.0);
-        const double posY = startY + (row * rowHeight);
+        const double posY = rowTop[row];
 
         double labelHeight = maxRenderHeight;                   		// Fallback, if slot has nothing to draw.
 
@@ -482,19 +556,17 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
     if (chromosomeCount >= 2)
     {
 	// Determine positions of X and Y chromosomes depeding on the number of chromosomes specified.
-        double sexChromPosY = startY + rows * rowHeight;
+        const double sexChromPosY = rowTop[sexRow];
         int yChromCol;
         int xChromCol;
 
         if (sexChromosomesFitInLastRow)					// Put sex chromosomes in last two positions of last row if they fit
         {
-            sexChromPosY = startY + sexChromosomeRow * rowHeight;
             yChromCol = lastRowUsedCols;
             xChromCol = lastRowUsedCols + 1;
         }
         else								// Put sex chromosomes in first two positions of a new last row if they don't fit
         {
-            sexChromPosY = startY + rows * rowHeight;
             yChromCol = 0;
             xChromCol = 1;
         }
@@ -588,7 +660,7 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
         const int col = static_cast<int>(p) % columns;
         const int row = static_cast<int>(p) / columns;
         const double slotCenterX = (col * colWidth) + (colWidth / 2.0);
-        const double slotPosY = acentricsStartY + row * rowHeight;
+        const double slotPosY = rowTop[acentricsStartRow + row];
 
         // homeOldStrandID is only used by drawStackedMutations()/computeMaxBarHeight() to test for named single-strand shapes (deletion, ecDNA, etc.). 
 	// This record mixes two different strands' fragments, so none of those shapes can match regardless of which ID is passed.
@@ -653,7 +725,7 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
         const int col = slotPosition % columns;
         const int row = slotPosition / columns;
         const double slotCenterX = (col * colWidth) + (colWidth / 2.0);
-        const double slotPosY = acentricsStartY + row * rowHeight;
+        const double slotPosY = rowTop[acentricsStartRow + row];
         ++ecDNAslotIndex;
 
         double totalLengthMbp = 0.0;
@@ -730,16 +802,11 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
 
 
     // ---------------------------------------------
-    // Draw legend at bottom
+    // Draw legend at bottom, a fixed gap below the lowest label, and write the image
     // ---------------------------------------------
-    const double legendY = imgHeight - legendBottomMargin - legendHeight;
-    drawSDRlegend(cr, legendY);
-
-    const bool written = writeKaryogramImage(surface, outputFilename, imageBytes, format);
     cairo_destroy(cr);
-    cairo_surface_destroy(surface);
 
-    return written;
+    return writeKaryogramImage(content, imgWidth, &Karyogram::drawSDRlegend, outputFilename, imageBytes, format);
 }
 
 
@@ -873,8 +940,9 @@ void Karyogram::drawPaintedFragment(			// Function to draw the individual fragme
         return;
     }
 
-    // Tiny segments (e.g. a 0.1 Mbp translocated piece) would round away to nothing, so every segment gets a minimum height.
-    const double minSegmentPixels = 5.0;
+    // Tiny segments (e.g. a 0.1 Mbp translocated piece) would round away to nothing, so every segment gets a minimum height. 3 px rather than 1,
+    // because a 1 px band at a rounded end hides under the 1.5 px outline.
+    const double minSegmentPixels = 3.0;
     const std::vector<PaintedSegment> segments = applyMinimumSegmentHeight(inputSegments, height, minSegmentPixels);
 
     const double capRadius = width / 2.0;
@@ -2526,6 +2594,18 @@ double Karyogram::computeMaxBarHeight(
             bool hasHomeGap = false;
             const double lengthWithGaps = mixedRecordLengthWithHomeGaps(*record, homeOldStrandID, hasHomeGap);
             lengthMbp = hasHomeGap ? lengthWithGaps : lengthMbp;
+
+            // Safeguard: a record made only of home-strand material is never drawn taller than the intact chromosome. When its fragments are shuffled
+            // or inverted (e.g. 1/132.6/131.7, 1/124.2/104.9, 1/124.2/131.7, 1/104.9/0), neighbouring fragments don't touch and the gap rule above
+            // counts the same stretch twice, which pushed the label far below the chromosome (and into the legend on the last row).
+            const bool homeStrandOnly = std::all_of(record->fragments.begin(), record->fragments.end(),
+                [homeOldStrandID](const SDRfragment& fragment) { return fragment.oldStrandID == homeOldStrandID; });
+            const std::size_t sizeIndex = static_cast<std::size_t>(homeOldStrandID);
+
+            if (homeStrandOnly && sizeIndex < masterHeader.intactChromosomeSizes.size() && masterHeader.intactChromosomeSizes[sizeIndex] > 0.0)
+            {
+                lengthMbp = std::min(lengthMbp, masterHeader.intactChromosomeSizes[sizeIndex]);
+            }
         }
 
         const double height =computeSDRbarHeight(lengthMbp, maxLengthMbp, maxRenderHeight);

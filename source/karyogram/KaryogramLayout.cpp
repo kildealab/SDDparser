@@ -382,6 +382,49 @@ cairo_surface_t* Karyogram::createKaryogramSurface(					// Create the surface ev
 }
 
 
+bool Karyogram::writeKaryogramImage(							// Add the legend below a karyogram drawn on a recording surface, then write the image.
+    cairo_surface_t* content,								// Recording surface holding everything but the legend; destroyed here.
+    int width,
+    void (Karyogram::*drawLegend)(cairo_t*, double),					// &Karyogram::drawSDRlegend or &Karyogram::drawSDDlegend
+    const std::string& outputFilename,
+    std::vector<unsigned char>* imageBytes,
+    KaryogramFormat format)
+{
+    const double legendTopGap = 30.0;							// Space between the lowest label and the legend border, safe to tune.
+    const double legendBottomMargin = 40.0;						// Space between the legend border and the bottom of the image, safe to tune.
+    const double legendTopOffset = 35.0;						// drawSDRlegend/drawSDDlegend draw their border from legendY - 35 (25 + borderPaddingY) ...
+    const double legendBottomOffset = 35.0;						// ... to legendY + 35 (legendHeight 70), keep in sync if those change.
+
+    // Ink extents = the box around everything actually drawn, so the lowest label is found whatever the row heights, derivative lengths or layout
+    // (no need to predict where each label lands). Safeguard: an empty recording reports zero size, the legend then simply starts at the top.
+    double inkX, inkY, inkWidth, inkHeight;
+    cairo_recording_surface_ink_extents(content, &inkX, &inkY, &inkWidth, &inkHeight);
+
+    const double contentBottom = (inkHeight > 0.0) ? inkY + inkHeight : 0.0;
+    const double legendY = std::ceil(contentBottom + legendTopGap + legendTopOffset);
+    const int height = static_cast<int>(legendY + legendBottomOffset + legendBottomMargin);
+
+    cairo_surface_t* surface = createKaryogramSurface(width, height, outputFilename, imageBytes, format);
+    cairo_t* cr = cairo_create(surface);
+
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);						// White background (the recording itself is transparent)
+    cairo_paint(cr);
+
+    cairo_set_source_surface(cr, content, 0.0, 0.0);					// Replay the karyogram at its original coordinates, so label hotspots still line up.
+    cairo_paint(cr);									// Replayed as vector drawing commands, so SVG output stays sharp.
+
+    cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
+    (this->*drawLegend)(cr, legendY);
+
+    const bool written = writeKaryogramImage(surface, outputFilename, imageBytes, format);
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+    cairo_surface_destroy(content);
+
+    return written;
+}
+
+
 bool Karyogram::writeKaryogramImage(							// Finish the karyogram image: to a file, or into memory if imageBytes is given.
     cairo_surface_t* surface,
     const std::string& outputFilename,

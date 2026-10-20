@@ -222,10 +222,6 @@ bool Karyogram::renderSDDkaryogram(                                           //
     const double colWidth = static_cast<double>(imgWidth) / columns;       // Column width also in number of pixels
     const double rowHeight = 250.0;                                        // Row height in number of pixels
     const double startY = 188.0;                                           // Choosing the starting Y position for the first row of chromosomes
-    const int rows = (drawableGroups + columns - 1) / columns;             // Determine number of rows based on number of chromosomes passed.
-    const double legendHeight = 70.0;
-    const double legendBottomMargin = 25.0;
-    const int imgHeight = static_cast<int>(startY + rows * rowHeight + legendHeight + legendBottomMargin);          // Adjust image height based on the number of rows, also in pixels.
     const double maxRenderHeight = 180.0;                                  // Limit the maximum height of the chromosome, also in pixels
     const double chromosomeWidth = 20.0;                                   // Individual chromosomes are 20 pixels wide.
     const double chromatidGap = 1.5;                                       // The gaps between homologs in a replicated chromosome are 1.5 pixels.
@@ -234,14 +230,13 @@ bool Karyogram::renderSDDkaryogram(                                           //
     // ----------------------------------------------------
     // Generate the background Karyogram template
     // ----------------------------------------------------
-    cairo_surface_t* surface = createKaryogramSurface(imgWidth, imgHeight, outputFilename, imageBytes, format);
+    // Everything except the legend is drawn on a recording surface first: the image height is only known once the lowest label
+    // has been drawn, since the legend starts a fixed gap below it (see writeKaryogramImage).
+    cairo_surface_t* content = cairo_recording_surface_create(CAIRO_CONTENT_COLOR_ALPHA, nullptr);
 
-    cairo_t* cr = cairo_create(surface);
+    cairo_t* cr = cairo_create(content);
 
     cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
-
-    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
-    cairo_paint(cr);
 
     // ----------------------------------------------------
     // Draw SDD summary
@@ -765,17 +760,12 @@ bool Karyogram::renderSDDkaryogram(                                           //
     drawChromosomeLabel(cr, "Y", yGroupCenterX - 4.0, sexChromPosY + yHeight + 25.0, {static_cast<int>(yIndex)});
 
     // ----------------------------------------------------
-    // Draw Karyogram legend at bottom
+    // Draw Karyogram legend at bottom, a fixed gap below the lowest label, and write the
+    // karyogram to the desired output filename "'SDDfileName'_karyogram.png"
     // ----------------------------------------------------
-    const double legendY = static_cast<double>(imgHeight) - 100.0;
-    drawSDDlegend(cr, legendY);
-
-    // Write the karyogram to the desired output filename "'SDDfileName'_karyogram.png"
-    const bool written = writeKaryogramImage(surface, outputFilename, imageBytes, format);
     cairo_destroy(cr);
-    cairo_surface_destroy(surface);
 
-    return written;
+    return writeKaryogramImage(content, imgWidth, &Karyogram::drawSDDlegend, outputFilename, imageBytes, format);
 }
 
 
