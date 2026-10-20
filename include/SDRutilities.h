@@ -3010,11 +3010,141 @@ inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& su
 // Function to detect CHROMOTHRIPSIS events in SDR file
 // ------------------------------------------------------------------------------------ //
 
+// True when pieces of ONE chromosome, read in the order given, keep their original order along it: forward pieces follow each other up the chromosome, and a run of
+// consecutive reversed pieces is one inverted block whose pieces follow each other down the chromosome. Gaps (deletions) are allowed. Simple deletions and inversions,
+// however many, keep this order. Also tries the pieces read from the other end, since a chromosome can be listed from either end.
+inline bool piecesInOriginalOrder(const std::vector<SDRfragment>& pieces)
+{
+    const double tolerance = 0.000050;						// 50 bp
+
+    auto inOrder = [tolerance](const std::vector<SDRfragment>& fragments) -> bool
+    {
+        double previousHigh = -1.0;							// Highest position reached so far along the chromosome
+
+        for (std::size_t i = 0; i < fragments.size(); )
+        {
+            if (!isReversedFragment(fragments[i]))
+            {
+                if (fragments[i].oldStartPosition < previousHigh - tolerance)
+                {
+                    return false;
+                }
+
+                previousHigh = fragments[i].oldEndPosition;
+                ++i;
+                continue;
+            }
+
+            std::size_t j = i + 1;							// Run of reversed pieces i..j-1 = one inverted block
+
+            while (j < fragments.size() && isReversedFragment(fragments[j]))
+            {
+                if (fragments[j].oldStartPosition > fragments[j - 1].oldEndPosition + tolerance)	// Inside the block, each piece lies below the previous one
+                {
+                    return false;
+                }
+
+                ++j;
+            }
+
+            if (fragments[j - 1].oldEndPosition < previousHigh - tolerance)		// The whole block lies above what came before it
+            {
+                return false;
+            }
+
+            previousHigh = fragments[i].oldStartPosition;
+            i = j;
+        }
+
+        return true;
+    };
+
+    std::vector<SDRfragment> flipped(pieces.rbegin(), pieces.rend());		// The same pieces read from the chromosome's other end
+
+    for (SDRfragment& fragment : flipped)
+    {
+        std::swap(fragment.oldStartPosition, fragment.oldEndPosition);
+    }
+
+    return inOrder(pieces) || inOrder(flipped);
+}
+
+
+// True when a record of ONE chromosome with at least minFragments pieces has them out of their original order, e.g. 40/132.6/127.0, 40/115.2/127.0, 40/96.4/115.2,
+// 40/96.4/0 (see piecesInOriginalOrder()).
+inline bool isNonSequentialRearrangement(const SDRdataRecord& record, std::size_t minFragments = 4)
+{
+    if (!record.linear || record.fragments.size() < minFragments)
+    {
+        return false;
+    }
+
+    for (const SDRfragment& fragment : record.fragments)
+    {
+        if (fragment.oldStrandID != record.fragments.front().oldStrandID)	// Multi-chromosome records are left to the translocation-type detectors.
+        {
+            return false;
+        }
+    }
+
+    return !piecesInOriginalOrder(record.fragments);
+}
+
+
+// True when a record joining two or more chromosomes carries exchanged material that was itself shattered: one chromosome's consecutive pieces (2 or more)
+// are out of their original order, or the piece meeting the other chromosome is inverted on its own, e.g. 13/132.6/14.4, 13/1.9/14.4, 34/121.8/132.6: chr 13
+// broke at 14.4 and the piece next to the junction flipped before joining chr 34. A plain translocation exchanges each chromosome's material
+// in one piece (or one reversed piece), and an inversion with breaks inside the exchanged material keeps its pieces in order, so neither matches.
+inline bool hasShatteredExchangedMaterial(const SDRdataRecord& record)
+{
+    if (!record.linear)
+    {
+        return false;
+    }
+
+    const std::vector<SDRfragment>& fragments = record.fragments;
+
+    for (std::size_t runStart = 0; runStart < fragments.size(); )
+    {
+        std::size_t runEnd = runStart + 1;						// Run of consecutive pieces of one chromosome: runStart..runEnd-1
+
+        while (runEnd < fragments.size() && fragments[runEnd].oldStrandID == fragments[runStart].oldStrandID)
+        {
+            ++runEnd;
+        }
+
+        const bool bordersOtherChromosome = runStart > 0 || runEnd < fragments.size();
+
+        if (bordersOtherChromosome && runEnd - runStart >= 2)
+        {
+            const std::vector<SDRfragment> run(fragments.begin() + runStart, fragments.begin() + runEnd);
+
+            // The piece meeting the other chromosome is flipped on its own: its orientation differs from its neighbour in the run (either way round, since a
+            // chromosome can be listed from either end, e.g. 13/132.6/14.4 reversed then 13/1.9/14.4 forward next to chr 34).
+            const bool flippedAtStartJunction = runStart > 0 && isReversedFragment(run.front()) != isReversedFragment(run[1]);
+            const bool flippedAtEndJunction = runEnd < fragments.size() && isReversedFragment(run.back()) != isReversedFragment(run[run.size() - 2]);
+
+            if (!piecesInOriginalOrder(run) || flippedAtStartJunction || flippedAtEndJunction)
+            {
+                return true;
+            }
+        }
+
+        runStart = runEnd;
+    }
+
+    return false;
+}
+
+
 // Same underlying strand-connectivity graph as detectChromoplexy(), built from raw fragment data, so clustering doesn't depend on any named mutation shape. Components of
 // size 3+ are skipped (chromoplexy's territory). For components of size 1 or 2, rather than counting named detected mutation events , this counts the TOTAL 
 // number of data-field-3 fragments across every rearranged record touching the cluster's strand(s), a direct measure of how many
 // pieces the strand(s) were actually broken into, regardless of shape. Only counts the remaining fragments in the original strand, not the excised pieces, as a
 // clearer metric for the number of rearrangements that occurred in a strand.
+// A cluster also counts as chromothripsis, whatever its total, when one of its records holds 4 or more pieces of a chromosome rearranged out of their original
+// order (see isNonSequentialRearrangement()), which simple deletions and inversions cannot produce, or joins two chromosomes with exchanged material that
+// broke and was rearranged on the way (see hasShatteredExchangedMaterial()).
 inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHeader& subHeader, int numOriginalStrands, int minFragmentCount)
 {
     std::vector<SDRchromothripsisEvent> chromothripsisEvents;			// Store chromothripsis events
@@ -3142,8 +3272,16 @@ inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHead
             totalFragmentCount += static_cast<int>(fragmentCountByNewStrandID[newStrandID]);
         }
 
-	// Min fragment count = 10 by default, function argument parameter can be changed.
-        if (totalFragmentCount < minFragmentCount)
+        bool hasNonSequentialRecord = false;
+
+        for (const SDRdataRecord& record : subHeader.dataRecords)
+        {
+            hasNonSequentialRecord = hasNonSequentialRecord || (majorNewStrandIDs.count(record.newStrandID)
+                                                                && (isNonSequentialRearrangement(record) || hasShatteredExchangedMaterial(record)));
+        }
+
+	// Min fragment count = 10 by default, function argument parameter can be changed. Either condition is enough.
+        if (totalFragmentCount < minFragmentCount && !hasNonSequentialRecord)
         {
             continue;
         }
