@@ -709,8 +709,9 @@ bool SDRparser::writeSummary(
     {
         output << "Note on \"Mutations by chromosome\": a mutation involving several chromosomes is listed under each of them,\n"
                << "except dicentrics, which are listed only under the chromosome drawn with two centromeres.\n"
-               << "\"Miscellaneous\" marks a chromosome with a change that none of the mutation types above accounts for (e.g. an\n"
-               << "inversion reaching a chromosome end), even when it also has other mutations. It has no line in the cell's Mutation Summary.\n\n";
+               << "\"Complex Genomic Rearrangements\" counts clusters with 4 or more pieces of a chromosome out of order or with broken-up\n"
+               << "material exchanged between chromosomes, plus one for every chromosome with a change that none of the other mutation\n"
+               << "types accounts for (e.g. an inversion reaching a chromosome end), even when it also has other mutations.\n\n";
     }
 
     for (const SDRsubHeader& subHeader : subHeaders)
@@ -841,6 +842,7 @@ void SDRparser::writeCellDataSummary(
     const std::vector<SDRdeletionInsertionEvent> delInsertions = detectDeletionInsertions(subHeader, numOriginalStrands);
     const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRchromothripsisEvent> chromothripsis = detectChromothripsis(subHeader, numOriginalStrands);
+    const std::size_t complexRearrangements = countComplexGenomicRearrangements(subHeader, masterHeader);	// Includes changes no other type accounts for
     const std::vector<SDRchromosomeRingEvent> chromosomeRings = detectChromosomeRings(subHeader, numOriginalStrands);
     const std::vector<SDRdicentricEvent> dicentrics = detectDicentrics(subHeader, numOriginalStrands);
 
@@ -854,6 +856,7 @@ void SDRparser::writeCellDataSummary(
     output << "  Deletion-Insertions: " << delInsertions.size() << "\n";
     output << "  Chromoplexy: " << chromoplexy.size() << "\n";
     output << "  Chromothripsis: " << chromothripsis.size() << "\n";
+    output << "  Complex Genomic Rearrangements: " << complexRearrangements << "\n";
     output << "  Ring Chromosomes: " << chromosomeRings.size() << "\n";
     output << "  Dicentrics: " << dicentrics.size() << "\n";
 

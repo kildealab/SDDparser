@@ -42,6 +42,13 @@ bool writeKaryogramViewer(
     const std::filesystem::path& htmlPath       // Where to write the HTML file.
 );
 
+// Writes several files (e.g. every karyogram of an input file) into one .zip archive, stored without compression since PNG and
+// SVG output is already compact enough. Entries are {file name inside the zip, file contents}. Returns false if it could not write.
+bool writeZipArchive(
+    const std::vector<std::pair<std::string, std::vector<unsigned char>>>& entries,
+    const std::filesystem::path& zipPath
+);
+
 // Returns false when no browser can be shown on this machine, e.g. over SSH, on an HPC cluster or in a container,
 // or in WSL with Windows interop switched off. Used to decide where to write the viewer and whether to open it.
 bool canOpenBrowser();

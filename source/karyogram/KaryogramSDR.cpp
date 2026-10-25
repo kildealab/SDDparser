@@ -150,7 +150,12 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
     // whether or not the excised single-fragment pieces exist in the SDR file. The dicentric/acentric pairing above needs those excised pieces to tile the
     // strands, so when they are absent it finds nothing, and every record would fall back to the first fragment's strand and pile into ONE slot,
     // leaving the other strand drawn untouched. Give each multi-fragment record of the cluster its own strand slot here instead.
-    for (const SDRchromothripsisEvent& event : detectChromothripsis(subHeader, static_cast<int>(sizes[0])))
+    // Complex genomic rearrangements are found on the same kind of cluster, so they are drawn the same way.
+    std::vector<SDRchromothripsisEvent> shatteredClusters = detectChromothripsis(subHeader, static_cast<int>(sizes[0]));
+    const std::vector<SDRcomplexRearrangementEvent> complexRearrangements = detectComplexGenomicRearrangements(subHeader, static_cast<int>(sizes[0]));
+    shatteredClusters.insert(shatteredClusters.end(), complexRearrangements.begin(), complexRearrangements.end());
+
+    for (const SDRchromothripsisEvent& event : shatteredClusters)
     {
         if (event.involvedStrandIDs.size() != 2)
         {
@@ -315,7 +320,7 @@ bool Karyogram::renderSDRkaryogram(					// Function to draw a karyogram of the r
     const double maxRenderHeight = 180.0;					// Height of the largest intact chromosome, safe to tune.
     const double rowHeight = 250.0;						// Default row height; a row holding a longer derivative grows (see rowTop below).
     const double rowSpacing = rowHeight - maxRenderHeight;			// Room under the tallest bar of a row for its label and the gap to the next row.
-    const double startY = 250.0;
+    const double startY = 288.0;						// Below the summary box (5 rows of counts, bottom at y = 218).
     const int rows = (drawableGroups + columns - 1) / columns;
 
     // Check if X and Y can fit in last row, if not, put in their own row

@@ -373,13 +373,14 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     const std::vector<SDRdeletionInsertionEvent> deletionInsertion = detectDeletionInsertions(subHeader, numOriginalStrands);
     const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRchromothripsisEvent> chromothripsis = detectChromothripsis(subHeader, numOriginalStrands);
+    const std::size_t complexRearrangements = countComplexGenomicRearrangements(subHeader, masterHeader);	// Includes changes no other type accounts for
     const std::vector<SDRchromosomeRingEvent> chromosomeRings = detectChromosomeRings(subHeader, numOriginalStrands);
     const std::vector<SDRdicentricEvent> dicentrics = detectDicentrics(subHeader, numOriginalStrands);
 
     const double summaryX = 50.0;
     const double summaryY = 25.0;
     const double summaryWidth = 900.0;
-    const double summaryHeight = 155.0;
+    const double summaryHeight = 193.0;						// 5 rows of counts; renderSDRkaryogram's startY sits 70 px below the box.
 
     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     cairo_set_line_width(cr, 1.5);
@@ -394,6 +395,7 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
     const double secondRowY = summaryY + 68.0;
     const double thirdRowY = summaryY + 106.0;
     const double fourthRowY = summaryY + 144.0;
+    const double fifthRowY = summaryY + 182.0;
 
     cairo_move_to(cr, summaryX + 15.0, firstRowY);
     cairo_show_text(cr, ("Cell ID: " + std::to_string(subHeader.cellID)).c_str());
@@ -430,6 +432,9 @@ void Karyogram::drawSDRsummary(cairo_t* cr, const SDRmasterHeader& masterHeader,
 
     cairo_move_to(cr, summaryX + 615.0, fourthRowY);
     cairo_show_text(cr, ("Chromothripsis: " + std::to_string(chromothripsis.size())).c_str());
+
+    cairo_move_to(cr, summaryX + 15.0, fifthRowY);
+    cairo_show_text(cr, ("Complex Genomic Rearrangements: " + std::to_string(complexRearrangements)).c_str());
 
 }
 

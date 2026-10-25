@@ -10,7 +10,7 @@ in the SDR file for each cell, as well as optionally plotting the karyogram of t
 
 Karyograms open in an interactive web viewer in your default browser, where you can switch between cells, zoom and pan without
 losing image quality, and download any karyogram as a PNG or SVG, or all karyograms at once as a zip file. They can also be saved
-directly as image files with `--save-png` and/or `--save-svg`.
+directly as image files with `--save-png` and/or `--save-svg`, or collected into one zip file with `--save-zip`.
 
 Available both as a **command-line tool** and as a **linkable C++ library** you can embed in your own project.
 
@@ -23,7 +23,7 @@ On Debian/Ubuntu: `sudo apt install libcairo2-dev`
 On macOS (Homebrew): `brew install cairo`
 On Windows, build and run inside WSL (Windows Subsystem for Linux) using the Debian/Ubuntu command above.
 
-A web browser is needed to view karyograms in the web viewer (no extra libraries). Without one, use `--save-png` or `--save-svg`.
+A web browser is needed to view karyograms in the web viewer (no extra libraries). Without one, use `--save-png`, `--save-svg` or `--save-zip`.
 
 ## Building
 
@@ -48,8 +48,8 @@ make clean  # removes build artifacts
 5. To run the SDDparser and generate a summary of either the SDD or SDR file, type in the command line 
 
 ```
-./SDDparser <SDD file> [--karyogram human|other [--save-png] [--save-svg]]
-./SDDparser -sdr <SDR file> [--karyogram human|other [--save-png] [--save-svg]]
+./SDDparser <SDD file> [--karyogram human|other [--save-png] [--save-svg] [--save-zip]]
+./SDDparser -sdr <SDR file> [--karyogram human|other [--save-png] [--save-svg] [--save-zip]]
 ```
 
 Examples:
@@ -62,6 +62,8 @@ Examples:
 ./SDDparser -sdr exampleSDR.txt --karyogram human --save-png
 ./SDDparser -sdr exampleSDR.txt --karyogram human --save-svg
 ./SDDparser -sdr exampleSDR.txt --karyogram human --save-png --save-svg
+./SDDparser -sdr exampleSDR.txt --karyogram human --save-zip
+./SDDparser -sdr exampleSDR.txt --karyogram human --save-zip --save-svg
 ```
 
 Each run writes a `<input>_summary.txt` file next to the input. If `--karyogram` is passed, one karyogram is drawn per exposure/cell found in the file:
@@ -81,10 +83,34 @@ Each run writes a `<input>_summary.txt` file next to the input. If `--karyogram`
 **With `--save-png` and/or `--save-svg`**, no viewer is created; instead one `<input>_cell<N>_karyogram_<human|other>.png` and/or `.svg`
   is written next to the input file per cell. The two options can be combined, in any order.
 
+**With `--save-zip`**, no viewer is created and no loose image files are written; instead all karyograms are put in a single
+  `<input>_karyograms_<human|other>.zip` next to the input file (one `<input>_cell<N>_karyogram_<human|other>` image per cell, stored
+  uncompressed). The zip holds PNGs by default, SVGs if `--save-svg` is also given, and both if `--save-png` and `--save-svg` are both given.
+  This is handy for large files, where one image per cell would clutter the input folder.
+
 **On WSL**, the viewer opens in your Windows browser.
 
 **On machines without a screen** (over SSH, on HPC clusters, or in containers), no browser is opened. The HTML file is written next to the input
-  file instead, so you can copy it to your own computer (e.g. with `scp`) and open it there, or rerun with `--save-png` or `--save-svg`.
+  file instead, so you can copy it to your own computer (e.g. with `scp`) and open it there, or rerun with `--save-png`, `--save-svg` or `--save-zip`.
+
+**Terminal output.** While running, SDDparser prints which file it is processing, a progress line per cell (updated in place in an
+  interactive terminal, one line per cell when the output is redirected to a file), where the summary and karyograms were written, and a
+  final status line. For example:
+
+```
+SDR file processing: exampleSDR.txt...
+Processing cell X/'TOTAL' (Cell ID Y)...
+Summary written to: "exampleSDR_summary.txt"
+Karyograms written to: "exampleSDR_karyograms_other.zip" (N files)
+Karyograms not generated for the following cells due to absent SDR data: 
+All 'TOTAL' cells processed successfully.
+```
+
+  Without `--karyogram`, a single "Summarizing N cells..." line is shown instead of the per-cell progress. Cells with no SDR data records
+  have nothing to draw; they are listed in the "absent SDR data" line and are not treated as errors. Lines starting with `ERROR:` are
+  reserved for problems that prevent a file from being parsed, summarized or drawn correctly (an unreadable input file, a malformed header,
+  a karyogram that could not be drawn or written). If any occur, the run ends with "Finished with errors, see the messages above." and exit
+  code 1 instead of the "All N cells processed successfully." line (exit code 0).
 
 
 6. If you decide to plot the Karyogram of the SDD/SDR file illustrating the locations of the single- and double-strand breaks on each of the chromosomes, 
@@ -146,7 +172,8 @@ non-human genomes will be drawn using the generic centromere locations at approx
 4. Single-strand breaks are denoted using white lines on the chromosomes and the line lengths are scaled based on the number of single-strand breaks 
 within a given damage site (i.e. a given SDD data row) (usually between 0-5 SSBs). 
 5. Summary at the top to describe the dose or fluence in the SDD file, the cell cycle phase, and the number of single- and double-strand breaks.
-6. Legend at the bottom to describe what each symbol signifies in the karyogram.
+6. Legend at the bottom to describe what each symbol signifies in the karyogram. It always starts a fixed distance below the labels of the
+   lowest chromosome row, so labels never overlap it.
 7. Can draw damages on either of the two sister chromatids in post-replicated chromosomes. 
 8. Chromosome homologs are drawn with dashed outline to distinguish the two.
 
@@ -158,7 +185,31 @@ within a given damage site (i.e. a given SDD data row) (usually between 0-5 SSBs
 5. Number of mutations per each type per chromosome in the specified cell ("Mutations by chromosome"). Only chromosomes with mutations, and only
    the mutation types they have, are listed. A mutation involving several chromosomes (e.g. a translocation) is listed under each of them,
    except dicentrics, which are listed only under the chromosome drawn with two centromeres (not under the partner left acentric). A note at
-   the top of the summary file explains this.
+   the top of the summary file explains this. A chromosome with a change that none of the other mutation types below explains is counted
+   as one complex genomic rearrangement, in the per-chromosome list, the cell's mutation totals and the karyogram's summary box.
+
+#### How mutations are classified
+
+Mutations are scored in three tiers, from simplest to most complex. When the strands of a lower-tier event are part of a higher-tier
+event, only the higher-tier event is counted:
+
+| Tier | Mutation types |
+|---|---|
+| 1 Simple mutations| Deletions, balanced inversions, balanced translocations |
+| 2 Composite Mutations| Deletion-insertions, deletion-inversions, deletion-translocations |
+| 3 Complex Genomic Rearrangements| ecDNA, chromoplexy, chromothripsis, and other mutations not included in any previous class |
+
+- Lower-tier events whose fragments end up in an ecDNA are counted as ecDNA only, and ecDNA on strands that are part of a chromothripsis or
+  chromoplexy event is counted only as that chromothripsis or chromoplexy. ecDNA fragments may be in either orientation (forward or reversed).
+- **Chromoplexy** involves 3 or more chromosomes, and every one of them must receive foreign material.
+- **Chromothripsis** is scored for a cluster of one or two strands when either or both together has 10 or more fragments;
+  **Complex genomic rearrangements** are scored for any complex mutations not meeting the criteria of ecDNA/chromothripsis/chromoplexy, such as 4 or more
+fragments being rearranged out of order, or material exchanged between two chromosomes that broke and was rearranged on the way (e.g. a
+translocated fragment that broke in two and was inverted before insertion). Any other change to a chromosome that no other mutation type explains (for example an inversion reaching
+a chromosome end, or an inversion next to an ecDNA or ring excision) also counts as one complex genomic rearrangement on that chromosome.
+- **Pericentric inversions:** a record with exactly three fragments, where the start and the end of the chromosome swap places (both
+reversed) and the middle fragment keeps its original orientation, is the same chromosome listed upside down. It is read from the other
+end, so it counts as 1 balanced inversion (or 1 deletion-inversion when a piece is missing).
 
 ### WHAT IS PLOTTED IN THE SDR FILE KARYOGRAM 
 1. Summary at the top, including which cell the Karyogram is plotted for, and the number of each mutation type.
@@ -168,9 +219,12 @@ original chromosomes. Extrachromosomal DNA (ecDNA) is drawn as acentric circles 
 clarity.
 4. A legend of symbols at the bottom of the karyogram to denote what all the symbols mean, particularly for inversions and ecDNA.
 Material from a second homolog is outlined with a dashed line, including chromosome rings formed from a second homolog (dashed inner and outer circles).
-5. So far, drawing is supported for long deletions, balanced inversions, balanced translocations, ecDNA, deletion-inversions, deletion-translocations,
-and deletion-insertions, chromoplexy and chromothripsis (as well as dicentrics and chromosome rings) 
-6. For chromoplexy and ecDNA leading to acentric strands composed of multiple foreign DNA fragments, they receive their own slots
+5. Every cell of a file is drawn at the same scale: the largest chromosome in the master header has the same height in every karyogram,
+so cells can be compared side by side. Rows keep their default height and only grow when they hold a derivative longer than the
+largest original chromosome.
+6. So far, drawing is supported for long deletions, balanced inversions, balanced translocations, ecDNA, deletion-inversions, deletion-translocations,
+and deletion-insertions, chromoplexy, chromothripsis and complex genomic rearrangements (as well as dicentrics and chromosome rings) 
+7. For chromoplexy and ecDNA leading to acentric strands composed of multiple foreign DNA fragments, they receive their own slots
 after the sex chromosomes. They are labeled such that the original chromosomes that compose the acentric strand are labeled and a '*' is 
 present to indicate it is a derivative, not an original chromosome strand. (see exampleSDR_dicentrics_rings_cell0_karyogram_human.png, produced with `--save-png`).
 Note: the multi-foreign-fragment ecDNA are depicted pie-chart style, to represent 'how much' of each original chromosome is present in the new ecDNA fragment. 
@@ -406,6 +460,7 @@ if (sddparser::writeKaryogramViewer(images, "exampleSDR.txt", "exampleSDR_karyog
 | `bool writeKaryogramViewer(images, title, htmlPath)` | Writes all karyograms into a single HTML file with no external dependencies, including zoom/pan, PNG/SVG/zip downloads, and clickable chromosome labels for images that have `hotspots`. |
 | `bool canOpenBrowser()` | Returns `false` when no browser can be shown (e.g. over SSH, on an HPC cluster, in a container, or in WSL with Windows interop disabled). |
 | `bool openInBrowser(htmlPath)` | Opens the file in the default browser (`xdg-open` on Linux, `open` on macOS, `start` on Windows, the Windows browser from WSL). Returns `false` if it could not. |
+| `bool writeZipArchive(entries, zipPath)` | Writes `entries` (`std::vector<std::pair<std::string, std::vector<unsigned char>>>`, each a file name and its contents) into one uncompressed zip file at `zipPath`. This is how the CLI writes `--save-zip`. Returns `false` on failure. |
 
 
 ## APPENDIX

@@ -237,7 +237,11 @@ struct SDRchromothripsisEvent
     int totalFragmentCount;                     // Total data-field-3 fragments summed across all contributing records
 };
 
-} // namespace sddparser
+// A complex genomic rearrangement is found on the same 1-2 strand clusters as chromothripsis (see detectComplexGenomicRearrangements()),
+// so it carries the same information.
+using SDRcomplexRearrangementEvent = SDRchromothripsisEvent;
+
+
 
 
 
@@ -274,6 +278,13 @@ struct SDRdicentricEvent
 
 
 };
+
+
+
+
+} // namespace sddparser
+
+
 
 
 #endif

@@ -765,6 +765,7 @@ inline std::vector<SDRchromoplexyAcentricPlacement> findChromoplexyAcentricRecom
 // Forward declarations (defaults live here only, NOT on the later definitions).
 inline std::vector<SDRchromoplexyEvent> detectChromoplexy(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool collectAccompanyingDeletions = true);
 inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHeader& subHeader, int numOriginalStrands, int minFragmentCount = 10);
+inline std::vector<SDRcomplexRearrangementEvent> detectComplexGenomicRearrangements(const SDRsubHeader& subHeader, int numOriginalStrands, int minFragmentCount = 10);
 inline std::vector<SDRdeletionTranslocationEvent> detectDeletionTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool applyHierarchy = true);
 inline std::vector<SDRtranslocationEvent> detectTranslocations(const SDRsubHeader& subHeader, int numOriginalStrands, const SDRmasterHeader& masterHeader, bool applyHierarchy = true);
 inline std::vector<SDRdeletionInsertionEvent> detectDeletionInsertions(const SDRsubHeader& subHeader, int numOriginalStrands, bool applyHierarchy = true);
@@ -1043,13 +1044,19 @@ inline double fullSizeForStrand(const SDRmasterHeader& masterHeader, int oldStra
     return (index < masterHeader.intactChromosomeSizes.size()) ? masterHeader.intactChromosomeSizes[index] : 0.0;
 }
 
-// Strands claimed by the complex genomic rearrangements that silence everything simpler: chromothripsis (10+ fragments in a 1-2 strand cluster) and chromoplexy (3+ strand cluster).
+// Strands claimed by the complex genomic rearrangements that silence everything simpler: chromothripsis (10+ fragments in a 1-2 strand cluster), complex genomic
+// rearrangements (4+ pieces of one chromosome out of order, or shattered exchanged material) and chromoplexy (3+ strand cluster).
 // ecDNA is handled per-gap through the Circular partner check, so it is not part of this set.
 inline std::set<int> collectHigherOrderStrands(const SDRsubHeader& subHeader, int numOriginalStrands)
 {
     std::set<int> strands;
 
     for (const SDRchromothripsisEvent& event : detectChromothripsis(subHeader, numOriginalStrands))
+    {
+        strands.insert(event.involvedStrandIDs.begin(), event.involvedStrandIDs.end());
+    }
+
+    for (const SDRcomplexRearrangementEvent& event : detectComplexGenomicRearrangements(subHeader, numOriginalStrands))	// Silences the same simpler events chromothripsis did
     {
         strands.insert(event.involvedStrandIDs.begin(), event.involvedStrandIDs.end());
     }
@@ -1370,7 +1377,7 @@ inline std::vector<SDRinversionEvent> detectInversions(const SDRsubHeader& subHe
                 }
 
                 // A balanced inversion needs a break on BOTH sides of the inverted segment. A reversed segment that reaches either end of
-                // the chromosome (a terminal inversion) is not scored as one; countMutationsPerOriginalStrand() lists it as Miscellaneous.
+                // the chromosome (a terminal inversion) is not scored as one; countMutationsPerOriginalStrand() counts it as a Complex Genomic Rearrangement.
                 const double strandSize = fullSizeForStrand(masterHeader, oldStrandID);
 
                 if (approxEqual(sorted[index].low, 0.0, balInvTolerance) || (strandSize > 0.0 && approxEqual(sorted[index].high, strandSize, balInvTolerance)))
@@ -3142,12 +3149,14 @@ inline bool hasShatteredExchangedMaterial(const SDRdataRecord& record)
 // number of data-field-3 fragments across every rearranged record touching the cluster's strand(s), a direct measure of how many
 // pieces the strand(s) were actually broken into, regardless of shape. Only counts the remaining fragments in the original strand, not the excised pieces, as a
 // clearer metric for the number of rearrangements that occurred in a strand.
-// A cluster also counts as chromothripsis, whatever its total, when one of its records holds 4 or more pieces of a chromosome rearranged out of their original
-// order (see isNonSequentialRearrangement()), which simple deletions and inversions cannot produce, or joins two chromosomes with exchanged material that
-// broke and was rearranged on the way (see hasShatteredExchangedMaterial()).
-inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHeader& subHeader, int numOriginalStrands, int minFragmentCount)
+// A cluster below the fragment threshold is a complex genomic rearrangement instead (see detectComplexGenomicRearrangements()) when one of its records
+// holds 4 or more pieces of one chromosome rearranged out of their original order (see isNonSequentialRearrangement()), which simple deletions and
+// inversions cannot produce, or joins two chromosomes with exchanged material that broke and was rearranged on the way (see
+// hasShatteredExchangedMaterial()). Each cluster is scored as one or the other, never both.
+// complexRearrangements selects which of the two kinds of cluster is returned.
+inline std::vector<SDRchromothripsisEvent> detectShatteredClusters(const SDRsubHeader& subHeader, int numOriginalStrands, int minFragmentCount, bool complexRearrangements)
 {
-    std::vector<SDRchromothripsisEvent> chromothripsisEvents;			// Store chromothripsis events
+    std::vector<SDRchromothripsisEvent> chromothripsisEvents;			// Store chromothripsis (or complex genomic rearrangement) events
 
     // Groups chromosomes based on their shared mutations
     std::map<int, int> parent;
@@ -3272,21 +3281,32 @@ inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHead
             totalFragmentCount += static_cast<int>(fragmentCountByNewStrandID[newStrandID]);
         }
 
-        bool hasNonSequentialRecord = false;
+        bool hasShatteredExchange = false;					// Exchanged material between two chromosomes broke and was rearranged
+        bool hasNonSequentialRecord = false;					// 4+ pieces of one chromosome out of their original order
 
         for (const SDRdataRecord& record : subHeader.dataRecords)
         {
-            hasNonSequentialRecord = hasNonSequentialRecord || (majorNewStrandIDs.count(record.newStrandID)
-                                                                && (isNonSequentialRearrangement(record) || hasShatteredExchangedMaterial(record)));
+            if (!majorNewStrandIDs.count(record.newStrandID))
+            {
+                continue;
+            }
+
+            hasShatteredExchange = hasShatteredExchange || hasShatteredExchangedMaterial(record);
+            hasNonSequentialRecord = hasNonSequentialRecord || isNonSequentialRearrangement(record);
         }
 
-	// Min fragment count = 10 by default, function argument parameter can be changed. Either condition is enough.
-        if (totalFragmentCount < minFragmentCount && !hasNonSequentialRecord)
+	// Min fragment count = 10 by default, function argument parameter can be changed. Only the fragment count makes chromothripsis.
+        const bool isChromothripsis = totalFragmentCount >= minFragmentCount;
+
+	// Safeguard: a cluster that is already chromothripsis is never also a complex genomic rearrangement, so the two counts never overlap.
+        const bool isComplexRearrangement = !isChromothripsis && (hasNonSequentialRecord || hasShatteredExchange);
+
+        if (complexRearrangements ? !isComplexRearrangement : !isChromothripsis)
         {
             continue;
         }
 
-	// Checks passed, store the chromothripsis event
+	// Checks passed, store the chromothripsis (or complex genomic rearrangement) event
         SDRchromothripsisEvent event{};
         event.involvedStrandIDs = std::vector<int>(strandSet.begin(), strandSet.end());
         event.contributingNewStrandIDs = std::vector<int>(majorNewStrandIDs.begin(), majorNewStrandIDs.end());
@@ -3299,13 +3319,30 @@ inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHead
 }
 
 
+// Chromothripsis: a 1-2 strand cluster with 10+ fragments (see detectShatteredClusters()).
+inline std::vector<SDRchromothripsisEvent> detectChromothripsis(const SDRsubHeader& subHeader, int numOriginalStrands, int minFragmentCount)
+{
+    return detectShatteredClusters(subHeader, numOriginalStrands, minFragmentCount, false);
+}
+
+
+// Complex genomic rearrangement: a 1-2 strand cluster below the chromothripsis fragment threshold with a record of 4+ pieces of one chromosome
+// out of their original order, or with shattered exchanged material between chromosomes (see detectShatteredClusters()). It silences simpler events on its strands, like chromothripsis.
+inline std::vector<SDRcomplexRearrangementEvent> detectComplexGenomicRearrangements(const SDRsubHeader& subHeader, int numOriginalStrands, int minFragmentCount)
+{
+    return detectShatteredClusters(subHeader, numOriginalStrands, minFragmentCount, true);
+}
+
+
 // Counts the detected mutations of one cell per original strand, for the web viewer's per-chromosome popups.
 // Uses the same detection functions (and hierarchy) as the SDR summary file, so the numbers agree with it.
 // A mutation involving several strands (e.g. a translocation between chromosomes 5 and 12) is counted once on each strand involved,
 // so the per-strand counts can add up to more than the cell total. Only mutation types that occur are listed, in summary-file order.
 // Exception: a dicentric is counted only on the chromosome slot it is drawn in, not on the partner left acentric.
-// A chromosome with a change that none of the mutation types accounts for gets one "Miscellaneous" entry, even if it has other mutations.
-inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPerOriginalStrand(const SDRsubHeader& subHeader, const SDRmasterHeader& masterHeader)
+// A chromosome with a change that none of the other mutation types accounts for gets one "Complex Genomic Rearrangements" entry, even if it has other
+// mutations. Those chromosomes are also returned in unexplainedStrandsOut when it is given (see countComplexGenomicRearrangements()).
+inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPerOriginalStrand(const SDRsubHeader& subHeader, const SDRmasterHeader& masterHeader,
+                                                                                              std::set<int>* unexplainedStrandsOut = nullptr)
 {
     const int numOriginalStrands = masterHeader.intactChromosomeSizes.empty() ? 0 : static_cast<int>(masterHeader.intactChromosomeSizes[0]);
 
@@ -3332,6 +3369,7 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
     const std::vector<SDRdeletionInsertionEvent> delIns = detectDeletionInsertions(subHeader, numOriginalStrands);
     const std::vector<SDRchromoplexyEvent> chromoplexy = detectChromoplexy(subHeader, numOriginalStrands, masterHeader);
     const std::vector<SDRchromothripsisEvent> chromothripsis = detectChromothripsis(subHeader, numOriginalStrands);
+    const std::vector<SDRcomplexRearrangementEvent> complexRearrangements = detectComplexGenomicRearrangements(subHeader, numOriginalStrands);
     const std::vector<SDRchromosomeRingEvent> rings = detectChromosomeRings(subHeader, numOriginalStrands);
     const std::vector<SDRdicentricEvent> dicentrics = detectDicentrics(subHeader, numOriginalStrands);
 
@@ -3344,6 +3382,7 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
     for (const auto& e : delIns)         addEvent("Deletion-Insertions", {e.donorOldStrandID, e.recipientOldStrandID});
     for (const auto& e : chromoplexy)    addEvent("Chromoplexy", e.involvedStrandIDs);
     for (const auto& e : chromothripsis) addEvent("Chromothripsis", e.involvedStrandIDs);
+    for (const auto& e : complexRearrangements) addEvent("Complex Genomic Rearrangements", e.involvedStrandIDs);
     for (const auto& e : rings)          addEvent("Ring Chromosomes", e.involvedOldStrandIDs);
 
     // Dicentrics are the one exception to counting every strand involved: a dicentric is counted only on the chromosome
@@ -3372,10 +3411,10 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
         }
     }
 
-    // Miscellaneous: a change to a strand that none of the detectors above accounts for, e.g. a terminal inversion, scored whether or not the strand
-    // also has detected mutations. Listed per chromosome only; it has no line in the cell's Mutation Summary or the karyogram's box.
+    // Unexplained changes: a change to a strand that none of the detectors above accounts for, e.g. a terminal inversion, scored whether or not the strand
+    // also has detected mutations. Each such strand counts as one Complex Genomic Rearrangement, in the cell total and the karyogram's box as well.
     // Each strand's material in each rearranged record (other than a plain, whole, forward copy) must be accounted for by an event, and so must each of
-    // its reversed fragments and each of its gaps. A strand with anything left over gets one Miscellaneous entry.
+    // its reversed fragments and each of its gaps. A strand with anything left over gets one Complex Genomic Rearrangements entry.
     {
         const double tolerance = 0.000050;					// 50 bp, the loosest detector tolerance
         typedef std::pair<int, int> RecordStrand;				// {newStrandID, oldStrandID}
@@ -3483,6 +3522,11 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
             explainRecords(e.contributingNewStrandIDs, e.involvedStrandIDs, true);
             wholeStrandEvents.insert(e.involvedStrandIDs.begin(), e.involvedStrandIDs.end());
         }
+        for (const auto& e : complexRearrangements)
+        {
+            explainRecords(e.contributingNewStrandIDs, e.involvedStrandIDs, true);
+            wholeStrandEvents.insert(e.involvedStrandIDs.begin(), e.involvedStrandIDs.end());
+        }
 
         // Rings and dicentrics account for their own record, and for the acentric leftovers of the same strands (the ends cut off when a ring
         // closes, the acentric partner of a dicentric), so those leftovers are not scored again. Their material also fills the strands' gaps.
@@ -3563,7 +3607,7 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
                         explainRecords({record.newStrandID}, {fragment.oldStrandID}, false);
 
                         // An ecDNA can be closed from forward and reversed pieces (e.g. 17/111.9/112.8 + 17/118.9/112.8), and a circle has no
-                        // orientation, so a reversed piece inside the ecDNA is part of it and not an inversion left unexplained (Miscellaneous).
+                        // orientation, so a reversed piece inside the ecDNA is part of it and not an inversion left unexplained.
                         if (isReversedFragment(fragment))
                         {
                             explainedReversals.push_back(range(fragment.oldStrandID, low, high));
@@ -3647,14 +3691,19 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
 
         for (int strandID : unexplainedStrands)
         {
-            addEvent("Miscellaneous", {strandID});
+            addEvent("Complex Genomic Rearrangements", {strandID});	// Safeguard: never doubles a CGR cluster's entry, its strands are skipped above (wholeStrandEvents)
+        }
+
+        if (unexplainedStrandsOut)
+        {
+            *unexplainedStrandsOut = unexplainedStrands;
         }
     }
 
-    // Same order as the "Mutation Summary" in the SDR summary file, with Miscellaneous last.
+    // Same order as the "Mutation Summary" in the SDR summary file.
     const std::vector<std::string> typeOrder = {
         "Long Deletions", "Balanced Inversions", "Balanced Translocations", "Extrachromosomal DNA (ecDNA)", "Deletion-Inversions",
-        "Deletion-Translocations", "Deletion-Insertions", "Chromoplexy", "Chromothripsis", "Ring Chromosomes", "Dicentrics", "Miscellaneous"};
+        "Deletion-Translocations", "Deletion-Insertions", "Chromoplexy", "Chromothripsis", "Complex Genomic Rearrangements", "Ring Chromosomes", "Dicentrics"};
 
     std::map<int, std::vector<std::pair<std::string, int>>> result;
 
@@ -3672,6 +3721,19 @@ inline std::map<int, std::vector<std::pair<std::string, int>>> countMutationsPer
     }
 
     return result;
+}
+
+
+// Number of complex genomic rearrangements in one cell, for the Mutation Summary and the karyogram's box: the 1-2 strand clusters with 4+ pieces out
+// of order or shattered exchanged material (detectComplexGenomicRearrangements()), plus one for every chromosome with a change no other mutation type accounts for.
+inline std::size_t countComplexGenomicRearrangements(const SDRsubHeader& subHeader, const SDRmasterHeader& masterHeader)
+{
+    const int numOriginalStrands = masterHeader.intactChromosomeSizes.empty() ? 0 : static_cast<int>(masterHeader.intactChromosomeSizes[0]);
+
+    std::set<int> unexplainedStrands;
+    countMutationsPerOriginalStrand(subHeader, masterHeader, &unexplainedStrands);
+
+    return detectComplexGenomicRearrangements(subHeader, numOriginalStrands).size() + unexplainedStrands.size();
 }
 
 } // namespace sddparser

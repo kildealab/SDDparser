@@ -1,7 +1,9 @@
 #include "KaryogramViewer.h"
 #include "generalUtilities.h"
 
+#include <cstdint>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -610,6 +612,127 @@ show(0);
     if (!html)
     {
         std::cerr << "ERROR: Failed to write web viewer file " << htmlPath << "\n";
+        return false;
+    }
+
+    return true;
+}
+
+
+bool writeZipArchive(
+    const std::vector<std::pair<std::string, std::vector<unsigned char>>>& entries,
+    const std::filesystem::path& zipPath)
+{
+    // CRC-32 checksum the zip format stores for every file, so unzip tools can check the contents.
+    const auto crc32 = [](const std::vector<unsigned char>& bytes) -> std::uint32_t
+    {
+        std::uint32_t crc = 0xFFFFFFFFu;
+
+        for (unsigned char byte : bytes)
+        {
+            crc ^= byte;
+
+            for (int bit = 0; bit < 8; ++bit)
+            {
+                crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+            }
+        }
+
+        return crc ^ 0xFFFFFFFFu;
+    };
+
+    // Zip numbers are little-endian, written byte by byte so the file is the same on every machine.
+    const auto put16 = [](std::vector<unsigned char>& out, std::uint32_t value)
+    {
+        out.push_back(static_cast<unsigned char>(value & 0xFF));
+        out.push_back(static_cast<unsigned char>((value >> 8) & 0xFF));
+    };
+    const auto put32 = [&put16](std::vector<unsigned char>& out, std::uint32_t value)
+    {
+        put16(out, value & 0xFFFF);
+        put16(out, value >> 16);
+    };
+
+    // File date and time in the zip's MS-DOS format, so the extracted files show when they were made.
+    const std::time_t now = std::time(nullptr);
+    const std::tm* local = std::localtime(&now);
+    const std::uint32_t dosTime = local ? static_cast<std::uint32_t>((local->tm_hour << 11) | (local->tm_min << 5) | (local->tm_sec / 2)) : 0;
+    const std::uint32_t dosDate = local ? static_cast<std::uint32_t>(((local->tm_year - 80) << 9) | ((local->tm_mon + 1) << 5) | local->tm_mday) : 0x21;
+
+    std::vector<unsigned char> archive;
+    std::vector<unsigned char> centralDirectory;
+
+    for (const auto& [name, data] : entries)
+    {
+        // Safeguard: this simple writer has no ZIP64 support, so each file and the whole archive must stay under 4 GB.
+        if (data.size() > 0xFFFFFFFFu || archive.size() > 0xFFFFFFFFu || name.size() > 0xFFFFu)
+        {
+            std::cerr << "ERROR: " << name << " is too large to add to the zip file " << zipPath << "\n";
+            return false;
+        }
+
+        const std::uint32_t crc = crc32(data);
+        const std::uint32_t size = static_cast<std::uint32_t>(data.size());
+        const std::uint32_t offset = static_cast<std::uint32_t>(archive.size());
+
+        put32(archive, 0x04034B50u);                                            // Local file header
+        put16(archive, 20);                                                     // Version needed to extract (2.0)
+        put16(archive, 0);                                                      // Flags
+        put16(archive, 0);                                                      // Stored, no compression
+        put16(archive, dosTime);
+        put16(archive, dosDate);
+        put32(archive, crc);
+        put32(archive, size);                                                   // Compressed size (same, stored)
+        put32(archive, size);
+        put16(archive, static_cast<std::uint32_t>(name.size()));
+        put16(archive, 0);                                                      // No extra field
+        archive.insert(archive.end(), name.begin(), name.end());
+        archive.insert(archive.end(), data.begin(), data.end());
+
+        put32(centralDirectory, 0x02014B50u);                                   // Central directory entry for the same file
+        put16(centralDirectory, 20);                                            // Made by version 2.0
+        put16(centralDirectory, 20);
+        put16(centralDirectory, 0);
+        put16(centralDirectory, 0);
+        put16(centralDirectory, dosTime);
+        put16(centralDirectory, dosDate);
+        put32(centralDirectory, crc);
+        put32(centralDirectory, size);
+        put32(centralDirectory, size);
+        put16(centralDirectory, static_cast<std::uint32_t>(name.size()));
+        put16(centralDirectory, 0);                                             // No extra field
+        put16(centralDirectory, 0);                                             // No comment
+        put16(centralDirectory, 0);                                             // Disk number
+        put16(centralDirectory, 0);                                             // Internal attributes
+        put32(centralDirectory, 0);                                             // External attributes
+        put32(centralDirectory, offset);
+        centralDirectory.insert(centralDirectory.end(), name.begin(), name.end());
+    }
+
+    if (entries.size() > 0xFFFFu)
+    {
+        std::cerr << "ERROR: Too many files for the zip file " << zipPath << "\n";
+        return false;
+    }
+
+    const std::uint32_t directoryOffset = static_cast<std::uint32_t>(archive.size());
+    archive.insert(archive.end(), centralDirectory.begin(), centralDirectory.end());
+
+    put32(archive, 0x06054B50u);                                                // End of central directory record
+    put16(archive, 0);
+    put16(archive, 0);
+    put16(archive, static_cast<std::uint32_t>(entries.size()));
+    put16(archive, static_cast<std::uint32_t>(entries.size()));
+    put32(archive, static_cast<std::uint32_t>(centralDirectory.size()));
+    put32(archive, directoryOffset);
+    put16(archive, 0);                                                          // No archive comment
+
+    std::ofstream zipFile(zipPath, std::ios::binary);
+    zipFile.write(reinterpret_cast<const char*>(archive.data()), static_cast<std::streamsize>(archive.size()));
+
+    if (!zipFile)
+    {
+        std::cerr << "ERROR: Failed to write zip file " << zipPath << "\n";
         return false;
     }
 
