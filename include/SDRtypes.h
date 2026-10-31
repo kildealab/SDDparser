@@ -35,6 +35,7 @@ struct SDRmasterHeader
     std::string sdrVersion;
     std::string author;
     std::string associatedSDDFile;
+    std::vector<double> cellCyclePhase;			// Optional (SDRv2.1+): same coding as SDD 'Cell cycle phase'. Summary only, never used for the karyogram drawing.
     std::vector<double> intactChromosomeSizes;		// First value in the SDR file is the number of chromosomes, followed by the chromosome sizes.
 };
 
@@ -241,7 +242,7 @@ struct SDRchromothripsisEvent
 // so it carries the same information.
 using SDRcomplexRearrangementEvent = SDRchromothripsisEvent;
 
-
+} // namespace sddparser
 
 
 
@@ -278,13 +279,6 @@ struct SDRdicentricEvent
 
 
 };
-
-
-
-
-} // namespace sddparser
-
-
 
 
 #endif

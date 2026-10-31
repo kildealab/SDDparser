@@ -5,6 +5,7 @@ SDR MASTER HEADER SUMMARY
 SDR Version: SDRv2.1
 Author: Samy Boutros
 Associated SDD File: None - Example for all mutation types and dicentric chromosome support
+Cell Cycle Phase: Unknown.
 
 Declared Chromosome Count: 46
 Number Of Chromosome Sizes Listed: 46

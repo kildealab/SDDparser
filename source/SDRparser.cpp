@@ -7,6 +7,7 @@
 #include "SDRparser.h"
 #include "generalUtilities.h"
 #include "SDRutilities.h"
+#include "SDDutilities.h"			// cellCyclePhaseMeaning, shared with the SDD summary
 
 
 namespace sddparser
@@ -167,6 +168,22 @@ bool SDRparser::parseMasterHeader(
         else if (field == "associated sdd file")
         {
             masterHeader.associatedSDDFile = value;
+        }
+        else if (field == "cell cycle phase")					// Optional field (added in SDRv2.1); older SDR files without it still parse.
+        {
+            if (!value.empty())
+            {
+                try
+                {
+                    masterHeader.cellCyclePhase = parseDoubleList(split(value, ','));
+                }
+                catch (const std::exception& error)
+                {
+                    std::cerr << "ERROR: Invalid 'Cell Cycle Phase' value in SDR master header: " << value << " (" << error.what() << ")\n";
+                    printErrorLocation();
+                    return false;
+                }
+            }
         }
         else if (field == "intact chromosome sizes")
         {
@@ -742,7 +759,8 @@ void SDRparser::writeMasterHeaderSummary(
 
     output << "SDR Version: " << masterHeader.sdrVersion << "\n";
     output << "Author: " << masterHeader.author << "\n";
-    output << "Associated SDD File: " << masterHeader.associatedSDDFile << "\n\n";
+    output << "Associated SDD File: " << masterHeader.associatedSDDFile << "\n";
+    output << "Cell Cycle Phase: " << cellCyclePhaseMeaning(masterHeader.cellCyclePhase) << "\n\n";	// Same interpretation as the SDD summary
 
     if (masterHeader.intactChromosomeSizes.empty())
     {
