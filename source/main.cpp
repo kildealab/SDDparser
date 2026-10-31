@@ -195,26 +195,22 @@ namespace
     {
         const bool browserAvailable = canOpenBrowser();
 
-        // Where to write the viewer:
-        // - With a browser, use the system temp folder so the input folder is not cluttered (the user can still
-        //   download PNGs from the viewer).
-        // - Without a browser (SSH, HPC cluster, container), the temp folder is on a remote machine the user cannot
-        //   easily browse, so write the viewer next to the input file instead, where it is easy to copy back (scp).
-        std::filesystem::path viewerFolder = inputPath.parent_path();
+        // Where to write the viewer: a "temp" folder next to the input file, created if needed. It keeps the input folder
+        // uncluttered while staying easy to find, reopen, or copy back from a remote machine (scp), unlike the system temp folder.
+        std::filesystem::path viewerFolder = inputPath.parent_path() / "temp";
 
-        if (browserAvailable)
+        std::error_code error;
+        std::filesystem::create_directories(viewerFolder, error);		// No error if the folder already exists
+
+        if (error || !std::filesystem::is_directory(viewerFolder, error))	// Safeguard: e.g. a read-only folder, or a file named "temp"
         {
-            std::error_code error;
-            const std::filesystem::path tempFolder = std::filesystem::temp_directory_path(error);
-
-            if (!error)						// Keep the input folder if the system has no usable temp folder
-            {
-                viewerFolder = tempFolder;
-            }
+            std::cout << "Could not create the folder " << viewerFolder << ", writing the viewer next to the input file instead.\n";
+            viewerFolder = inputPath.parent_path();
         }
 
-        const std::filesystem::path viewerPath = viewerFolder /
-            (inputPath.stem().string() + "_karyograms_" + genomeType + ".html");
+        // Absolute, so the printed path can be reopened from any folder and the browser (or Windows, from WSL) gets an unambiguous path.
+        const std::filesystem::path viewerPath = std::filesystem::absolute(viewerFolder /
+            (inputPath.stem().string() + "_karyograms_" + genomeType + ".html"), error);
 
         if (!writeKaryogramViewer(images, inputPath.filename().string(), viewerPath))
         {

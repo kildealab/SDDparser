@@ -68,9 +68,9 @@ Examples:
 
 Each run writes a `<input>_summary.txt` file next to the input. If `--karyogram` is passed, one karyogram is drawn per exposure/cell found in the file:
 
-**By default**, all karyograms are placed in a single self-contained HTML file, `<input>_karyograms_<human|other>.html`, written to your system's
-  temporary folder and opened in your default web browser. The path of the HTML file is always printed, so it can be reopened later
-  (note that the temporary folder may be cleared on reboot). In the viewer you can:
+**By default**, all karyograms are placed in a single self-contained HTML file, `<input>_karyograms_<human|other>.html`, written to a
+  `temp` folder next to the input file (created if it does not exist yet) and opened in your default web browser. The full path of the HTML
+  file is always printed, so it can be reopened later. Rerunning on the same input replaces the file. In the viewer you can:
   - switch between cells with Previous/Next or the cell list,
   - zoom with the mouse wheel, trackpad pinch, double-click, the −/+/Fit/100% buttons, or the keys `+`, `-`, `0` (fit) and `1` (100%),
     and drag to pan. Karyograms are shown as vector images (SVG), so they stay sharp at any zoom level,
@@ -90,8 +90,8 @@ Each run writes a `<input>_summary.txt` file next to the input. If `--karyogram`
 
 **On WSL**, the viewer opens in your Windows browser.
 
-**On machines without a screen** (over SSH, on HPC clusters, or in containers), no browser is opened. The HTML file is written next to the input
-  file instead, so you can copy it to your own computer (e.g. with `scp`) and open it there, or rerun with `--save-png`, `--save-svg` or `--save-zip`.
+**On machines without a screen** (over SSH, on HPC clusters, or in containers), no browser is opened. The HTML file is still written to the `temp`
+  folder next to the input file, so you can copy it to your own computer (e.g. with `scp`) and open it there, or rerun with `--save-png`, `--save-svg` or `--save-zip`.
 
 **Terminal output.** While running, SDDparser prints which file it is processing, a progress line per cell (updated in place in an
   interactive terminal, one line per cell when the output is redirected to a file), where the summary and karyograms were written, and a
