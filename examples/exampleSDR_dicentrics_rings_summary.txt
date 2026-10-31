@@ -12,6 +12,9 @@ Intact Chromosome Sizes (Mbp): 263.2, 258.1, 212.4, 203.4, 192.2, 181.8, 168.8, 
 
 Note on "Mutations by chromosome": a mutation involving several chromosomes is listed under each of them,
 except dicentrics, which are listed only under the chromosome drawn with two centromeres.
+"Complex Genomic Rearrangements" counts clusters with 4 or more pieces of a chromosome out of order or with broken-up
+material exchanged between chromosomes, plus one for every chromosome with a change that none of the other mutation
+types accounts for (e.g. an inversion reaching a chromosome end), even when it also has other mutations.
 
 -----------------------------------
 CELL 0 SUMMARY
@@ -30,6 +33,7 @@ Mutation Summary:
   Deletion-Insertions: 1
   Chromoplexy: 3
   Chromothripsis: 2
+  Complex Genomic Rearrangements: 0
   Ring Chromosomes: 1
   Dicentrics: 6
 

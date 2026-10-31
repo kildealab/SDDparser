@@ -98,12 +98,12 @@ Each run writes a `<input>_summary.txt` file next to the input. If `--karyogram`
   final status line. For example:
 
 ```
-SDR file processing: exampleSDR.txt...
-Processing cell X/'TOTAL' (Cell ID Y)...
-Summary written to: "exampleSDR_summary.txt"
-Karyograms written to: "exampleSDR_karyograms_other.zip" (N files)
+SDR file processing: exampleSDR_dicentrics_rings.txt...
+Processing cell 1/1 (Cell ID 0)...
+Summary written to: "exampleSDR_dicentrics_rings_summary.txt"
+Karyogram viewer written to: "/mnt/c/Users/Samy/Documents/Kildea_Project/Thesis/Samy_Code/SDDparser/examples/temp/exampleSDR_dicentrics_rings_karyograms_human.html"
 Karyograms not generated for the following cells due to absent SDR data: 
-All 'TOTAL' cells processed successfully.
+All 1 cells processed successfully.
 ```
 
   Without `--karyogram`, a single "Summarizing N cells..." line is shown instead of the per-cell progress. Cells with no SDR data records
