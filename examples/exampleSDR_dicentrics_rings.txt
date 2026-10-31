@@ -1,4 +1,4 @@
-SDR Version, SDRv2.1;
+SDR Version, SDRv2.2;
 Author, Samy Boutros;
 Associated SDD File, None - Example for all mutation types and dicentric chromosome support;
 Cell Cycle Phase, 0;
